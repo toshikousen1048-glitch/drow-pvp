@@ -24,13 +24,46 @@
             color: #fff;
         }
 
+        .top-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+        }
+
         #connectionStatus {
             font-size: 0.8rem;
-            margin-bottom: 12px;
-            padding: 4px 14px;
+            padding: 6px 14px;
             border-radius: 20px;
             background: #2a2a2a;
             color: #f39c12;
+        }
+
+        .room-box {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #1e1e1e;
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid #3a3a52;
+        }
+
+        .room-box input {
+            background: #121212;
+            border: 1px solid #555;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            width: 130px;
+            outline: none;
+        }
+
+        .room-box input:focus {
+            border-color: #3498db;
         }
 
         .main-container {
@@ -49,6 +82,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            position: relative;
         }
 
         .section h2 {
@@ -71,6 +105,76 @@
 
         #gameCanvas {
             background-color: #161625;
+        }
+
+        /* 待機ロビーのオーバーレイUI */
+        #lobbyOverlay {
+            position: absolute;
+            top: 31px;
+            left: 0;
+            width: 404px;
+            height: 404px;
+            background: rgba(18, 18, 30, 0.88);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .ready-card {
+            background: #252538;
+            border: 1px solid #3a3a52;
+            border-radius: 10px;
+            padding: 14px 20px;
+            width: 85%;
+            margin-bottom: 16px;
+        }
+
+        .ready-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #333;
+        }
+        .ready-row:last-child { border-bottom: none; }
+
+        .badge-ok {
+            background: #27ae60;
+            color: #fff;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: bold;
+        }
+        .badge-wait {
+            background: #555;
+            color: #ddd;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+        }
+
+        #readyBtn {
+            width: 85%;
+            padding: 12px;
+            font-size: 1rem;
+            border-radius: 8px;
+            background: #27ae60;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+            flex: none;
+        }
+        #readyBtn:hover { background: #219150; }
+        #readyBtn.is-ready {
+            background: #e67e22;
+            box-shadow: 0 4px 12px rgba(230, 126, 34, 0.4);
         }
 
         .sidebar {
@@ -122,7 +226,7 @@
 
         button {
             flex: 1;
-            padding: 7px;
+            padding: 7px 12px;
             border: none;
             border-radius: 6px;
             background: #333;
@@ -201,14 +305,24 @@
 <body>
 
     <h1>32x32 Pixel Online PvP Battle</h1>
-    <div id="connectionStatus">サーバー接続待機中... (http://localhost:3000 で開いてください)</div>
+
+    <div class="top-bar">
+        <div id="connectionStatus">サーバー接続待機中...</div>
+        <div class="room-box">
+            <span style="font-size: 0.8rem; color: #bbb;">🔑 合言葉:</span>
+            <input type="text" id="roomInput" placeholder="例: 1234" maxlength="20">
+            <button id="joinRoomBtn" class="primary" style="flex: none; border-radius: 12px; padding: 5px 12px;">入室</button>
+            <button id="leaveRoomBtn" class="danger" style="flex: none; border-radius: 12px; padding: 5px 10px; display: none;">退室</button>
+            <button id="backLobbyBtn" style="flex: none; border-radius: 12px; padding: 5px 10px; background: #8e44ad; display: none;">ロビーへ戻る</button>
+        </div>
+    </div>
     
     <div class="main-container">
         <!-- エディタエリア -->
         <div class="section">
             <h2>1. Character Editor</h2>
             <canvas id="pixelCanvas" width="384" height="384"></canvas>
-            <p style="font-size: 0.78rem; color: #888; margin-top: 6px;">塗った色の割合で右のステータスが変化！</p>
+            <p id="editorHint" style="font-size: 0.78rem; color: #888; margin-top: 6px;">待機中に絵を描いて右の「準備OK！」を押そう！</p>
         </div>
 
         <!-- サイドバーコントロール -->
@@ -273,6 +387,30 @@
         <div class="section">
             <h2>2. Online Battle Arena</h2>
             <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+            <!-- 待機ロビー画面オーバーレイ -->
+            <div id="lobbyOverlay">
+                <div id="lobbyNotJoined">
+                    <p style="font-size: 1rem; font-weight: bold; color: #fff; margin-bottom: 8px;">🎨 お絵描き待機中</p>
+                    <p style="font-size: 0.82rem; color: #bbb; line-height: 1.5;">
+                        左のキャンバスでキャラを描いたら、<br>
+                        上のボックスに<strong>「合言葉」</strong>を入れて<br>
+                        <strong>「入室」</strong>を押してね！
+                    </p>
+                </div>
+
+                <div id="lobbyJoined" style="display: none; width: 100%; flex-direction: column; align-items: center;">
+                    <p style="font-size: 0.95rem; font-weight: bold; color: #3498db; margin-top: 0; margin-bottom: 10px;">
+                        ⚔️ 対戦準備ロビー
+                    </p>
+                    <div class="ready-card" id="readyList"></div>
+                    <button id="readyBtn">✅ 準備OK！</button>
+                    <p style="font-size: 0.75rem; color: #aaa; margin-top: 10px;">
+                        2人とも「準備OK！」になると<br>3秒カウントダウン後にバトル開始！
+                    </p>
+                </div>
+            </div>
+
             <div class="instructions">
                 移動: <span class="key-badge">W A S D</span> or <span class="key-badge">矢印キー</span><br>
                 ショット: <span class="key-badge">Space</span> ／ 近接斬撃: <span class="key-badge">Enter</span> ／ バリア: <span class="key-badge">Shift</span>
@@ -291,8 +429,22 @@
         const codeOutput = document.getElementById('codeOutput');
         const brushStatus = document.getElementById('brushStatus');
         const connectionStatus = document.getElementById('connectionStatus');
+        const roomInput = document.getElementById('roomInput');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+        const backLobbyBtn = document.getElementById('backLobbyBtn');
+        const lobbyOverlay = document.getElementById('lobbyOverlay');
+        const lobbyNotJoined = document.getElementById('lobbyNotJoined');
+        const lobbyJoined = document.getElementById('lobbyJoined');
+        const readyList = document.getElementById('readyList');
+        const readyBtn = document.getElementById('readyBtn');
+        const editorHint = document.getElementById('editorHint');
 
         let gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
+        let activeRoom = null;
+        let roomState = 'waiting'; // 'waiting' | 'countdown' | 'playing'
+        let myReady = false;
+        let countdownBanner = ''; // '3', '2', '1', 'FIGHT!'
 
         const gameCanvas = document.getElementById('gameCanvas');
         const gameCtx = gameCanvas.getContext('2d');
@@ -303,11 +455,11 @@
             tough: ['#ffc90e', '#fff200', '#22b14c', '#b97a57']
         };
 
-        const SHIELD_COOLDOWN = 4000; // バリアのクールダウン 4.0秒
+        const SHIELD_COOLDOWN = 4000;
 
         let player = {
-            x: 180,
-            y: 180,
+            x: 176,
+            y: 176,
             facing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' },
             hp: 100,
@@ -328,6 +480,66 @@
         let shakeTime = 0;
         let shakeIntensity = 0;
         let hitStopUntil = 0;
+
+        function updateLobbyUI() {
+            if (!activeRoom) {
+                lobbyOverlay.style.display = 'flex';
+                lobbyNotJoined.style.display = 'block';
+                lobbyJoined.style.display = 'none';
+                backLobbyBtn.style.display = 'none';
+                editorHint.textContent = '待機中に絵を描いて「合言葉」で入室しよう！';
+                return;
+            }
+
+            if (roomState === 'waiting') {
+                lobbyOverlay.style.display = 'flex';
+                lobbyNotJoined.style.display = 'none';
+                lobbyJoined.style.display = 'flex';
+                backLobbyBtn.style.display = 'none';
+                editorHint.textContent = '描き終わったら右の「準備OK！」を押してね！';
+
+                // 準備リストの描画
+                let html = `
+                    <div class="ready-row">
+                        <span>👤 あなた</span>
+                        <span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : 'お絵描き中...'}</span>
+                    </div>
+                `;
+                const otherIds = Object.keys(otherPlayers);
+                if (otherIds.length === 0) {
+                    html += `
+                        <div class="ready-row">
+                            <span style="color:#888;">👥 対戦相手</span>
+                            <span class="badge-wait">入室待ち...</span>
+                        </div>
+                    `;
+                } else {
+                    otherIds.forEach((id, idx) => {
+                        const op = otherPlayers[id];
+                        html += `
+                            <div class="ready-row">
+                                <span>👥 相手 ${idx + 1} (${id.slice(0, 4)})</span>
+                                <span class="${op.isReady ? 'badge-ok' : 'badge-wait'}">${op.isReady ? '準備OK!' : 'お絵描き中...'}</span>
+                            </div>
+                        `;
+                    });
+                }
+                readyList.innerHTML = html;
+
+                if (myReady) {
+                    readyBtn.textContent = '⏳ キャンセル（描き直す）';
+                    readyBtn.classList.add('is-ready');
+                } else {
+                    readyBtn.textContent = '✅ 準備OK！';
+                    readyBtn.classList.remove('is-ready');
+                }
+            } else {
+                // countdown または playing 中はロビーオーバーレイを消してアリーナを表示
+                lobbyOverlay.style.display = 'none';
+                backLobbyBtn.style.display = 'inline-block';
+                editorHint.textContent = '🔒 バトル中はエディタがロックされます';
+            }
+        }
 
         function calculateStatsFromGrid(grid) {
             let powerCount = 0;
@@ -401,17 +613,18 @@
             return { atk, spd, maxHp, mainColor };
         }
 
-        // --- Socket.io 接続とバトルイベント処理 ---
+        // --- Socket.io 接続とイベント処理 ---
         let socket = null;
         if (typeof io !== 'undefined') {
             socket = io();
 
             socket.on('connect', () => {
-                connectionStatus.textContent = `🟢 バトルサーバー接続中 (ID: ${socket.id.slice(0, 5)})`;
-                connectionStatus.style.color = '#2ecc71';
-                player.stats = calculateStatsFromGrid(gridData);
-                socket.emit('updateCharacter', { gridData, stats: player.stats });
-                socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                if (activeRoom) {
+                    socket.emit('joinRoom', { roomId: activeRoom, gridData, stats: player.stats });
+                } else {
+                    connectionStatus.textContent = '🟡 待機中（合言葉を入力して入室してください）';
+                    connectionStatus.style.color = '#f1c40f';
+                }
             });
 
             socket.on('disconnect', () => {
@@ -419,10 +632,71 @@
                 connectionStatus.style.color = '#e74c3c';
             });
 
+            // ルーム全体状態（ロビー待機・準備状況・プレイヤー一覧）の同期
+            socket.on('roomStateSync', (data) => {
+                roomState = data.state;
+                const players = data.players || {};
+                if (players[socket.id]) {
+                    player.x = players[socket.id].x;
+                    player.y = players[socket.id].y;
+                    player.facing = players[socket.id].facing;
+                    player.hp = players[socket.id].hp;
+                    player.maxHp = players[socket.id].maxHp;
+                    myReady = Boolean(players[socket.id].isReady);
+                }
+                otherPlayers = { ...players };
+                delete otherPlayers[socket.id];
+                projectiles = [];
+                meleeEffects = [];
+                countdownBanner = '';
+                updateLobbyUI();
+            });
+
+            // 準備OK状態の更新
+            socket.on('playerReadyUpdated', (data) => {
+                if (data.id === socket.id) {
+                    myReady = data.isReady;
+                } else if (otherPlayers[data.id]) {
+                    otherPlayers[data.id].isReady = data.isReady;
+                }
+                updateLobbyUI();
+            });
+
+            // 3秒カウントダウン演出の開始
+            socket.on('matchCountdown', (data) => {
+                roomState = 'countdown';
+                projectiles = [];
+                meleeEffects = [];
+                updateLobbyUI();
+
+                let count = data.seconds || 3;
+                countdownBanner = String(count);
+
+                const timer = setInterval(() => {
+                    count--;
+                    if (count > 0) {
+                        countdownBanner = String(count);
+                    } else {
+                        clearInterval(timer);
+                    }
+                }, 1000);
+            });
+
+            // バトルスタート！
+            socket.on('matchStart', () => {
+                roomState = 'playing';
+                countdownBanner = 'FIGHT!';
+                updateLobbyUI();
+                setTimeout(() => {
+                    if (countdownBanner === 'FIGHT!') countdownBanner = '';
+                }, 900);
+            });
+
             socket.on('currentPlayers', (players) => {
                 if (players[socket.id]) {
                     player.x = players[socket.id].x;
                     player.y = players[socket.id].y;
+                    player.facing = players[socket.id].facing;
                     player.hp = players[socket.id].hp;
                     player.maxHp = players[socket.id].maxHp;
                 }
@@ -447,16 +721,9 @@
                     otherPlayers[data.id].stats = data.stats;
                     otherPlayers[data.id].hp = data.hp;
                     otherPlayers[data.id].maxHp = data.maxHp;
-                } else {
-                    otherPlayers[data.id] = {
-                        id: data.id, x: 180, y: 180, facing: 'right',
-                        characterData: data.characterData, stats: data.stats,
-                        hp: data.hp, maxHp: data.maxHp, isDead: false, shieldUntil: 0
-                    };
                 }
             });
 
-            // バリア展開の同期受信
             socket.on('playerShielded', (data) => {
                 const until = performance.now() + data.duration;
                 if (data.id === socket.id) {
@@ -466,12 +733,10 @@
                 }
             });
 
-            // バリアで防御された時の演出・弾き返し
             socket.on('attackBlocked', (data) => {
                 shakeTime = 8;
                 shakeIntensity = 5;
 
-                // 攻撃側を少しノックバックさせる（カウンター弾き返し）
                 const repelDist = 18;
                 let rx = 0, ry = 0;
                 if (data.knockbackDir === 'left') rx = repelDist;
@@ -559,8 +824,84 @@
 
             socket.on('disconnectPlayer', (id) => {
                 delete otherPlayers[id];
+                updateLobbyUI();
             });
         }
+
+        // --- ルーム入室・準備OK・退室イベント ---
+        joinRoomBtn.addEventListener('click', () => {
+            const roomName = roomInput.value.trim();
+            if (!roomName) {
+                alert('合言葉（ルーム名）を入力してください！');
+                roomInput.focus();
+                return;
+            }
+            if (!socket || !socket.connected) {
+                alert('サーバーに接続されていません。少し待ってから再度お試しください。');
+                return;
+            }
+
+            activeRoom = roomName;
+            myReady = false;
+            player.stats = calculateStatsFromGrid(gridData);
+            player.maxHp = player.stats.maxHp;
+            player.hp = player.maxHp;
+            player.isDead = false;
+
+            socket.emit('joinRoom', {
+                roomId: activeRoom,
+                gridData: gridData,
+                stats: player.stats
+            });
+
+            connectionStatus.textContent = `🟢 ルーム [${activeRoom}] に参加中`;
+            connectionStatus.style.color = '#2ecc71';
+            roomInput.disabled = true;
+            joinRoomBtn.style.display = 'none';
+            leaveRoomBtn.style.display = 'inline-block';
+            updateLobbyUI();
+        });
+
+        roomInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                joinRoomBtn.click();
+            }
+        });
+
+        readyBtn.addEventListener('click', () => {
+            if (!socket || !socket.connected || !activeRoom || roomState !== 'waiting') return;
+            // 準備OKを押す直前に最新の絵を確実に同期
+            syncCharacterUpdate();
+            myReady = !myReady;
+            socket.emit('toggleReady', myReady);
+            updateLobbyUI();
+        });
+
+        backLobbyBtn.addEventListener('click', () => {
+            if (socket && socket.connected && activeRoom) {
+                socket.emit('returnToLobby');
+            }
+        });
+
+        leaveRoomBtn.addEventListener('click', () => {
+            if (socket && socket.connected) {
+                socket.emit('leaveRoom');
+            }
+            activeRoom = null;
+            roomState = 'waiting';
+            myReady = false;
+            otherPlayers = {};
+            projectiles = [];
+            meleeEffects = [];
+            countdownBanner = '';
+            connectionStatus.textContent = '🟡 待機中（合言葉を入力して入室してください）';
+            connectionStatus.style.color = '#f1c40f';
+            roomInput.disabled = false;
+            joinRoomBtn.style.display = 'inline-block';
+            leaveRoomBtn.style.display = 'none';
+            updateLobbyUI();
+        });
 
         // --- エディタ機能 ---
         const colors = [
@@ -613,12 +954,13 @@
             player.stats = calculateStatsFromGrid(gridData);
             player.maxHp = player.stats.maxHp;
             if (player.hp > player.maxHp) player.hp = player.maxHp;
-            if (socket && socket.connected) {
+            if (socket && socket.connected && activeRoom && roomState === 'waiting') {
                 socket.emit('updateCharacter', { gridData, stats: player.stats });
             }
         }
 
         function clearCanvas() {
+            if (activeRoom && roomState !== 'waiting') return;
             if (confirm('キャンバスをクリアしますか？')) {
                 gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
                 drawEditorGrid();
@@ -658,6 +1000,9 @@
         }
 
         function paint(e) {
+            // バトル中・カウントダウン中は描き換えロック
+            if (activeRoom && roomState !== 'waiting') return;
+
             const pos = getGridPos(e);
             let updated = false;
             for (let dy = 0; dy < brushSize; dy++) {
@@ -689,6 +1034,7 @@
         });
 
         document.getElementById('importBtn').addEventListener('click', () => {
+            if (activeRoom && roomState !== 'waiting') return;
             try {
                 const parsed = JSON.parse(codeOutput.value);
                 if (Array.isArray(parsed) && parsed.length === GRID_SIZE) {
@@ -719,42 +1065,33 @@
             player.hp = player.maxHp;
         }
 
-        // --- キーボード入力と攻撃・バリアアクション ---
+        // --- キーボード入力と攻撃・バリアアクション（試合中のみ有効） ---
         const keys = {};
         window.addEventListener('keydown', (e) => {
-            if (document.activeElement !== codeOutput && ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+            const isTyping = (document.activeElement === codeOutput || document.activeElement === roomInput);
+            if (!isTyping && ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 e.preventDefault();
             }
             keys[e.key] = true;
 
-            if (document.activeElement === codeOutput || player.isDead) return;
+            if (isTyping || player.isDead || roomState !== 'playing') return;
 
-            // Spaceキーでショット発射
-            if (e.code === 'Space') {
-                triggerShot();
-            }
-            // Enterキーで近接スラッシュ
-            if (e.key === 'Enter') {
-                triggerMelee();
-            }
-            // Shiftキーでバリア展開
-            if (e.key === 'Shift') {
-                triggerShield();
-            }
+            if (e.code === 'Space') triggerShot();
+            if (e.key === 'Enter') triggerMelee();
+            if (e.key === 'Shift') triggerShield();
         });
 
         window.addEventListener('keyup', (e) => {
             keys[e.key] = false;
         });
 
-        // バリア発動処理
         function triggerShield() {
             const now = performance.now();
-            if (now - player.lastShieldTime < SHIELD_COOLDOWN) return; // クールダウン中
+            if (now - player.lastShieldTime < SHIELD_COOLDOWN) return;
             player.lastShieldTime = now;
-            player.shieldUntil = now + 1200; // ローカル即時反映
+            player.shieldUntil = now + 1200;
 
-            if (socket && socket.connected) {
+            if (socket && socket.connected && activeRoom) {
                 socket.emit('activateShield');
             }
         }
@@ -768,7 +1105,7 @@
             const cy = player.y + 24;
             spawnProjectile(socket ? socket.id : 'local', cx, cy, player.facing, player.stats.mainColor, player.stats.spd, true);
 
-            if (socket && socket.connected) {
+            if (socket && socket.connected && activeRoom) {
                 socket.emit('playerAttack', {
                     type: 'shot',
                     x: cx,
@@ -787,7 +1124,7 @@
             const cy = player.y + 24;
             spawnMeleeEffect(socket ? socket.id : 'local', cx, cy, player.facing, player.stats.mainColor, true);
 
-            if (socket && socket.connected) {
+            if (socket && socket.connected && activeRoom) {
                 socket.emit('playerAttack', {
                     type: 'melee',
                     x: cx,
@@ -828,12 +1165,14 @@
 
         // --- ゲーム状態更新 ---
         function updateGame() {
+            if (roomState !== 'playing') return;
+
             const now = performance.now();
             if (now < hitStopUntil) return;
+            const isTyping = (document.activeElement === codeOutput || document.activeElement === roomInput);
 
-            if (!player.isDead) {
+            if (!player.isDead && !isTyping) {
                 let moved = false;
-                // バリア展開中は少し移動速度が落ちる（0.7倍）と駆け引きが生まれる
                 const isShielding = now < player.shieldUntil;
                 const spd = isShielding ? player.stats.spd * 0.7 : player.stats.spd;
 
@@ -848,19 +1187,18 @@
                 if (player.y < 0) player.y = 0;
                 if (player.y > gameCanvas.height - charDisplaySize) player.y = gameCanvas.height - charDisplaySize;
 
-                if (moved && socket && socket.connected) {
+                if (moved && socket && socket.connected && activeRoom) {
                     socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                 }
             }
 
-            // ショットの移動と当たり判定
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
                 p.x += p.vx;
                 p.y += p.vy;
                 p.life--;
 
-                if (p.isMine && socket && socket.connected) {
+                if (p.isMine && socket && socket.connected && activeRoom) {
                     for (const id in otherPlayers) {
                         const target = otherPlayers[id];
                         if (target.isDead) continue;
@@ -877,12 +1215,11 @@
                 }
             }
 
-            // 近接スラッシュの更新と当たり判定
             for (let i = meleeEffects.length - 1; i >= 0; i--) {
                 const m = meleeEffects[i];
                 m.timer--;
 
-                if (m.isMine && !m.hasHit && socket && socket.connected) {
+                if (m.isMine && !m.hasHit && socket && socket.connected && activeRoom) {
                     for (const id in otherPlayers) {
                         const target = otherPlayers[id];
                         if (target.isDead) continue;
@@ -907,7 +1244,6 @@
             }
         }
 
-        // キャラクター＋頭上HPバー＋バリア＋クールダウンの描画
         function drawEntity(ctx, x, y, facing, charData, hp, maxHp, isDead, isInvincible, isShielding, shieldCdRatio) {
             if (isDead) {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
@@ -921,20 +1257,36 @@
                 ctx.globalAlpha = 0.4;
             }
 
+            let hasPixels = false;
             const scale = 1.5;
             if (charData) {
                 for (let dy = 0; dy < GRID_SIZE; dy++) {
                     for (let dx = 0; dx < GRID_SIZE; dx++) {
                         if (charData[dy] && charData[dy][dx]) {
+                            hasPixels = true;
                             ctx.fillStyle = charData[dy][dx];
                             ctx.fillRect(x + (dx * scale), y + (dy * scale), scale, scale);
                         }
                     }
                 }
             }
+
+            if (!hasPixels) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.arc(x + 24, y + 12, 6, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(x + 24, y + 18); ctx.lineTo(x + 24, y + 34);
+                ctx.moveTo(x + 14, y + 24); ctx.lineTo(x + 34, y + 24);
+                ctx.moveTo(x + 24, y + 34); ctx.lineTo(x + 16, y + 44);
+                ctx.moveTo(x + 24, y + 34); ctx.lineTo(x + 32, y + 44);
+                ctx.stroke();
+            }
+
             ctx.globalAlpha = 1.0;
 
-            // バリア展開中のエフェクト（水色のエネルギー球）
             if (isShielding) {
                 ctx.save();
                 ctx.beginPath();
@@ -947,7 +1299,6 @@
                 ctx.restore();
             }
 
-            // 向きマーカー
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.beginPath();
             if (facing === 'right') { ctx.moveTo(x + 52, y + 24); ctx.lineTo(x + 47, y + 20); ctx.lineTo(x + 47, y + 28); }
@@ -956,7 +1307,6 @@
             if (facing === 'down') { ctx.moveTo(x + 24, y + 52); ctx.lineTo(x + 20, y + 47); ctx.lineTo(x + 28, y + 47); }
             ctx.fill();
 
-            // 頭上HPバー
             const barWidth = 44;
             const barHeight = 5;
             const barX = x + 2;
@@ -968,7 +1318,6 @@
             ctx.fillStyle = ratio > 0.5 ? '#2ecc71' : ratio > 0.25 ? '#f1c40f' : '#e74c3c';
             ctx.fillRect(barX, barY, barWidth * ratio, barHeight);
 
-            // 自分用のバリアクールダウンバー（足元に小さく表示）
             if (shieldCdRatio !== null) {
                 ctx.fillStyle = '#222';
                 ctx.fillRect(barX, y + 51, barWidth, 3);
@@ -997,7 +1346,6 @@
                 gameCtx.beginPath(); gameCtx.moveTo(0, i); gameCtx.lineTo(gameCanvas.width, i); gameCtx.stroke();
             }
 
-            // 自分の描画
             const myShieldCdRatio = (now - player.lastShieldTime) / SHIELD_COOLDOWN;
             drawEntity(
                 gameCtx, player.x, player.y, player.facing, gridData,
@@ -1005,7 +1353,6 @@
                 now < player.invincibleUntil, now < player.shieldUntil, myShieldCdRatio
             );
 
-            // 他プレイヤーの描画
             for (const id in otherPlayers) {
                 const p = otherPlayers[id];
                 drawEntity(
@@ -1040,6 +1387,24 @@
                 gameCtx.fillText(ft.text, ft.x, ft.y);
             }
 
+            // 3・2・1・FIGHT! カウントダウンオーバーレイ描画
+            if (countdownBanner) {
+                if (roomState === 'countdown') {
+                    gameCtx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+                    gameCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+                }
+                gameCtx.save();
+                gameCtx.font = 'bold 72px sans-serif';
+                gameCtx.textAlign = 'center';
+                gameCtx.textBaseline = 'middle';
+                gameCtx.fillStyle = countdownBanner === 'FIGHT!' ? '#ff4d4d' : '#f1c40f';
+                gameCtx.strokeStyle = '#000000';
+                gameCtx.lineWidth = 6;
+                gameCtx.strokeText(countdownBanner, 200, 200);
+                gameCtx.fillText(countdownBanner, 200, 200);
+                gameCtx.restore();
+            }
+
             gameCtx.restore();
         }
 
@@ -1050,6 +1415,7 @@
         }
 
         loadSavedData();
+        updateLobbyUI();
         gameLoop();
     </script>
 </body>
