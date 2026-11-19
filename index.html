@@ -58,7 +58,7 @@
             padding: 4px 10px;
             border-radius: 12px;
             font-size: 0.85rem;
-            width: 130px;
+            width: 120px;
             outline: none;
         }
 
@@ -68,12 +68,12 @@
 
         .main-container {
             display: flex;
-            gap: 18px;
+            gap: 16px;
             background: #1e1e1e;
-            padding: 18px;
+            padding: 16px;
             border-radius: 12px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-            max-width: 1200px;
+            max-width: 1240px;
             flex-wrap: wrap;
             justify-content: center;
         }
@@ -107,20 +107,58 @@
             background-color: #161625;
         }
 
-        /* 待機ロビーのオーバーレイUI */
-        #lobbyOverlay {
+        .char-identity-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            width: 100%;
+            background: #252538;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin-top: 8px;
+            box-sizing: border-box;
+            border: 1px solid #3a3a52;
+        }
+
+        .char-identity-bar input {
+            background: #121212;
+            border: 1px solid #555;
+            color: #fff;
+            padding: 5px 8px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            width: 135px;
+            outline: none;
+        }
+
+        .rank-badge {
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+        }
+        .rank-S { background: linear-gradient(135deg, #f1c40f, #e67e22); border: 1px solid #fff; }
+        .rank-A { background: linear-gradient(135deg, #e74c3c, #9b59b6); }
+        .rank-B { background: #2980b9; }
+        .rank-C { background: #7f8c8d; }
+
+        .arena-overlay {
             position: absolute;
             top: 31px;
             left: 0;
             width: 404px;
             height: 404px;
-            background: rgba(18, 18, 30, 0.88);
+            background: rgba(16, 16, 28, 0.90);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             border-radius: 4px;
-            padding: 20px;
+            padding: 18px;
             box-sizing: border-box;
             text-align: center;
             z-index: 10;
@@ -130,17 +168,17 @@
             background: #252538;
             border: 1px solid #3a3a52;
             border-radius: 10px;
-            padding: 14px 20px;
-            width: 85%;
-            margin-bottom: 16px;
+            padding: 10px 14px;
+            width: 90%;
+            margin-bottom: 12px;
         }
 
         .ready-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 6px 0;
-            font-size: 0.9rem;
+            padding: 5px 0;
+            font-size: 0.82rem;
             border-bottom: 1px solid #333;
         }
         .ready-row:last-child { border-bottom: none; }
@@ -148,23 +186,23 @@
         .badge-ok {
             background: #27ae60;
             color: #fff;
-            padding: 2px 10px;
+            padding: 2px 8px;
             border-radius: 12px;
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             font-weight: bold;
         }
         .badge-wait {
             background: #555;
             color: #ddd;
-            padding: 2px 10px;
+            padding: 2px 8px;
             border-radius: 12px;
-            font-size: 0.78rem;
+            font-size: 0.75rem;
         }
 
         #readyBtn {
-            width: 85%;
-            padding: 12px;
-            font-size: 1rem;
+            width: 90%;
+            padding: 11px;
+            font-size: 0.95rem;
             border-radius: 8px;
             background: #27ae60;
             color: #fff;
@@ -177,22 +215,36 @@
             box-shadow: 0 4px 12px rgba(230, 126, 34, 0.4);
         }
 
+        #resultTitle {
+            font-size: 1.6rem;
+            font-weight: bold;
+            color: #f1c40f;
+            text-shadow: 0 0 12px rgba(241, 196, 15, 0.6);
+            margin: 0 0 6px 0;
+        }
+        #winnerCanvas {
+            background: #252538;
+            border: 2px solid #f1c40f;
+            border-radius: 8px;
+            margin: 6px 0;
+        }
+
         .sidebar {
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            width: 270px;
+            gap: 10px;
+            width: 275px;
         }
 
         .panel {
             background: #2a2a2a;
-            padding: 12px;
+            padding: 10px 12px;
             border-radius: 8px;
         }
 
         .panel h3 {
             margin-top: 0;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #bbb;
             border-bottom: 1px solid #444;
             padding-bottom: 4px;
@@ -202,13 +254,13 @@
         .palette {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: 6px;
+            gap: 5px;
             margin-bottom: 8px;
         }
 
         .color-btn {
-            width: 34px;
-            height: 34px;
+            width: 32px;
+            height: 32px;
             border: 2px solid #555;
             border-radius: 4px;
             cursor: pointer;
@@ -221,12 +273,12 @@
         .brush-sizes, .tools {
             display: flex;
             gap: 6px;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         button {
             flex: 1;
-            padding: 7px 12px;
+            padding: 6px 10px;
             border: none;
             border-radius: 6px;
             background: #333;
@@ -234,7 +286,7 @@
             font-weight: bold;
             cursor: pointer;
             transition: background 0.2s;
-            font-size: 0.8rem;
+            font-size: 0.78rem;
         }
 
         button:hover { background: #444; }
@@ -244,9 +296,42 @@
         button.danger { background: #e74c3c; }
         button.danger:hover { background: #c0392b; }
 
+        .save-slots {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .slot-card {
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 6px;
+            font-size: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .slot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            color: #eee;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .slot-btns {
+            display: flex;
+            gap: 4px;
+        }
+        .slot-btns button {
+            padding: 3px 4px;
+            font-size: 0.7rem;
+        }
+
         .stat-row {
-            margin-bottom: 6px;
-            font-size: 0.8rem;
+            margin-bottom: 5px;
+            font-size: 0.78rem;
         }
         .stat-header {
             display: flex;
@@ -255,7 +340,7 @@
         }
         .stat-bar-bg {
             width: 100%;
-            height: 8px;
+            height: 7px;
             background: #121212;
             border-radius: 4px;
             overflow: hidden;
@@ -265,28 +350,14 @@
             transition: width 0.2s;
         }
 
-        textarea {
-            width: 100%;
-            height: 55px;
-            background: #121212;
-            color: #00ffcc;
-            border: 1px solid #444;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 0.75rem;
-            resize: none;
-            padding: 5px;
-            box-sizing: border-box;
-        }
-
         .instructions {
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             color: #bbb;
             margin-top: 8px;
-            line-height: 1.6;
+            line-height: 1.5;
             text-align: center;
             background: #252538;
-            padding: 8px 14px;
+            padding: 6px 12px;
             border-radius: 8px;
             width: 100%;
             box-sizing: border-box;
@@ -309,7 +380,7 @@
     <div class="top-bar">
         <div id="connectionStatus">サーバー接続待機中...</div>
         <div class="room-box">
-            <span style="font-size: 0.8rem; color: #bbb;">🔑 合言葉:</span>
+            <span style="font-size: 0.8rem; color: #bbb;">🔑 合言葉(最大4人):</span>
             <input type="text" id="roomInput" placeholder="例: 1234" maxlength="20">
             <button id="joinRoomBtn" class="primary" style="flex: none; border-radius: 12px; padding: 5px 12px;">入室</button>
             <button id="leaveRoomBtn" class="danger" style="flex: none; border-radius: 12px; padding: 5px 10px; display: none;">退室</button>
@@ -322,15 +393,25 @@
         <div class="section">
             <h2>1. Character Editor</h2>
             <canvas id="pixelCanvas" width="384" height="384"></canvas>
-            <p id="editorHint" style="font-size: 0.78rem; color: #888; margin-top: 6px;">待機中に絵を描いて右の「準備OK！」を押そう！</p>
+
+            <div class="char-identity-bar">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 0.8rem; color: #aaa;">名前:</span>
+                    <input type="text" id="charNameInput" placeholder="キャラ名を入力" maxlength="12" value="ファイター">
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span id="charRankBadge" class="rank-badge rank-B">Bランク</span>
+                    <span id="charTitleText" style="font-size: 0.75rem; color: #f1c40f; font-weight: bold;">駆け出し戦士</span>
+                </div>
+            </div>
+            <p id="editorHint" style="font-size: 0.75rem; color: #888; margin: 5px 0 0 0;">待機中に絵と名前を決めて「合言葉」で入室しよう！</p>
         </div>
 
         <!-- サイドバーコントロール -->
         <div class="sidebar">
-            <!-- ステータスプレビューパネル -->
             <div class="panel">
                 <h3>Character Stats (Color Sync)</h3>
-                <div id="inkWarning" style="font-size: 0.75rem; color: #e74c3c; margin-bottom: 6px; display: none;">
+                <div id="inkWarning" style="font-size: 0.72rem; color: #e74c3c; margin-bottom: 5px; display: none;">
                     ⚠️ インク不足 (30マス以上塗ると本領発揮！)
                 </div>
                 <div class="stat-row">
@@ -347,13 +428,12 @@
                 </div>
             </div>
 
-            <!-- パレット＆ブラシ -->
             <div class="panel">
                 <h3>Palette & Brush</h3>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.85rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.8rem;">
                     <div style="display: flex; align-items: center; gap: 6px;">
                         <span>Color:</span>
-                        <div id="colorPreview" style="width: 20px; height: 20px; border: 1px solid #fff; border-radius: 4px; background: #000;"></div>
+                        <div id="colorPreview" style="width: 18px; height: 18px; border: 1px solid #fff; border-radius: 4px; background: #000;"></div>
                     </div>
                     <span id="brushStatus" style="color: #3498db; font-weight: bold;">Brush: 1x1</span>
                 </div>
@@ -372,48 +452,54 @@
                 </div>
             </div>
 
-            <!-- コード入出力 -->
             <div class="panel">
-                <h3>Data Code</h3>
-                <textarea id="codeOutput" placeholder="コードデータ"></textarea>
-                <div style="display: flex; gap: 6px; margin-top: 6px;">
-                    <button id="exportBtn" class="primary">Export</button>
-                    <button id="importBtn">Load</button>
-                </div>
+                <h3>💾 My Characters (Save / Load)</h3>
+                <div class="save-slots" id="saveSlotsContainer"></div>
             </div>
         </div>
 
         <!-- オンライン対戦アリーナ -->
         <div class="section">
-            <h2>2. Online Battle Arena</h2>
+            <h2>2. Online Battle Arena (3-Stock)</h2>
             <canvas id="gameCanvas" width="400" height="400"></canvas>
 
             <!-- 待機ロビー画面オーバーレイ -->
-            <div id="lobbyOverlay">
+            <div id="lobbyOverlay" class="arena-overlay">
                 <div id="lobbyNotJoined">
-                    <p style="font-size: 1rem; font-weight: bold; color: #fff; margin-bottom: 8px;">🎨 お絵描き待機中</p>
-                    <p style="font-size: 0.82rem; color: #bbb; line-height: 1.5;">
-                        左のキャンバスでキャラを描いたら、<br>
+                    <p style="font-size: 1rem; font-weight: bold; color: #fff; margin-bottom: 8px;">🎨 キャラメイク＆待機中</p>
+                    <p style="font-size: 0.8rem; color: #bbb; line-height: 1.5;">
+                        左でキャラを描いて名前をつけたら、<br>
                         上のボックスに<strong>「合言葉」</strong>を入れて<br>
-                        <strong>「入室」</strong>を押してね！
+                        <strong>「入室」</strong>を押してね！（最大4人まで対戦OK）
                     </p>
                 </div>
 
                 <div id="lobbyJoined" style="display: none; width: 100%; flex-direction: column; align-items: center;">
-                    <p style="font-size: 0.95rem; font-weight: bold; color: #3498db; margin-top: 0; margin-bottom: 10px;">
-                        ⚔️ 対戦準備ロビー
+                    <p style="font-size: 0.92rem; font-weight: bold; color: #3498db; margin-top: 0; margin-bottom: 8px;">
+                        ⚔️ 対戦ロビー (3回KOで脱落 / 累計Pt)
                     </p>
                     <div class="ready-card" id="readyList"></div>
                     <button id="readyBtn">✅ 準備OK！</button>
-                    <p style="font-size: 0.75rem; color: #aaa; margin-top: 10px;">
-                        2人とも「準備OK！」になると<br>3秒カウントダウン後にバトル開始！
+                    <p style="font-size: 0.74rem; color: #aaa; margin-top: 8px;">
+                        全員が「準備OK！」になると<br>3秒カウントダウン後にバトル開始！
                     </p>
                 </div>
             </div>
 
+            <!-- 勝利確定リザルトオーバーレイ -->
+            <div id="resultOverlay" class="arena-overlay" style="display: none;">
+                <p id="resultTitle">🏆 CHAMPION!</p>
+                <canvas id="winnerCanvas" width="96" height="96"></canvas>
+                <p id="winnerNameDisplay" style="font-size: 1rem; font-weight: bold; color: #fff; margin: 4px 0;"></p>
+                <div class="ready-card" id="resultScoreList" style="margin-bottom: 10px; padding: 8px 12px;"></div>
+                <button id="rematchBtn" class="primary" style="width: 90%; padding: 10px; font-size: 0.95rem; flex: none;">
+                    🔄 同じメンバーで再戦する（ロビーへ）
+                </button>
+            </div>
+
             <div class="instructions">
-                移動: <span class="key-badge">W A S D</span> or <span class="key-badge">矢印キー</span><br>
-                ショット: <span class="key-badge">Space</span> ／ 近接斬撃: <span class="key-badge">Enter</span> ／ バリア: <span class="key-badge">Shift</span>
+                移動: <span class="key-badge">W A S D</span> or <span class="key-badge">矢印キー</span> ／ バリア: <span class="key-badge">Shift</span><br>
+                ショット: <span class="key-badge">Space</span> ／ 近接斬撃: <span class="key-badge">Enter</span>（🧱壁は攻撃で破壊可能 / ⚡靴で加速！）
             </div>
         </div>
     </div>
@@ -426,7 +512,6 @@
         const canvas = document.getElementById('pixelCanvas');
         const ctx = canvas.getContext('2d');
         const colorPreview = document.getElementById('colorPreview');
-        const codeOutput = document.getElementById('codeOutput');
         const brushStatus = document.getElementById('brushStatus');
         const connectionStatus = document.getElementById('connectionStatus');
         const roomInput = document.getElementById('roomInput');
@@ -438,13 +523,18 @@
         const lobbyJoined = document.getElementById('lobbyJoined');
         const readyList = document.getElementById('readyList');
         const readyBtn = document.getElementById('readyBtn');
+        const resultOverlay = document.getElementById('resultOverlay');
+        const rematchBtn = document.getElementById('rematchBtn');
         const editorHint = document.getElementById('editorHint');
+        const charNameInput = document.getElementById('charNameInput');
+        const charRankBadge = document.getElementById('charRankBadge');
+        const charTitleText = document.getElementById('charTitleText');
 
         let gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
         let activeRoom = null;
-        let roomState = 'waiting'; // 'waiting' | 'countdown' | 'playing'
+        let roomState = 'waiting';
         let myReady = false;
-        let countdownBanner = ''; // '3', '2', '1', 'FIGHT!'
+        let countdownBanner = '';
 
         const gameCanvas = document.getElementById('gameCanvas');
         const gameCtx = gameCanvas.getContext('2d');
@@ -458,90 +548,57 @@
         const SHIELD_COOLDOWN = 4000;
 
         let player = {
+            name: 'ファイター',
+            rank: 'B',
             x: 176,
             y: 176,
             facing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' },
             hp: 100,
             maxHp: 100,
+            stocks: 3,
             isDead: false,
+            isEliminated: false,
             invincibleUntil: 0,
             shieldUntil: 0,
+            speedBoostUntil: 0,
             lastShieldTime: -SHIELD_COOLDOWN,
             lastShotTime: 0,
-            lastMeleeTime: 0
+            lastMeleeTime: 0,
+            wins: 0,
+            points: 0
         };
 
         let otherPlayers = {};
+        let arenaWalls = [];     // 10秒ごとに湧く壁配列
+        let arenaItems = [];     // スピードアップアイテム配列
         let projectiles = [];
         let meleeEffects = [];
         let floatingTexts = [];
+        let confettiParticles = [];
 
         let shakeTime = 0;
         let shakeIntensity = 0;
         let hitStopUntil = 0;
 
-        function updateLobbyUI() {
-            if (!activeRoom) {
-                lobbyOverlay.style.display = 'flex';
-                lobbyNotJoined.style.display = 'block';
-                lobbyJoined.style.display = 'none';
-                backLobbyBtn.style.display = 'none';
-                editorHint.textContent = '待機中に絵を描いて「合言葉」で入室しよう！';
-                return;
-            }
+        // --- 矩形と壁の衝突判定ヘルパー ---
+        function collidesWithWall(x, y, size) {
+            // キャラの実際の当たり判定は少し内側（余白6px）にして引っかかりにくくする
+            const pad = 6;
+            const left = x + pad;
+            const right = x + size - pad;
+            const top = y + pad;
+            const bottom = y + size - pad;
 
-            if (roomState === 'waiting') {
-                lobbyOverlay.style.display = 'flex';
-                lobbyNotJoined.style.display = 'none';
-                lobbyJoined.style.display = 'flex';
-                backLobbyBtn.style.display = 'none';
-                editorHint.textContent = '描き終わったら右の「準備OK！」を押してね！';
-
-                // 準備リストの描画
-                let html = `
-                    <div class="ready-row">
-                        <span>👤 あなた</span>
-                        <span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : 'お絵描き中...'}</span>
-                    </div>
-                `;
-                const otherIds = Object.keys(otherPlayers);
-                if (otherIds.length === 0) {
-                    html += `
-                        <div class="ready-row">
-                            <span style="color:#888;">👥 対戦相手</span>
-                            <span class="badge-wait">入室待ち...</span>
-                        </div>
-                    `;
-                } else {
-                    otherIds.forEach((id, idx) => {
-                        const op = otherPlayers[id];
-                        html += `
-                            <div class="ready-row">
-                                <span>👥 相手 ${idx + 1} (${id.slice(0, 4)})</span>
-                                <span class="${op.isReady ? 'badge-ok' : 'badge-wait'}">${op.isReady ? '準備OK!' : 'お絵描き中...'}</span>
-                            </div>
-                        `;
-                    });
+            for (const w of arenaWalls) {
+                if (left < w.x + w.w && right > w.x && top < w.y + w.h && bottom > w.y) {
+                    return true;
                 }
-                readyList.innerHTML = html;
-
-                if (myReady) {
-                    readyBtn.textContent = '⏳ キャンセル（描き直す）';
-                    readyBtn.classList.add('is-ready');
-                } else {
-                    readyBtn.textContent = '✅ 準備OK！';
-                    readyBtn.classList.remove('is-ready');
-                }
-            } else {
-                // countdown または playing 中はロビーオーバーレイを消してアリーナを表示
-                lobbyOverlay.style.display = 'none';
-                backLobbyBtn.style.display = 'inline-block';
-                editorHint.textContent = '🔒 バトル中はエディタがロックされます';
             }
+            return false;
         }
 
-        function calculateStatsFromGrid(grid) {
+        function calculateStatsAndRank(grid) {
             let powerCount = 0;
             let speedCount = 0;
             let toughCount = 0;
@@ -562,6 +619,7 @@
             }
 
             const totalPixels = powerCount + speedCount + toughCount + neutralCount;
+            const uniqueColors = Object.keys(colorFreq).length;
 
             let mainColor = '#00a2e8';
             let maxFreq = 0;
@@ -580,11 +638,12 @@
             let atk = 12;
             let spd = 4.0;
             let maxHp = 100;
+            let pRatio = 0.33, sRatio = 0.33, tRatio = 0.34;
 
             if (totalScore > 0) {
-                const pRatio = pScore / totalScore;
-                const sRatio = sScore / totalScore;
-                const tRatio = tScore / totalScore;
+                pRatio = pScore / totalScore;
+                sRatio = sScore / totalScore;
+                tRatio = tScore / totalScore;
 
                 atk = Math.round(10 + pRatio * 15);
                 spd = Number((3.0 + sRatio * 3.5).toFixed(1));
@@ -601,6 +660,33 @@
                 if (inkWarning) inkWarning.style.display = 'none';
             }
 
+            let rank = 'C';
+            let title = '落書き見習い';
+
+            if (totalPixels < 30) {
+                rank = 'C';
+                title = 'インク不足の卵';
+            } else if (totalPixels >= 180 && (pRatio >= 0.72 || sRatio >= 0.72 || tRatio >= 0.72 || uniqueColors >= 6)) {
+                rank = 'S';
+                if (pRatio >= 0.72) title = '紅蓮の破壊神';
+                else if (sRatio >= 0.72) title = '音速の閃光';
+                else if (tRatio >= 0.72) title = '不落の重戦車';
+                else title = '極彩色の覇王';
+            } else if (totalPixels >= 90 && (pRatio >= 0.52 || sRatio >= 0.52 || tRatio >= 0.52 || uniqueColors >= 4)) {
+                rank = 'A';
+                if (pRatio >= 0.52) title = '猛攻のアタッカー';
+                else if (sRatio >= 0.52) title = '疾風の剣士';
+                else if (tRatio >= 0.52) title = '鉄壁の守護者';
+                else title = '歴戦のマルチ戦士';
+            } else {
+                rank = 'B';
+                title = '駆け出しファイター';
+            }
+
+            charRankBadge.textContent = `${rank}ランク`;
+            charRankBadge.className = `rank-badge rank-${rank}`;
+            charTitleText.textContent = title;
+
             document.getElementById('statAtkVal').textContent = atk;
             document.getElementById('statAtkBar').style.width = `${Math.min(100, (atk / 25) * 100)}%`;
 
@@ -610,17 +696,164 @@
             document.getElementById('statHpVal').textContent = maxHp;
             document.getElementById('statHpBar').style.width = `${Math.min(100, (maxHp / 160) * 100)}%`;
 
-            return { atk, spd, maxHp, mainColor };
+            return { stats: { atk, spd, maxHp, mainColor }, rank };
         }
 
-        // --- Socket.io 接続とイベント処理 ---
+        const SAVE_SLOTS_KEY = 'pixel_pvp_saved_slots_v1';
+
+        function renderSaveSlots() {
+            const container = document.getElementById('saveSlotsContainer');
+            let slots = [];
+            try {
+                slots = JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY)) || [];
+            } catch (e) { slots = []; }
+
+            container.innerHTML = '';
+            for (let i = 0; i < 4; i++) {
+                const slot = slots[i];
+                const card = document.createElement('div');
+                card.className = 'slot-card';
+
+                if (slot) {
+                    card.innerHTML = `
+                        <div class="slot-header">
+                            <span>[${slot.rank}] ${slot.name}</span>
+                        </div>
+                        <div class="slot-btns">
+                            <button class="primary" onclick="loadCharacterSlot(${i})">読込</button>
+                            <button onclick="saveCharacterSlot(${i})">上書</button>
+                        </div>
+                    `;
+                } else {
+                    card.innerHTML = `
+                        <div class="slot-header" style="color:#777;">
+                            <span>空きスロット ${i + 1}</span>
+                        </div>
+                        <div class="slot-btns">
+                            <button onclick="saveCharacterSlot(${i})">💾 保存</button>
+                        </div>
+                    `;
+                }
+                container.appendChild(card);
+            }
+        }
+
+        window.saveCharacterSlot = function(index) {
+            let slots = [];
+            try {
+                slots = JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY)) || [];
+            } catch (e) { slots = []; }
+
+            const name = charNameInput.value.trim() || 'ファイター';
+            const calc = calculateStatsAndRank(gridData);
+            slots[index] = {
+                name: name,
+                rank: calc.rank,
+                gridData: JSON.parse(JSON.stringify(gridData))
+            };
+            localStorage.setItem(SAVE_SLOTS_KEY, JSON.stringify(slots));
+            renderSaveSlots();
+        };
+
+        window.loadCharacterSlot = function(index) {
+            if (activeRoom && roomState !== 'waiting') {
+                alert('バトル中はキャラクターを変更できません！');
+                return;
+            }
+            let slots = [];
+            try {
+                slots = JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY)) || [];
+            } catch (e) { slots = []; }
+
+            const slot = slots[index];
+            if (!slot) return;
+
+            gridData = JSON.parse(JSON.stringify(slot.gridData));
+            charNameInput.value = slot.name;
+            drawEditorGrid();
+            autoSave();
+            syncCharacterUpdate();
+        };
+
+        function updateLobbyUI() {
+            if (!activeRoom) {
+                lobbyOverlay.style.display = 'flex';
+                resultOverlay.style.display = 'none';
+                lobbyNotJoined.style.display = 'block';
+                lobbyJoined.style.display = 'none';
+                backLobbyBtn.style.display = 'none';
+                editorHint.textContent = '待機中に絵と名前を決めて「合言葉」で入室しよう！';
+                return;
+            }
+
+            if (roomState === 'waiting') {
+                lobbyOverlay.style.display = 'flex';
+                resultOverlay.style.display = 'none';
+                lobbyNotJoined.style.display = 'none';
+                lobbyJoined.style.display = 'flex';
+                backLobbyBtn.style.display = 'none';
+                editorHint.textContent = '描き終わったら右の「準備OK！」を押してね！';
+
+                let html = `
+                    <div class="ready-row">
+                        <span>[${player.rank}] ${player.name} <small style="color:#f1c40f;">(${player.points}pt)</small></span>
+                        <span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : '準備中'}</span>
+                    </div>
+                `;
+                const otherIds = Object.keys(otherPlayers);
+                if (otherIds.length === 0) {
+                    html += `
+                        <div class="ready-row">
+                            <span style="color:#888;">👥 対戦相手を待機中...</span>
+                            <span class="badge-wait">未入室</span>
+                        </div>
+                    `;
+                } else {
+                    otherIds.forEach((id) => {
+                        const op = otherPlayers[id];
+                        html += `
+                            <div class="ready-row">
+                                <span>[${op.rank || 'B'}] ${op.name || '相手'} <small style="color:#f1c40f;">(${op.points || 0}pt)</small></span>
+                                <span class="${op.isReady ? 'badge-ok' : 'badge-wait'}">${op.isReady ? '準備OK!' : '準備中'}</span>
+                            </div>
+                        `;
+                    });
+                }
+                readyList.innerHTML = html;
+
+                if (myReady) {
+                    readyBtn.textContent = '⏳ キャンセル（描き直す）';
+                    readyBtn.classList.add('is-ready');
+                } else {
+                    readyBtn.textContent = '✅ 準備OK！';
+                    readyBtn.classList.remove('is-ready');
+                }
+            } else if (roomState === 'result') {
+                lobbyOverlay.style.display = 'none';
+                resultOverlay.style.display = 'flex';
+                backLobbyBtn.style.display = 'inline-block';
+            } else {
+                lobbyOverlay.style.display = 'none';
+                resultOverlay.style.display = 'none';
+                backLobbyBtn.style.display = 'inline-block';
+                editorHint.textContent = '🔒 バトル中はエディタがロックされます';
+            }
+        }
+
+        // --- Socket.io 接続とギミック同期 ---
         let socket = null;
         if (typeof io !== 'undefined') {
             socket = io();
 
             socket.on('connect', () => {
                 if (activeRoom) {
-                    socket.emit('joinRoom', { roomId: activeRoom, gridData, stats: player.stats });
+                    socket.emit('joinRoom', {
+                        roomId: activeRoom,
+                        name: player.name,
+                        rank: player.rank,
+                        gridData,
+                        stats: player.stats
+                    });
                 } else {
                     connectionStatus.textContent = '🟡 待機中（合言葉を入力して入室してください）';
                     connectionStatus.style.color = '#f1c40f';
@@ -632,27 +865,62 @@
                 connectionStatus.style.color = '#e74c3c';
             });
 
-            // ルーム全体状態（ロビー待機・準備状況・プレイヤー一覧）の同期
+            socket.on('roomFull', (data) => {
+                alert(`ルーム [${data.roomId}] は満員（最大4人）です！別の合言葉を試してください。`);
+                activeRoom = null;
+                roomInput.disabled = false;
+                joinRoomBtn.style.display = 'inline-block';
+                leaveRoomBtn.style.display = 'none';
+                updateLobbyUI();
+            });
+
             socket.on('roomStateSync', (data) => {
                 roomState = data.state;
+                arenaWalls = data.walls || [];
+                arenaItems = data.items || [];
                 const players = data.players || {};
                 if (players[socket.id]) {
-                    player.x = players[socket.id].x;
-                    player.y = players[socket.id].y;
-                    player.facing = players[socket.id].facing;
-                    player.hp = players[socket.id].hp;
-                    player.maxHp = players[socket.id].maxHp;
-                    myReady = Boolean(players[socket.id].isReady);
+                    const me = players[socket.id];
+                    player.x = me.x;
+                    player.y = me.y;
+                    player.facing = me.facing;
+                    player.hp = me.hp;
+                    player.maxHp = me.maxHp;
+                    player.stocks = me.stocks ?? 3;
+                    player.isDead = Boolean(me.isDead);
+                    player.isEliminated = Boolean(me.isEliminated);
+                    player.speedBoostUntil = 0;
+                    player.wins = me.wins || 0;
+                    player.points = me.points || 0;
+                    myReady = Boolean(me.isReady);
                 }
                 otherPlayers = { ...players };
                 delete otherPlayers[socket.id];
                 projectiles = [];
                 meleeEffects = [];
+                confettiParticles = [];
                 countdownBanner = '';
                 updateLobbyUI();
             });
 
-            // 準備OK状態の更新
+            // 10秒ごとの壁・アイテム出現・破壊の同期
+            socket.on('gimmicksUpdated', (data) => {
+                arenaWalls = data.walls || [];
+                arenaItems = data.items || [];
+            });
+
+            // スピードアップアイテム取得時のブースト同期
+            socket.on('playerSpeedBoosted', (data) => {
+                const until = performance.now() + data.duration;
+                if (data.id === socket.id) {
+                    player.speedBoostUntil = until;
+                    addFloatingText(player.x + 24, player.y - 16, 'SPEED UP!!', '#fff200');
+                } else if (otherPlayers[data.id]) {
+                    otherPlayers[data.id].speedBoostUntil = until;
+                    addFloatingText(otherPlayers[data.id].x + 24, otherPlayers[data.id].y - 16, 'SPEED UP!!', '#fff200');
+                }
+            });
+
             socket.on('playerReadyUpdated', (data) => {
                 if (data.id === socket.id) {
                     myReady = data.isReady;
@@ -662,11 +930,14 @@
                 updateLobbyUI();
             });
 
-            // 3秒カウントダウン演出の開始
             socket.on('matchCountdown', (data) => {
                 roomState = 'countdown';
+                arenaWalls = [];
+                arenaItems = [];
                 projectiles = [];
                 meleeEffects = [];
+                confettiParticles = [];
+                player.speedBoostUntil = 0;
                 updateLobbyUI();
 
                 let count = data.seconds || 3;
@@ -682,7 +953,6 @@
                 }, 1000);
             });
 
-            // バトルスタート！
             socket.on('matchStart', () => {
                 roomState = 'playing';
                 countdownBanner = 'FIGHT!';
@@ -692,13 +962,85 @@
                 }, 900);
             });
 
+            socket.on('matchResult', (data) => {
+                roomState = 'result';
+                const allPlayers = data.players || {};
+                if (allPlayers[socket.id]) {
+                    player.wins = allPlayers[socket.id].wins || 0;
+                    player.points = allPlayers[socket.id].points || 0;
+                }
+                for (const id in otherPlayers) {
+                    if (allPlayers[id]) {
+                        otherPlayers[id].wins = allPlayers[id].wins || 0;
+                        otherPlayers[id].points = allPlayers[id].points || 0;
+                    }
+                }
+
+                confettiParticles = [];
+                const confettiColors = ['#f1c40f', '#e74c3c', '#2ecc71', '#3498db', '#9b59b6', '#ff7f27'];
+                for (let i = 0; i < 80; i++) {
+                    confettiParticles.push({
+                        x: Math.random() * 400,
+                        y: Math.random() * -200,
+                        vx: (Math.random() - 0.5) * 3,
+                        vy: Math.random() * 3 + 2,
+                        color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+                        size: Math.random() * 6 + 4
+                    });
+                }
+
+                const winner = data.winner;
+                const resultTitle = document.getElementById('resultTitle');
+                const winnerNameDisplay = document.getElementById('winnerNameDisplay');
+                const winnerCanvas = document.getElementById('winnerCanvas');
+                const wCtx = winnerCanvas.getContext('2d');
+                wCtx.clearRect(0, 0, 96, 96);
+
+                if (winner) {
+                    const isMe = winner.id === socket.id;
+                    resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!';
+                    resultTitle.style.color = isMe ? '#f1c40f' : '#3498db';
+                    winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！`;
+
+                    const wGrid = isMe ? gridData : winner.characterData;
+                    if (wGrid) {
+                        for (let dy = 0; dy < GRID_SIZE; dy++) {
+                            for (let dx = 0; dx < GRID_SIZE; dx++) {
+                                if (wGrid[dy] && wGrid[dy][dx]) {
+                                    wCtx.fillStyle = wGrid[dy][dx];
+                                    wCtx.fillRect(dx * 3, dy * 3, 3, 3);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    resultTitle.textContent = '🤝 DRAW!';
+                    winnerNameDisplay.textContent = '引き分け！';
+                }
+
+                const sorted = Object.values(allPlayers).sort((a, b) => (b.points || 0) - (a.points || 0));
+                const scoreHtml = sorted.map((pl, idx) => `
+                    <div class="ready-row">
+                        <span>${idx + 1}位: [${pl.rank}] ${pl.name}</span>
+                        <span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span>
+                    </div>
+                `).join('');
+                document.getElementById('resultScoreList').innerHTML = scoreHtml;
+
+                updateLobbyUI();
+            });
+
             socket.on('currentPlayers', (players) => {
                 if (players[socket.id]) {
-                    player.x = players[socket.id].x;
-                    player.y = players[socket.id].y;
-                    player.facing = players[socket.id].facing;
-                    player.hp = players[socket.id].hp;
-                    player.maxHp = players[socket.id].maxHp;
+                    const me = players[socket.id];
+                    player.x = me.x;
+                    player.y = me.y;
+                    player.facing = me.facing;
+                    player.hp = me.hp;
+                    player.maxHp = me.maxHp;
+                    player.stocks = me.stocks ?? 3;
+                    player.isDead = Boolean(me.isDead);
+                    player.isEliminated = Boolean(me.isEliminated);
                 }
                 otherPlayers = { ...players };
                 delete otherPlayers[socket.id];
@@ -717,11 +1059,14 @@
                     player.hp = data.hp;
                     player.maxHp = data.maxHp;
                 } else if (otherPlayers[data.id]) {
+                    otherPlayers[data.id].name = data.name;
+                    otherPlayers[data.id].rank = data.rank;
                     otherPlayers[data.id].characterData = data.characterData;
                     otherPlayers[data.id].stats = data.stats;
                     otherPlayers[data.id].hp = data.hp;
                     otherPlayers[data.id].maxHp = data.maxHp;
                 }
+                if (roomState === 'waiting') updateLobbyUI();
             });
 
             socket.on('playerShielded', (data) => {
@@ -745,9 +1090,13 @@
                 if (data.knockbackDir === 'down') ry = -repelDist;
 
                 if (data.attackerId === socket.id && data.type === 'melee') {
-                    player.x = Math.min(352, Math.max(0, player.x + rx));
-                    player.y = Math.min(352, Math.max(0, player.y + ry));
-                    socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                    const nextX = Math.min(352, Math.max(0, player.x + rx));
+                    const nextY = Math.min(352, Math.max(0, player.y + ry));
+                    if (!collidesWithWall(nextX, nextY, 48)) {
+                        player.x = nextX;
+                        player.y = nextY;
+                        socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                    }
                 }
 
                 if (data.targetId === socket.id) {
@@ -781,8 +1130,12 @@
                     player.hp = data.hp;
                     player.maxHp = data.maxHp;
                     player.invincibleUntil = performance.now() + 350;
-                    player.x = Math.min(352, Math.max(0, player.x + dx));
-                    player.y = Math.min(352, Math.max(0, player.y + dy));
+                    const nextX = Math.min(352, Math.max(0, player.x + dx));
+                    const nextY = Math.min(352, Math.max(0, player.y + dy));
+                    if (!collidesWithWall(nextX, nextY, 48)) {
+                        player.x = nextX;
+                        player.y = nextY;
+                    }
                     socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                     addFloatingText(player.x + 24, player.y - 10, `-${data.damage}`, '#ff4d4d');
                 } else if (otherPlayers[data.targetId]) {
@@ -796,14 +1149,26 @@
             socket.on('playerKO', (data) => {
                 shakeTime = 18;
                 shakeIntensity = 10;
+                if (data.attackerId === socket.id) {
+                    player.points = data.attackerPoints || player.points;
+                } else if (otherPlayers[data.attackerId]) {
+                    otherPlayers[data.attackerId].points = data.attackerPoints || otherPlayers[data.attackerId].points;
+                }
+
                 if (data.targetId === socket.id) {
                     player.isDead = true;
+                    player.stocks = data.stocks;
+                    player.isEliminated = Boolean(data.isEliminated);
                     player.shieldUntil = 0;
-                    addFloatingText(player.x + 24, player.y, 'KO!!', '#ff0000');
+                    player.speedBoostUntil = 0;
+                    addFloatingText(player.x + 24, player.y, data.isEliminated ? 'OUT!!' : 'KO!!', '#ff0000');
                 } else if (otherPlayers[data.targetId]) {
                     otherPlayers[data.targetId].isDead = true;
+                    otherPlayers[data.targetId].stocks = data.stocks;
+                    otherPlayers[data.targetId].isEliminated = Boolean(data.isEliminated);
                     otherPlayers[data.targetId].shieldUntil = 0;
-                    addFloatingText(otherPlayers[data.targetId].x + 24, otherPlayers[data.targetId].y, 'KO!!', '#00ffcc');
+                    otherPlayers[data.targetId].speedBoostUntil = 0;
+                    addFloatingText(otherPlayers[data.targetId].x + 24, otherPlayers[data.targetId].y, data.isEliminated ? 'OUT!!' : 'KO!!', '#00ffcc');
                 }
             });
 
@@ -828,7 +1193,7 @@
             });
         }
 
-        // --- ルーム入室・準備OK・退室イベント ---
+        // --- 入室・準備・再戦・退室イベント ---
         joinRoomBtn.addEventListener('click', () => {
             const roomName = roomInput.value.trim();
             if (!roomName) {
@@ -843,13 +1208,19 @@
 
             activeRoom = roomName;
             myReady = false;
-            player.stats = calculateStatsFromGrid(gridData);
+            player.name = charNameInput.value.trim() || 'ファイター';
+            const calc = calculateStatsAndRank(gridData);
+            player.stats = calc.stats;
+            player.rank = calc.rank;
             player.maxHp = player.stats.maxHp;
             player.hp = player.maxHp;
             player.isDead = false;
+            player.isEliminated = false;
 
             socket.emit('joinRoom', {
                 roomId: activeRoom,
+                name: player.name,
+                rank: player.rank,
                 gridData: gridData,
                 stats: player.stats
             });
@@ -869,13 +1240,24 @@
             }
         });
 
+        charNameInput.addEventListener('input', () => {
+            player.name = charNameInput.value.trim() || 'ファイター';
+            localStorage.setItem('pixel_character_name_v1', player.name);
+            syncCharacterUpdate();
+        });
+
         readyBtn.addEventListener('click', () => {
             if (!socket || !socket.connected || !activeRoom || roomState !== 'waiting') return;
-            // 準備OKを押す直前に最新の絵を確実に同期
             syncCharacterUpdate();
             myReady = !myReady;
             socket.emit('toggleReady', myReady);
             updateLobbyUI();
+        });
+
+        rematchBtn.addEventListener('click', () => {
+            if (socket && socket.connected && activeRoom) {
+                socket.emit('returnToLobby');
+            }
         });
 
         backLobbyBtn.addEventListener('click', () => {
@@ -892,8 +1274,11 @@
             roomState = 'waiting';
             myReady = false;
             otherPlayers = {};
+            arenaWalls = [];
+            arenaItems = [];
             projectiles = [];
             meleeEffects = [];
+            confettiParticles = [];
             countdownBanner = '';
             connectionStatus.textContent = '🟡 待機中（合言葉を入力して入室してください）';
             connectionStatus.style.color = '#f1c40f';
@@ -951,11 +1336,19 @@
         }
 
         function syncCharacterUpdate() {
-            player.stats = calculateStatsFromGrid(gridData);
+            player.name = charNameInput.value.trim() || 'ファイター';
+            const calc = calculateStatsAndRank(gridData);
+            player.stats = calc.stats;
+            player.rank = calc.rank;
             player.maxHp = player.stats.maxHp;
             if (player.hp > player.maxHp) player.hp = player.maxHp;
             if (socket && socket.connected && activeRoom && roomState === 'waiting') {
-                socket.emit('updateCharacter', { gridData, stats: player.stats });
+                socket.emit('updateCharacter', {
+                    name: player.name,
+                    rank: player.rank,
+                    gridData,
+                    stats: player.stats
+                });
             }
         }
 
@@ -1000,7 +1393,6 @@
         }
 
         function paint(e) {
-            // バトル中・カウントダウン中は描き換えロック
             if (activeRoom && roomState !== 'waiting') return;
 
             const pos = getGridPos(e);
@@ -1028,25 +1420,6 @@
         window.addEventListener('mousemove', (e) => { if (isDrawing) paint(e); });
         window.addEventListener('mouseup', () => { if (isDrawing) { isDrawing = false; autoSave(); } });
 
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            codeOutput.value = JSON.stringify(gridData);
-            codeOutput.select();
-        });
-
-        document.getElementById('importBtn').addEventListener('click', () => {
-            if (activeRoom && roomState !== 'waiting') return;
-            try {
-                const parsed = JSON.parse(codeOutput.value);
-                if (Array.isArray(parsed) && parsed.length === GRID_SIZE) {
-                    gridData = parsed;
-                    drawEditorGrid();
-                    autoSave();
-                    syncCharacterUpdate();
-                    alert('データを読み込みました！');
-                }
-            } catch (err) { alert('解析エラー'); }
-        });
-
         function autoSave() {
             localStorage.setItem('pixel_character_32x32_data', JSON.stringify(gridData));
         }
@@ -1059,22 +1432,30 @@
                     if (Array.isArray(parsed) && parsed.length === GRID_SIZE) gridData = parsed;
                 } catch (e) {}
             }
+            const savedName = localStorage.getItem('pixel_character_name_v1');
+            if (savedName) {
+                charNameInput.value = savedName;
+                player.name = savedName;
+            }
             drawEditorGrid();
-            player.stats = calculateStatsFromGrid(gridData);
+            const calc = calculateStatsAndRank(gridData);
+            player.stats = calc.stats;
+            player.rank = calc.rank;
             player.maxHp = player.stats.maxHp;
             player.hp = player.maxHp;
+            renderSaveSlots();
         }
 
-        // --- キーボード入力と攻撃・バリアアクション（試合中のみ有効） ---
+        // --- キーボード入力とアクション ---
         const keys = {};
         window.addEventListener('keydown', (e) => {
-            const isTyping = (document.activeElement === codeOutput || document.activeElement === roomInput);
+            const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
             if (!isTyping && ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 e.preventDefault();
             }
             keys[e.key] = true;
 
-            if (isTyping || player.isDead || roomState !== 'playing') return;
+            if (isTyping || player.isDead || player.isEliminated || roomState !== 'playing') return;
 
             if (e.code === 'Space') triggerShot();
             if (e.key === 'Enter') triggerMelee();
@@ -1103,7 +1484,8 @@
 
             const cx = player.x + 24;
             const cy = player.y + 24;
-            spawnProjectile(socket ? socket.id : 'local', cx, cy, player.facing, player.stats.mainColor, player.stats.spd, true);
+            const boostedSpd = now < player.speedBoostUntil ? player.stats.spd * 1.4 : player.stats.spd;
+            spawnProjectile(socket ? socket.id : 'local', cx, cy, player.facing, player.stats.mainColor, boostedSpd, true);
 
             if (socket && socket.connected && activeRoom) {
                 socket.emit('playerAttack', {
@@ -1163,45 +1545,101 @@
             floatingTexts.push({ x, y, text, color, life: 45 });
         }
 
-        // --- ゲーム状態更新 ---
+        // --- ゲーム状態更新（壁衝突・壁破壊・アイテム取得込み） ---
         function updateGame() {
+            for (const c of confettiParticles) {
+                c.x += c.vx;
+                c.y += c.vy;
+                if (c.y > 410) {
+                    c.y = -10;
+                    c.x = Math.random() * 400;
+                }
+            }
+
             if (roomState !== 'playing') return;
 
             const now = performance.now();
             if (now < hitStopUntil) return;
-            const isTyping = (document.activeElement === codeOutput || document.activeElement === roomInput);
+            const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
 
-            if (!player.isDead && !isTyping) {
+            if (!player.isDead && !player.isEliminated && !isTyping) {
                 let moved = false;
                 const isShielding = now < player.shieldUntil;
-                const spd = isShielding ? player.stats.spd * 0.7 : player.stats.spd;
+                const isBoosted = now < player.speedBoostUntil;
 
-                if (keys['ArrowUp'] || keys['w'] || keys['W']) { player.y -= spd; player.facing = 'up'; moved = true; }
-                else if (keys['ArrowDown'] || keys['s'] || keys['S']) { player.y += spd; player.facing = 'down'; moved = true; }
-                else if (keys['ArrowLeft'] || keys['a'] || keys['A']) { player.x -= spd; player.facing = 'left'; moved = true; }
-                else if (keys['ArrowRight'] || keys['d'] || keys['D']) { player.x += spd; player.facing = 'right'; moved = true; }
+                let spd = player.stats.spd;
+                if (isBoosted) spd *= 1.4;
+                if (isShielding) spd *= 0.7;
+
+                let nextX = player.x;
+                let nextY = player.y;
+
+                if (keys['ArrowUp'] || keys['w'] || keys['W']) { nextY -= spd; player.facing = 'up'; moved = true; }
+                else if (keys['ArrowDown'] || keys['s'] || keys['S']) { nextY += spd; player.facing = 'down'; moved = true; }
+                else if (keys['ArrowLeft'] || keys['a'] || keys['A']) { nextX -= spd; player.facing = 'left'; moved = true; }
+                else if (keys['ArrowRight'] || keys['d'] || keys['D']) { nextX += spd; player.facing = 'right'; moved = true; }
 
                 const charDisplaySize = GRID_SIZE * 1.5;
-                if (player.x < 0) player.x = 0;
-                if (player.x > gameCanvas.width - charDisplaySize) player.x = gameCanvas.width - charDisplaySize;
-                if (player.y < 0) player.y = 0;
-                if (player.y > gameCanvas.height - charDisplaySize) player.y = gameCanvas.height - charDisplaySize;
+                nextX = Math.min(gameCanvas.width - charDisplaySize, Math.max(0, nextX));
+                nextY = Math.min(gameCanvas.height - charDisplaySize, Math.max(0, nextY));
 
-                if (moved && socket && socket.connected && activeRoom) {
-                    socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                // 壁にぶつからなければ移動確定
+                if (moved && !collidesWithWall(nextX, nextY, charDisplaySize)) {
+                    player.x = nextX;
+                    player.y = nextY;
+                    if (socket && socket.connected && activeRoom) {
+                        socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                    }
+                } else if (moved) {
+                    // 向きだけ変わった場合も同期
+                    if (socket && socket.connected && activeRoom) {
+                        socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                    }
+                }
+
+                // スピードアップアイテムの取得判定
+                if (socket && socket.connected && activeRoom) {
+                    const cx = player.x + 24;
+                    const cy = player.y + 24;
+                    for (let i = arenaItems.length - 1; i >= 0; i--) {
+                        const it = arenaItems[i];
+                        if (Math.hypot(cx - it.x, cy - it.y) < 32) {
+                            socket.emit('collectItem', { itemId: it.id });
+                            arenaItems.splice(i, 1); // ローカルでも二重取得防止
+                            break;
+                        }
+                    }
                 }
             }
 
+            // ショットの移動・壁衝突破壊・プレイヤー命中判定
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
                 p.x += p.vx;
                 p.y += p.vy;
                 p.life--;
 
+                // 1. 壁に当たったかチェック
+                let hitWall = false;
+                for (const w of arenaWalls) {
+                    if (p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h) {
+                        hitWall = true;
+                        if (p.isMine && socket && socket.connected && activeRoom) {
+                            socket.emit('damageWall', { wallId: w.id, type: 'shot' });
+                        }
+                        break;
+                    }
+                }
+                if (hitWall) {
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // 2. 他のプレイヤーに当たったかチェック
                 if (p.isMine && socket && socket.connected && activeRoom) {
                     for (const id in otherPlayers) {
                         const target = otherPlayers[id];
-                        if (target.isDead) continue;
+                        if (target.isDead || target.isEliminated) continue;
                         if (p.x > target.x + 4 && p.x < target.x + 44 && p.y > target.y + 4 && p.y < target.y + 44) {
                             socket.emit('applyDamage', { targetId: id, facing: p.facing, type: 'shot' });
                             p.life = 0;
@@ -1215,19 +1653,32 @@
                 }
             }
 
+            // 近接斬撃の壁破壊＆プレイヤー命中判定
             for (let i = meleeEffects.length - 1; i >= 0; i--) {
                 const m = meleeEffects[i];
                 m.timer--;
 
                 if (m.isMine && !m.hasHit && socket && socket.connected && activeRoom) {
-                    for (const id in otherPlayers) {
-                        const target = otherPlayers[id];
-                        if (target.isDead) continue;
-                        if (m.hx < target.x + 44 && m.hx + m.hw > target.x + 4 &&
-                            m.hy < target.y + 44 && m.hy + m.hh > target.y + 4) {
+                    // 壁への近接破壊判定
+                    for (const w of arenaWalls) {
+                        if (m.hx < w.x + w.w && m.hx + m.hw > w.x && m.hy < w.y + w.h && m.hy + m.hh > w.y) {
                             m.hasHit = true;
-                            socket.emit('applyDamage', { targetId: id, facing: m.facing, type: 'melee' });
+                            socket.emit('damageWall', { wallId: w.id, type: 'melee' });
                             break;
+                        }
+                    }
+
+                    // プレイヤーへの近接命中判定
+                    if (!m.hasHit) {
+                        for (const id in otherPlayers) {
+                            const target = otherPlayers[id];
+                            if (target.isDead || target.isEliminated) continue;
+                            if (m.hx < target.x + 44 && m.hx + m.hw > target.x + 4 &&
+                                m.hy < target.y + 44 && m.hy + m.hh > target.y + 4) {
+                                m.hasHit = true;
+                                socket.emit('applyDamage', { targetId: id, facing: m.facing, type: 'melee' });
+                                break;
+                            }
                         }
                     }
                 }
@@ -1244,10 +1695,12 @@
             }
         }
 
-        function drawEntity(ctx, x, y, facing, charData, hp, maxHp, isDead, isInvincible, isShielding, shieldCdRatio) {
+        function drawEntity(ctx, x, y, facing, charData, hp, maxHp, stocks, isDead, isEliminated, isInvincible, isShielding, isSpeedBoosted, shieldCdRatio, name, rank) {
+            if (isEliminated) return;
+
             if (isDead) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.font = 'bold 12px sans-serif';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.font = 'bold 11px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('RESPAWNING...', x + 24, y + 28);
                 return;
@@ -1255,6 +1708,19 @@
 
             if (isInvincible && Math.floor(performance.now() / 60) % 2 === 0) {
                 ctx.globalAlpha = 0.4;
+            }
+
+            // スピードアップ中の黄色オーラ演出
+            if (isSpeedBoosted) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x + 24, y + 24, 28 + Math.sin(performance.now() / 60) * 3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 242, 0, 0.22)';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#fff200';
+                ctx.stroke();
+                ctx.restore();
             }
 
             let hasPixels = false;
@@ -1307,10 +1773,19 @@
             if (facing === 'down') { ctx.moveTo(x + 24, y + 52); ctx.lineTo(x + 20, y + 47); ctx.lineTo(x + 28, y + 47); }
             ctx.fill();
 
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`[${rank}] ${name}`, x + 24, y - 22);
+
+            const hearts = '❤️'.repeat(Math.max(0, stocks));
+            ctx.font = '9px sans-serif';
+            ctx.fillText(hearts, x + 24, y - 12);
+
             const barWidth = 44;
             const barHeight = 5;
             const barX = x + 2;
-            const barY = y - 10;
+            const barY = y - 8;
             const ratio = Math.max(0, Math.min(1, hp / maxHp));
 
             ctx.fillStyle = '#333';
@@ -1346,19 +1821,61 @@
                 gameCtx.beginPath(); gameCtx.moveTo(0, i); gameCtx.lineTo(gameCanvas.width, i); gameCtx.stroke();
             }
 
+            // 10秒ごとに出現する壁（ブロック）の描画
+            for (const w of arenaWalls) {
+                const hpRatio = w.hp / w.maxHp;
+                gameCtx.fillStyle = hpRatio > 0.6 ? '#7f8c8d' : hpRatio > 0.3 ? '#95a5a6' : '#e67e22';
+                gameCtx.fillRect(w.x, w.y, w.w, w.h);
+                gameCtx.strokeStyle = '#ecf0f1';
+                gameCtx.lineWidth = 2;
+                gameCtx.strokeRect(w.x + 1, w.y + 1, w.w - 2, w.h - 2);
+
+                // レンガ風の模様＆ダメージ時のヒビ表示
+                gameCtx.strokeStyle = 'rgba(0,0,0,0.35)';
+                gameCtx.beginPath();
+                gameCtx.moveTo(w.x, w.y + 20); gameCtx.lineTo(w.x + 40, w.y + 20);
+                gameCtx.moveTo(w.x + 20, w.y); gameCtx.lineTo(w.x + 20, w.y + 20);
+                if (hpRatio <= 0.6) {
+                    gameCtx.moveTo(w.x + 8, w.y + 8); gameCtx.lineTo(w.x + 32, w.y + 32);
+                }
+                gameCtx.stroke();
+            }
+
+            // スピードアップアイテム（⚡）の描画
+            for (const it of arenaItems) {
+                const pulse = Math.sin(now / 150) * 2.5;
+                gameCtx.save();
+                gameCtx.beginPath();
+                gameCtx.arc(it.x, it.y, 13 + pulse, 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(255, 242, 0, 0.3)';
+                gameCtx.fill();
+                gameCtx.lineWidth = 2;
+                gameCtx.strokeStyle = '#fff200';
+                gameCtx.stroke();
+
+                gameCtx.font = 'bold 14px sans-serif';
+                gameCtx.textAlign = 'center';
+                gameCtx.textBaseline = 'middle';
+                gameCtx.fillStyle = '#fff200';
+                gameCtx.fillText('⚡', it.x, it.y);
+                gameCtx.restore();
+            }
+
             const myShieldCdRatio = (now - player.lastShieldTime) / SHIELD_COOLDOWN;
             drawEntity(
                 gameCtx, player.x, player.y, player.facing, gridData,
-                player.hp, player.maxHp, player.isDead,
-                now < player.invincibleUntil, now < player.shieldUntil, myShieldCdRatio
+                player.hp, player.maxHp, player.stocks, player.isDead, player.isEliminated,
+                now < player.invincibleUntil, now < player.shieldUntil, now < player.speedBoostUntil,
+                myShieldCdRatio, player.name, player.rank
             );
 
             for (const id in otherPlayers) {
                 const p = otherPlayers[id];
                 drawEntity(
                     gameCtx, p.x, p.y, p.facing || 'right', p.characterData,
-                    p.hp || 100, p.maxHp || 100, p.isDead,
-                    false, now < (p.shieldUntil || 0), null
+                    p.hp || 100, p.maxHp || 100, p.stocks ?? 3, p.isDead, p.isEliminated,
+                    false, now < (p.shieldUntil || 0), now < (p.speedBoostUntil || 0),
+                    null, p.name || '相手', p.rank || 'B'
                 );
             }
 
@@ -1387,7 +1904,11 @@
                 gameCtx.fillText(ft.text, ft.x, ft.y);
             }
 
-            // 3・2・1・FIGHT! カウントダウンオーバーレイ描画
+            for (const c of confettiParticles) {
+                gameCtx.fillStyle = c.color;
+                gameCtx.fillRect(c.x, c.y, c.size, c.size * 0.6);
+            }
+
             if (countdownBanner) {
                 if (roomState === 'countdown') {
                     gameCtx.fillStyle = 'rgba(0, 0, 0, 0.45)';
