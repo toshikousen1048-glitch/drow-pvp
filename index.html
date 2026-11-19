@@ -3,260 +3,384 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>32x32 Pixel Online PvP Battle</title>
+    <title>32x32 Pixel PvP Battle</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        html, body {
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden; /* スクロール完全禁止 */
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a2e;
+            color: #ffffff;
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #121212;
-            color: #e0e0e0;
             display: flex;
             flex-direction: column;
             align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        /* --- 共通上部ナビゲーションバー（高さ46px固定） --- */
-        .top-navbar {
+        /* ==========================================
+           🏠 ホーム画面オーバーレイ
+        ========================================== */
+        #homeScreen {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, #1e2749 0%, #0f0f1a 100%);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+        }
+        #demoBgCanvas {
+            position: absolute;
+            inset: 0;
             width: 100%;
-            height: 46px;
-            background: #1a1a28;
-            border-bottom: 1px solid #33334d;
+            height: 100%;
+            opacity: 0.25;
+            pointer-events: none;
+        }
+        .home-content {
+            position: relative;
+            z-index: 2;
+            max-width: 520px;
+            width: 100%;
+            background: rgba(22, 33, 62, 0.88);
+            border: 2px solid #3a3a52;
+            border-radius: 16px;
+            padding: 28px 24px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.65);
+        }
+        .game-logo {
+            font-size: 2.2rem;
+            font-weight: 900;
+            letter-spacing: 2px;
+            margin: 0 0 8px 0;
+            background: linear-gradient(90deg, #ff4d4d, #f1c40f, #2ecc71, #00a2e8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .game-subtitle {
+            color: #a4b0be;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+        .home-points-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #0f0f1a;
+            border: 1.5px solid #f1c40f;
+            color: #f1c40f;
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-weight: bold;
+            font-size: 1rem;
+            margin-bottom: 22px;
+        }
+        .home-btn-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .btn-play-start {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(46, 204, 113, 0.4);
+            transition: transform 0.1s;
+        }
+        .btn-play-start:hover { transform: translateY(-2px); }
+        .home-sub-btns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .btn-gacha {
+            background: linear-gradient(135deg, #f39c12, #d35400);
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-howto {
+            background: #2f3640;
+            color: white;
+            border: 1px solid #57606f;
+            padding: 12px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .home-sound-row {
+            margin-top: 16px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        /* ==========================================
+           🎰 モーダル（ガチャ・遊び方）
+        ========================================== */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            z-index: 300;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal-box {
+            background: #16213e;
+            border: 2px solid #3a3a52;
+            border-radius: 14px;
+            max-width: 440px;
+            width: 100%;
+            padding: 22px;
+            text-align: center;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.7);
+        }
+        .gacha-capsule {
+            width: 96px;
+            height: 96px;
+            margin: 14px auto;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f1c40f 50%, #e74c3c 50%);
+            border: 4px solid #fff;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 0 16px;
-            flex-shrink: 0;
-            z-index: 50;
+            justify-content: center;
+            font-size: 2.2rem;
+            box-shadow: 0 6px 20px rgba(241, 196, 15, 0.4);
         }
+        .gacha-capsule.shaking {
+            animation: shakeCapsule 0.15s infinite;
+        }
+        @keyframes shakeCapsule {
+            0% { transform: rotate(-12deg) scale(1.05); }
+            50% { transform: rotate(12deg) scale(1.05); }
+            100% { transform: rotate(-12deg) scale(1.05); }
+        }
+        .rarity-tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+        }
+        .rar-UR { background: linear-gradient(90deg, #ff0080, #ff8c00, #40e0d0); color: #fff; }
+        .rar-SR { background: #f1c40f; color: #000; }
+        .rar-R  { background: #3498db; color: #fff; }
 
+        /* ==========================================
+           🧭 メインヘッダー＆ステップナビ
+        ========================================== */
+        .top-nav-bar {
+            width: 100%;
+            background: #0f0f1a;
+            border-bottom: 1px solid #2e2e42;
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
         .nav-left, .nav-right {
             display: flex;
             align-items: center;
             gap: 8px;
         }
-
-        .step-indicator {
+        .step-tabs {
             display: flex;
-            align-items: center;
             gap: 6px;
-            font-size: 0.78rem;
-            background: #12121c;
-            padding: 4px 12px;
-            border-radius: 20px;
-            border: 1px solid #2e2e46;
         }
-        .step-pill {
-            padding: 2px 8px;
-            border-radius: 12px;
-            color: #777;
-            font-weight: bold;
-        }
-        .step-pill.active {
-            background: #3498db;
-            color: #fff;
-        }
-
-        /* --- メイン作業エリア（残り高さすべてを使って中央配置） --- */
-        .stage-container {
-            flex: 1;
-            width: 100%;
-            max-width: 1060px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 14px;
-            overflow: hidden;
-        }
-
-        /* 各ステップの空間コンテナ */
-        .step-view {
-            display: none;
-            width: 100%;
-            height: 100%;
-            align-items: center;
-            justify-content: center;
-        }
-        .step-view.active {
-            display: flex;
-        }
-
-        /* =========================================
-           STEP 1: キャラメイク専用空間
-           ========================================= */
-        .editor-layout {
-            display: flex;
-            gap: 18px;
-            background: #1e1e2a;
-            padding: 14px 18px;
-            border-radius: 14px;
-            border: 1px solid #34344e;
-            box-shadow: 0 8px 28px rgba(0,0,0,0.5);
-            align-items: stretch;
-            max-height: 100%;
-        }
-
-        .editor-left {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-        }
-
-        .editor-wrapper {
-            position: relative;
-            width: min(360px, 52vh);
-            height: min(360px, 52vh);
-            border: 2px solid #4a4a6a;
-            background-color: #ffffff;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-
-        canvas {
-            display: block;
-            image-rendering: pixelated;
-        }
-
-        #pixelCanvas, #gameCanvas {
-            width: 100%;
-            height: 100%;
-            cursor: crosshair;
-        }
-
-        .char-identity-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            width: 100%;
-            background: #252538;
-            padding: 7px 10px;
-            border-radius: 8px;
+        .step-tab {
+            background: #1e2749;
+            color: #a4b0be;
             border: 1px solid #3a3a52;
-        }
-
-        .char-identity-bar input {
-            background: #121212;
-            border: 1px solid #555;
-            color: #fff;
-            padding: 4px 8px;
+            padding: 6px 12px;
             border-radius: 6px;
             font-size: 0.85rem;
             font-weight: bold;
-            width: 120px;
-            outline: none;
+            cursor: pointer;
         }
-
-        .rank-badge {
-            padding: 2px 8px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 0.78rem;
+        .step-tab.active {
+            background: #e94560;
             color: #fff;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+            border-color: #ff7675;
         }
-        .rank-S { background: linear-gradient(135deg, #f1c40f, #e67e22); border: 1px solid #fff; }
-        .rank-A { background: linear-gradient(135deg, #e74c3c, #9b59b6); }
-        .rank-B { background: #2980b9; }
-        .rank-C { background: #7f8c8d; }
+        .small-btn {
+            background: #2f3640;
+            color: #fff;
+            border: 1px solid #57606f;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .small-btn:hover { background: #3d4654; }
 
-        .editor-right {
-            display: flex;
+        /* ==========================================
+           📦 各ステップ画面のレイアウト
+        ========================================== */
+        .step-screen {
+            display: none;
+            width: 100%;
+            max-width: 960px;
+            padding: 16px;
             flex-direction: column;
-            justify-content: space-between;
-            width: 310px;
-            gap: 8px;
-        }
-
-        .panel {
-            background: #262636;
-            padding: 8px 10px;
-            border-radius: 8px;
-            border: 1px solid #35354c;
-        }
-
-        .panel h3 {
-            margin: 0 0 5px 0;
-            font-size: 0.78rem;
-            color: #bbb;
-            border-bottom: 1px solid #3e3e58;
-            padding-bottom: 3px;
-            display: flex;
-            justify-content: space-between;
             align-items: center;
         }
-
-        .palette {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 4px;
-            margin-bottom: 5px;
+        .step-screen.active {
+            display: flex;
         }
 
-        .special-palette {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 4px;
-            margin-bottom: 6px;
-        }
-
-        .color-btn {
+        .editor-layout {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
             width: 100%;
-            height: 22px;
-            border: 2px solid #555;
-            border-radius: 4px;
+        }
+        .panel-box {
+            background: #16213e;
+            border: 1px solid #2e2e42;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+        }
+
+        #pixelCanvas {
+            background: #ffffff;
+            border: 3px solid #3a3a52;
+            border-radius: 6px;
+            cursor: crosshair;
+            touch-action: none;
+            display: block;
+            margin: 0 auto;
+        }
+        .tool-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .tool-btn {
+            background: #0f3460;
+            color: #fff;
+            border: 1px solid #3a3a52;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.82rem;
             cursor: pointer;
-            transition: transform 0.1s;
+        }
+        .tool-btn.active-tool {
+            background: #e94560;
+            border-color: #ff7675;
+            font-weight: bold;
+        }
+        .tool-btn.active-mirror {
+            background: #8e44ad;
+            border-color: #be90d4;
+            font-weight: bold;
+        }
+
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 6px;
+            margin-top: 10px;
+        }
+        .color-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            border: 2px solid rgba(255,255,255,0.2);
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.65rem;
+            font-size: 0.75rem;
             font-weight: bold;
             color: #fff;
             text-shadow: 0 1px 2px #000;
         }
-        .color-btn:hover { transform: scale(1.06); }
-        .color-btn.active { border-color: #fff; box-shadow: 0 0 8px #3498db; }
+        .color-btn.active {
+            border: 3px solid #ffffff;
+            transform: scale(1.1);
+            box-shadow: 0 0 8px rgba(255,255,255,0.7);
+        }
         .color-btn.locked {
-            background: #181822 !important;
-            color: #666;
-            cursor: not-allowed;
-            border-style: dashed;
+            background: #2c2c3e;
+            color: #777;
+            cursor: pointer;
         }
 
-        .brush-sizes, .tools {
+        .stat-row {
+            margin: 8px 0;
+        }
+        .stat-label {
             display: flex;
-            gap: 4px;
-            margin-bottom: 4px;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 3px;
+        }
+        .stat-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: #0f0f1a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .stat-bar-fill {
+            height: 100%;
+            transition: width 0.2s;
         }
 
-        .save-slots {
+        .rank-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+        .rank-S { background: #f1c40f; color: #000; }
+        .rank-A { background: #e74c3c; color: #fff; }
+        .rank-B { background: #3498db; color: #fff; }
+        .rank-C { background: #7f8c8d; color: #fff; }
+
+        .slots-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 5px;
+            gap: 8px;
+            margin-top: 8px;
         }
         .slot-card {
-            background: #1b1b28;
-            border: 1px solid #3c3c54;
+            background: #0f0f1a;
+            border: 1px solid #3a3a52;
             border-radius: 6px;
-            padding: 4px 6px;
-            font-size: 0.72rem;
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
+            padding: 8px;
+            font-size: 0.8rem;
         }
         .slot-header {
             font-weight: bold;
-            color: #eee;
+            margin-bottom: 5px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -266,742 +390,492 @@
             gap: 4px;
         }
         .slot-btns button {
-            padding: 2px 4px;
-            font-size: 0.68rem;
-        }
-
-        .stat-row {
-            margin-bottom: 3px;
-            font-size: 0.72rem;
-        }
-        .stat-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 1px;
-        }
-        .stat-bar-bg {
-            width: 100%;
-            height: 5px;
-            background: #12121a;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .stat-bar-fill {
-            height: 100%;
-            transition: width 0.2s;
-        }
-
-        .to-entry-btn {
-            background: linear-gradient(135deg, #27ae60, #2ecc71);
-            font-size: 0.98rem;
-            padding: 11px;
-            border-radius: 8px;
-            box-shadow: 0 4px 14px rgba(46, 204, 113, 0.4);
-            flex: none;
-        }
-        .to-entry-btn:hover { filter: brightness(1.08); }
-
-        /* =========================================
-           STEP 2: エントリー＆待機室（ロビー）専用空間
-           ========================================= */
-        .lobby-layout {
-            display: flex;
-            gap: 24px;
-            background: #1e1e2e;
-            padding: 22px 26px;
-            border-radius: 16px;
-            border: 1px solid #3a3a58;
-            box-shadow: 0 10px 32px rgba(0,0,0,0.6);
-            max-width: 780px;
-            width: 100%;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .lobby-char-preview {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background: #252538;
-            padding: 16px;
-            border-radius: 12px;
-            border: 1px solid #3e3e5e;
-            width: 220px;
-            flex-shrink: 0;
-        }
-
-        #lobbyPreviewCanvas {
-            width: 128px;
-            height: 128px;
-            background: #141422;
-            border: 2px solid #4a4a6a;
-            border-radius: 8px;
-            margin-bottom: 10px;
-        }
-
-        .lobby-room-panel {
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+            padding: 3px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #222;
+            color: #fff;
+            cursor: pointer;
+        }
+        .slot-btns button.primary {
+            background: #2980b9;
+            border-color: #3498db;
         }
 
-        .entry-input-box {
+        .next-step-btn {
+            width: 100%;
+            margin-top: 14px;
+            padding: 12px;
+            background: linear-gradient(135deg, #e94560, #c0392b);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* ==========================================
+           🚪 STEP 2: ロビー・待機室
+        ========================================== */
+        .lobby-box {
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        .room-input-group {
             display: flex;
             gap: 8px;
-            background: #141422;
-            padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid #3a3a58;
-            align-items: center;
+            margin: 12px 0;
         }
-
-        .entry-input-box input {
+        .room-input-group input {
             flex: 1;
-            background: #0d0d16;
-            border: 1px solid #555;
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: bold;
-            outline: none;
-        }
-        .entry-input-box input:focus { border-color: #3498db; }
-
-        .ready-card {
-            background: #252538;
+            padding: 10px;
+            border-radius: 6px;
             border: 1px solid #3a3a52;
-            border-radius: 10px;
-            padding: 10px 14px;
-            width: 100%;
+            background: #0f0f1a;
+            color: #fff;
+            font-size: 1rem;
         }
-
+        .btn-join {
+            background: #2ecc71;
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn-leave {
+            background: #e74c3c;
+            color: #fff;
+            border: none;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .ready-list {
+            background: #0f0f1a;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 12px 0;
+            text-align: left;
+        }
         .ready-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 6px 0;
-            font-size: 0.85rem;
-            border-bottom: 1px solid #33334d;
+            padding: 6px 4px;
+            border-bottom: 1px solid #1f1f30;
+            font-size: 0.9rem;
         }
         .ready-row:last-child { border-bottom: none; }
-
         .badge-ok {
-            background: #27ae60;
-            color: #fff;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 0.75rem;
+            background: #2ecc71;
+            color: #000;
+            padding: 2px 8px;
+            border-radius: 4px;
             font-weight: bold;
+            font-size: 0.8rem;
         }
         .badge-wait {
             background: #555;
             color: #ddd;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
         }
-
-        #readyBtn {
+        .btn-ready {
             width: 100%;
-            padding: 12px;
-            font-size: 1rem;
-            border-radius: 8px;
-            background: #27ae60;
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
-            flex: none;
-        }
-        #readyBtn:hover { background: #219150; }
-        #readyBtn.is-ready {
-            background: #e67e22;
-            box-shadow: 0 4px 12px rgba(230, 126, 34, 0.4);
-        }
-
-        /* =========================================
-           STEP 3: バトルアリーナ専用空間（1,2,3 → FIGHT!）
-           ========================================= */
-        .battle-layout {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            height: 100%;
-        }
-
-        .canvas-wrapper {
-            position: relative;
-            width: min(440px, 72vh);
-            height: min(440px, 72vh);
-            border: 2px solid #4a4a6a;
-            box-shadow: 0 8px 28px rgba(0,0,0,0.6);
-            background-color: #161625;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        .arena-overlay {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(16, 16, 28, 0.92);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 18px;
-            text-align: center;
-            z-index: 10;
-        }
-
-        #resultTitle {
-            font-size: 1.6rem;
+            padding: 14px;
+            font-size: 1.05rem;
             font-weight: bold;
-            color: #f1c40f;
-            text-shadow: 0 0 12px rgba(241, 196, 15, 0.6);
-            margin: 0 0 6px 0;
-        }
-        #winnerCanvas {
-            background: #252538;
-            border: 2px solid #f1c40f;
+            border: none;
             border-radius: 8px;
-            margin: 4px 0;
+            background: #3498db;
+            color: #fff;
+            cursor: pointer;
+        }
+        .btn-ready.is-ready {
+            background: #f39c12;
+            color: #000;
         }
 
-        .battle-bottom-bar {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
+        /* ==========================================
+           ⚔️ STEP 3: バトルアリーナ（640x640）
+        ========================================== */
+        .arena-wrapper {
+            position: relative;
             width: 100%;
+            max-width: 640px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-
-        .instructions {
-            font-size: 0.76rem;
-            color: #ccc;
-            background: #222234;
-            padding: 6px 14px;
+        #gameCanvas {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            background: #12121f;
+            border: 3px solid #3a3a52;
             border-radius: 8px;
-            border: 1px solid #35354e;
+            display: block;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+        .controls-hint {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #bdc3c7;
+            background: #16213e;
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid #2e2e42;
             text-align: center;
         }
-        .key-badge {
-            background: #3a3a52;
+        .kbd {
+            background: #0f0f1a;
+            border: 1px solid #555;
             padding: 1px 6px;
             border-radius: 4px;
-            color: #fff;
+            font-family: monospace;
+            color: #f1c40f;
             font-weight: bold;
-            border: 1px solid #555;
         }
 
-        /* スマホ用タッチ操作（必要な時だけ表示） */
-        .touch-controls {
+        /* リザルトオーバーレイ */
+        #resultOverlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 15, 26, 0.88);
+            border-radius: 8px;
             display: none;
-            width: min(440px, 92vw);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+            z-index: 20;
+        }
+
+        /* スマホ用タッチコントローラー */
+        #touchControls {
+            display: none;
+            width: 100%;
+            max-width: 640px;
             justify-content: space-between;
             align-items: center;
-            background: #222234;
-            padding: 6px 12px;
-            border-radius: 10px;
-            border: 1px solid #3a3a52;
+            margin-top: 12px;
+            padding: 0 10px;
             user-select: none;
         }
-        .touch-controls.visible {
+        #touchControls.visible {
             display: flex;
         }
         .dpad {
             display: grid;
-            grid-template-columns: repeat(3, 36px);
-            grid-template-rows: repeat(2, 36px);
+            grid-template-columns: repeat(3, 48px);
+            grid-template-rows: repeat(3, 48px);
             gap: 4px;
         }
-        .dpad button, .action-pad button {
-            background: #3a3a52;
-            border: 1px solid #555;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            padding: 0;
-            height: 36px;
-        }
-        .action-pad {
-            display: flex;
-            gap: 6px;
-        }
-        .action-pad button {
-            width: 52px;
-            height: 44px;
-            font-size: 0.74rem;
-        }
-
-        /* 共通ボタン */
-        button {
-            flex: 1;
-            padding: 5px 8px;
-            border: none;
-            border-radius: 6px;
-            background: #38384c;
+        .dpad button, .action-pads button {
+            background: rgba(255,255,255,0.12);
+            border: 1.5px solid rgba(255,255,255,0.3);
             color: #fff;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.15s;
-            font-size: 0.75rem;
-        }
-        button:hover { background: #4a4a64; }
-        button.active-tool { background: #27ae60; }
-        button.active-mirror { background: #8e44ad; box-shadow: 0 0 6px #9b59b6; }
-        button.primary { background: #3498db; }
-        button.primary:hover { background: #2980b9; }
-        button.danger { background: #e74c3c; }
-        button.danger:hover { background: #c0392b; }
-
-        /* --- ホーム画面＆モーダル --- */
-        #homeScreen {
-            position: fixed;
-            inset: 0;
-            background: #0d0d1a;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            padding: 20px;
-        }
-        #demoBgCanvas {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0.35;
-            pointer-events: none;
-        }
-        .home-card {
-            position: relative;
-            z-index: 2;
-            background: rgba(24, 24, 42, 0.92);
-            border: 2px solid #3a3a5c;
-            border-radius: 16px;
-            padding: 26px 30px;
-            max-width: 460px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 12px 40px rgba(0,0,0,0.8);
-        }
-        .home-title {
-            font-size: 1.85rem;
-            font-weight: 900;
-            margin: 0 0 6px 0;
-            background: linear-gradient(90deg, #00e5ff, #f1c40f, #ff4d4d);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .home-pt-badge {
-            display: inline-block;
-            background: #252538;
-            border: 1px solid #f1c40f;
-            color: #f1c40f;
-            padding: 5px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 0.88rem;
-            margin-bottom: 16px;
-        }
-        .home-menu-btns {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-bottom: 14px;
-        }
-        .home-btn-start {
-            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            border-radius: 10px;
             font-size: 1.1rem;
-            padding: 13px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4);
-        }
-        .home-btn-gacha {
-            background: linear-gradient(135deg, #8e44ad, #e67e22);
-            font-size: 0.98rem;
-            padding: 11px;
-            border-radius: 10px;
-        }
-        .home-sub-row {
-            display: flex;
-            gap: 8px;
-        }
-
-        .modal-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.82);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 200;
-            padding: 16px;
-        }
-        .modal-box {
-            background: #1e1e30;
-            border: 2px solid #4a4a6a;
-            border-radius: 14px;
-            padding: 20px 24px;
-            max-width: 440px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-        }
-        .gacha-capsule {
-            width: 84px;
-            height: 84px;
-            margin: 10px auto;
-            border-radius: 50%;
-            background: radial-gradient(circle at 30% 30%, #fff, #3498db 55%, #1b4f72);
-            border: 3px solid #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2rem;
-        }
-        .gacha-capsule.shaking { animation: capsuleShake 0.15s infinite; }
-        @keyframes capsuleShake {
-            0% { transform: rotate(-12deg) scale(1.05); }
-            50% { transform: rotate(12deg) scale(1.1); }
-            100% { transform: rotate(-12deg) scale(1.05); }
-        }
-        .rarity-tag {
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 6px;
             font-weight: bold;
-            font-size: 0.85rem;
-            margin-bottom: 4px;
+            touch-action: manipulation;
         }
-        .rar-UR { background: linear-gradient(90deg, #ff0080, #ff8c00, #40e0d0); color: #fff; }
-        .rar-SR { background: linear-gradient(135deg, #f1c40f, #e67e22); color: #000; }
-        .rar-R  { background: #2980b9; color: #fff; }
+        .dpad button:active, .action-pads button:active {
+            background: rgba(255,255,255,0.35);
+        }
+        .action-pads {
+            display: flex;
+            gap: 10px;
+        }
+        .action-pads button {
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            font-size: 0.85rem;
+        }
     </style>
-    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
     <!-- 🏠 ホーム画面 -->
     <div id="homeScreen">
         <canvas id="demoBgCanvas" width="800" height="600"></canvas>
-        <div class="home-card">
-            <h1 class="home-title">32×32 PIXEL PVP</h1>
-            <p style="font-size: 0.84rem; color: #bbb; margin: 0 0 16px 0;">描いたドット絵がそのまま戦士になるオンライン対戦バトル！</p>
-            
-            <div class="home-pt-badge">
-                💰 所持ポイント: <span id="homePointsVal">300</span> Pt
+        <div class="home-content">
+            <h1 class="game-logo">PIXEL PVP 32x32</h1>
+            <p class="game-subtitle">描いたドット絵がそのまま戦士になるオンライン対戦アクション！</p>
+            <div class="home-points-pill">
+                🪙 所持ポイント: <span id="homePointsVal">300</span> Pt
             </div>
-
-            <div class="home-menu-btns">
-                <button class="home-btn-start" onclick="enterGameFromHome()">⚔️ ゲームスタート</button>
-                <button class="home-btn-gacha" onclick="openGachaModal()">🎰 ポイントガチャ（1回 300Pt）</button>
-                <div class="home-sub-row">
-                    <button onclick="openHowToModal()" style="padding: 9px; background: #2980b9;">📖 遊び方</button>
-                    <button id="homeBgmBtn" onclick="toggleBgm()" style="padding: 9px;">🎵 BGM: ON</button>
-                    <button id="homeSeBtn" onclick="toggleSe()" style="padding: 9px;">🔊 SE: ON</button>
+            <div class="home-btn-stack">
+                <button class="btn-play-start" onclick="enterGameFromHome()">🎨 キャラを描いてバトルへ！</button>
+                <div class="home-sub-btns">
+                    <button class="btn-gacha" onclick="openGachaModal()">🎰 特別インクガチャ</button>
+                    <button class="btn-howto" onclick="openHowToModal()">📖 ルール・操作説明</button>
                 </div>
             </div>
-            <p style="font-size: 0.72rem; color: #888; margin: 0;">① 絵を描く → ② エントリー＆待機室 → ③ 1, 2, 3でバトル開始！</p>
+            <div class="home-sound-row">
+                <button id="homeBgmBtn" class="small-btn" onclick="toggleBgm()">🎵 BGM: ON</button>
+                <button id="homeSeBtn" class="small-btn" onclick="toggleSe()">🔊 SE: ON</button>
+            </div>
         </div>
     </div>
 
     <!-- 🎰 ガチャモーダル -->
-    <div id="gachaModal" class="modal-backdrop">
+    <div id="gachaModal" class="modal-overlay">
         <div class="modal-box">
-            <h2 style="margin: 0 0 6px 0; color: #f1c40f;">🎰 特別インク＆称号ガチャ</h2>
-            <p style="font-size: 0.8rem; color: #bbb; margin: 0 0 10px 0;">
-                所持ポイント: <strong id="modalPointsVal" style="color: #f1c40f;">300</strong> Pt（1回 300Pt）
-            </p>
+            <h2 style="margin-top:0; color:#f1c40f;">🎰 特別インクガチャ</h2>
+            <p style="font-size:0.85rem; color:#ccc;">対戦で貯めたポイントでレアな輝きを持つインクを解放しよう！（1回 300Pt）</p>
+            <div style="font-weight:bold; color:#f1c40f; margin-bottom:6px;">所持: <span id="modalPointsVal">300</span> Pt</div>
             <div id="gachaCapsule" class="gacha-capsule">🎁</div>
-            <div id="gachaResultArea" style="min-height: 64px; margin-bottom: 10px;">
-                <p style="font-size: 0.82rem; color: #aaa;">特別インクを当てるとお絵描きパレットが解放されるよ！</p>
+            <div id="gachaResultArea" style="min-height:58px; margin-bottom:12px;">
+                <p style="font-size:0.85rem; color:#aaa;">ボタンを押してカプセルを開けよう！</p>
             </div>
-            <div style="display: flex; gap: 8px;">
-                <button id="pullGachaBtn" onclick="pullGacha()" style="background: linear-gradient(135deg, #e67e22, #f1c40f); color: #000; padding: 10px; font-size: 0.9rem;">
-                    🎲 ガチャを引く (300Pt)
-                </button>
-                <button onclick="closeGachaModal()" style="background: #555; padding: 10px; flex: 0.5;">閉じる</button>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button class="btn-gacha" style="flex:1;" onclick="pullGacha()">1回まわす (300Pt)</button>
+                <button class="small-btn" onclick="closeGachaModal()">閉じる</button>
             </div>
         </div>
     </div>
 
     <!-- 📖 遊び方モーダル -->
-    <div id="howToModal" class="modal-backdrop">
-        <div class="modal-box" style="text-align: left;">
-            <h2 style="margin: 0 0 10px 0; color: #3498db; text-align: center;">📖 遊び方・バトルルール</h2>
-            <ul style="font-size: 0.8rem; color: #ddd; line-height: 1.6; padding-left: 18px; margin: 0 0 14px 0;">
-                <li><strong>色＝強さ：</strong><span style="color:#ff4d4d;">赤系</span>で攻撃力(ATK)、<span style="color:#00a2e8;">青系</span>で移動＆弾速(SPD)、<span style="color:#2ecc71;">緑・黄系</span>で体力(HP)がアップ！3色以上で多色ボーナス！</li>
-                <li><strong>3ストック制：</strong>最大4人で同時対戦！先に3回倒されたプレイヤーから脱落し、最後の1人が優勝！</li>
-                <li><strong>アリーナギミック：</strong>10秒ごとに壊せる壁が出現、15秒ごとに<strong>⚡加速・❤️回復・🔥攻撃UP</strong>アイテムが出現！</li>
-                <li><strong>操作方法：</strong>移動（WASD/矢印）、弾（Space/左クリック）、近接斬撃（Enter/右クリック）、バリア（Shift）。</li>
+    <div id="howToModal" class="modal-overlay">
+        <div class="modal-box" style="text-align:left;">
+            <h2 style="margin-top:0; text-align:center; color:#2ecc71;">📖 操作方法＆ルール</h2>
+            <ul style="font-size:0.88rem; line-height:1.65; color:#ddd; padding-left:20px;">
+                <li><b>移動:</b> <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> または <span class="kbd">↑</span><span class="kbd">↓</span><span class="kbd">←</span><span class="kbd">→</span></li>
+                <li><b>弾（遠距離ショット）:</b> <span class="kbd">Z</span> キー（または左クリック）</li>
+                <li><b>斬撃（近接スラッシュ）:</b> <span class="kbd">X</span> キー（または右クリック）</li>
+                <li><b>盾（バリアガード）:</b> <span class="kbd">Shift</span> キー（攻撃を弾き返す！）</li>
+                <li><b>色の効果:</b> 赤系＝攻撃UP / 青系＝速度UP / 黄・緑系＝HP UP。3色以上使うとボーナス！</li>
+                <li><b>セーフティゾーン:</b> 時間経過で安全地帯が狭まる！赤い危険エリアの外にいるとダメージを受けるぞ！</li>
             </ul>
-            <button onclick="closeHowToModal()" class="primary" style="width: 100%; padding: 10px;">わかった！</button>
+            <div style="text-align:center; margin-top:14px;">
+                <button class="small-btn" style="padding:8px 24px;" onclick="closeHowToModal()">OK！</button>
+            </div>
         </div>
     </div>
 
-    <!-- 上部ナビゲーションバー（常に1行・コンパクト固定） -->
-    <div class="top-navbar">
+    <!-- 🧭 上部ナビゲーションバー -->
+    <div class="top-nav-bar">
         <div class="nav-left">
-            <button onclick="returnToHome()" style="flex: none; padding: 5px 10px; background: #2c3e50;">🏠 ホーム</button>
-            <div class="step-indicator">
-                <span id="pillStep1" class="step-pill active">① 絵を描く</span>
-                <span style="color:#555;">▶</span>
-                <span id="pillStep2" class="step-pill">② エントリー・待機室</span>
-                <span style="color:#555;">▶</span>
-                <span id="pillStep3" class="step-pill">③ バトル開始</span>
+            <button class="small-btn" onclick="returnToHome()">🏠 ホーム</button>
+            <div class="step-tabs">
+                <button id="tabStep1" class="step-tab active" onclick="switchStep(1)">1. キャラ作成</button>
+                <button id="tabStep2" class="step-tab" onclick="switchStep(2)">2. ルーム待機</button>
+                <button id="tabStep3" class="step-tab" onclick="switchStep(3)">3. バトル画面</button>
             </div>
         </div>
         <div class="nav-right">
-            <button onclick="openGachaModal()" style="flex: none; background: #8e44ad; padding: 5px 10px;">🎰 ガチャ (<span id="headerPtVal">300</span>pt)</button>
-            <button id="mainBgmBtn" onclick="toggleBgm()" style="flex: none; padding: 5px 8px;">🎵 ON</button>
-            <button id="mainSeBtn" onclick="toggleSe()" style="flex: none; padding: 5px 8px;">🔊 ON</button>
+            <span style="font-size:0.82rem; color:#f1c40f; font-weight:bold;">🪙 <span id="headerPtVal">300</span>Pt</span>
+            <button class="small-btn" onclick="openGachaModal()">🎰 ガチャ</button>
+            <button id="mainBgmBtn" class="small-btn" onclick="toggleBgm()">🎵 ON</button>
+            <button id="mainSeBtn" class="small-btn" onclick="toggleSe()">🔊 ON</button>
         </div>
     </div>
 
-    <!-- メイン3ステップ切り替え空間 -->
-    <div class="stage-container">
-
-        <!-- ==========================================
-             STEP 1: ① 絵を描く空間
-             ========================================== -->
-        <div id="viewStep1" class="step-view active">
-            <div class="editor-layout">
-                <div class="editor-left">
-                    <div class="editor-wrapper">
-                        <canvas id="pixelCanvas" width="384" height="384"></canvas>
-                    </div>
-                    <div class="char-identity-bar">
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <span style="font-size: 0.78rem; color: #aaa;">名前:</span>
-                            <input type="text" id="charNameInput" placeholder="キャラ名" maxlength="12" value="ファイター">
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <span id="charRankBadge" class="rank-badge rank-B">Bランク</span>
-                            <span id="charTitleText" style="font-size: 0.75rem; color: #f1c40f; font-weight: bold;">駆け出し戦士</span>
-                        </div>
-                    </div>
+    <!-- ==========================================
+         🎨 STEP 1: キャラクター作成画面
+    ========================================== -->
+    <div id="step1Screen" class="step-screen active">
+        <div class="editor-layout">
+            <!-- 左：32x32キャンバス -->
+            <div class="panel-box" style="text-align:center;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span id="brushStatus" style="font-size:0.85rem; color:#f1c40f; font-weight:bold;">Brush: 1x1</span>
+                    <button id="mirrorBtn" class="tool-btn" onclick="toggleMirror()">🪞 対称OFF</button>
                 </div>
-
-                <div class="editor-right">
-                    <div class="panel">
-                        <h3>
-                            <span>Character Stats</span>
-                            <span id="multiColorBadge" style="font-size: 0.68rem; color: #2ecc71; display: none;">✨多色ボーナス +10%</span>
-                        </h3>
-                        <div id="inkWarning" style="font-size: 0.68rem; color: #e74c3c; margin-bottom: 3px; display: none;">
-                            ⚠️ 30マス以上塗ると本領発揮！
-                        </div>
-                        <div class="stat-row">
-                            <div class="stat-header"><span>🔥 ATK (赤系)</span><span id="statAtkVal">12</span></div>
-                            <div class="stat-bar-bg"><div id="statAtkBar" class="stat-bar-fill" style="width: 40%; background: #ed1c24;"></div></div>
-                        </div>
-                        <div class="stat-row">
-                            <div class="stat-header"><span>⚡ SPD (青系)</span><span id="statSpdVal">4.0</span></div>
-                            <div class="stat-bar-bg"><div id="statSpdBar" class="stat-bar-fill" style="width: 40%; background: #00a2e8;"></div></div>
-                        </div>
-                        <div class="stat-row">
-                            <div class="stat-header"><span>🛡️ HP (緑・黄系)</span><span id="statHpVal">100</span></div>
-                            <div class="stat-bar-bg"><div id="statHpBar" class="stat-bar-fill" style="width: 40%; background: #22b14c;"></div></div>
-                        </div>
-                    </div>
-
-                    <div class="panel">
-                        <h3>
-                            <span>Palette & Special Ink</span>
-                            <span id="brushStatus" style="color: #3498db; font-weight: bold;">Brush: 1x1</span>
-                        </h3>
-                        <div class="palette" id="palette"></div>
-                        <div style="font-size: 0.68rem; color: #f1c40f; margin-bottom: 2px;">✨ ガチャ解放 特別インク:</div>
-                        <div class="special-palette" id="specialPalette"></div>
-
-                        <div class="brush-sizes">
-                            <button id="brush1" class="active-tool" onclick="setBrushSize(1)">1x1</button>
-                            <button id="brush2" onclick="setBrushSize(2)">2x2</button>
-                            <button id="brush4" onclick="setBrushSize(4)">4x4</button>
-                            <button id="bucketBtn" onclick="setBucket()">🪣 塗潰</button>
-                        </div>
-
-                        <div class="tools" style="margin-bottom: 0;">
-                            <button id="mirrorBtn" onclick="toggleMirror()">🪞 対称OFF</button>
-                            <button id="undoBtn" onclick="undoCanvas()">↩️ 戻る</button>
-                            <button id="eraserBtn" onclick="setEraser()">消ゴム</button>
-                            <button id="clearBtn" class="danger" onclick="clearCanvas()">全消</button>
-                        </div>
-                    </div>
-
-                    <div class="panel">
-                        <h3>💾 My Characters</h3>
-                        <div class="save-slots" id="saveSlotsContainer"></div>
-                    </div>
-
-                    <button class="to-entry-btn" onclick="goToEntryStep()">
-                        🚀 エントリーへ進む（待機室へ） ▶
-                    </button>
+                <canvas id="pixelCanvas" width="384" height="384"></canvas>
+                <div class="tool-row">
+                    <button id="brush1" class="tool-btn active-tool" onclick="setBrushSize(1)">1x1</button>
+                    <button id="brush2" class="tool-btn" onclick="setBrushSize(2)">2x2</button>
+                    <button id="brush4" class="tool-btn" onclick="setBrushSize(4)">4x4</button>
+                    <button id="bucketBtn" class="tool-btn" onclick="setBucket()">🪣 塗りつぶし</button>
+                    <button id="eraserBtn" class="tool-btn" onclick="setEraser()">🧹 消しゴム</button>
+                    <button class="tool-btn" onclick="undoCanvas()">↩️ 戻す</button>
+                    <button class="tool-btn" onclick="clearCanvas()">🗑️ 全消去</button>
                 </div>
             </div>
-        </div>
 
-        <!-- ==========================================
-             STEP 2: ② エントリー＆待機室（ロビー）空間
-             ========================================== -->
-        <div id="viewStep2" class="step-view">
-            <div class="lobby-layout">
-                <div class="lobby-char-preview">
-                    <canvas id="lobbyPreviewCanvas" width="128" height="128"></canvas>
-                    <div id="lobbyCharNameDisplay" style="font-weight: bold; font-size: 1rem; color: #fff; margin-bottom: 4px;">ファイター</div>
-                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 12px;">
-                        <span id="lobbyRankBadge" class="rank-badge rank-B">Bランク</span>
-                        <span id="lobbyTitleText" style="font-size: 0.76rem; color: #f1c40f; font-weight: bold;">駆け出し戦士</span>
-                    </div>
-                    <button onclick="backToDrawStep()" style="width: 100%; padding: 8px; background: #383852; flex: none;">
-                        🎨 絵を描き直す
-                    </button>
+            <!-- 右：パレット＆ステータス -->
+            <div class="panel-box" style="flex:1; min-width:290px; max-width:380px;">
+                <div style="margin-bottom:10px;">
+                    <label style="font-size:0.8rem; color:#aaa;">ファイター名</label>
+                    <input id="charNameInput" type="text" maxlength="12" value="ファイター" style="width:100%; padding:7px; margin-top:3px; border-radius:6px; border:1px solid #3a3a52; background:#0f0f1a; color:#fff; font-weight:bold;">
                 </div>
 
-                <div class="lobby-room-panel">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h2 style="margin: 0; font-size: 1.15rem; color: #3498db;">⚔️ エントリー＆待機室</h2>
-                        <span id="connectionStatus" style="font-size: 0.76rem; color: #f1c40f;">🟡 未入室</span>
-                    </div>
-
-                    <!-- 合言葉入力＆エントリーフォーム -->
-                    <div class="entry-input-box">
-                        <span style="font-size: 0.85rem; color: #bbb; white-space: nowrap;">🔑 合言葉:</span>
-                        <input type="text" id="roomInput" placeholder="友達と同じ合言葉 (例: 1234)" maxlength="20">
-                        <button id="joinRoomBtn" class="primary" style="flex: none; padding: 8px 18px; font-size: 0.9rem;">エントリー！</button>
-                        <button id="leaveRoomBtn" class="danger" style="flex: none; padding: 8px 14px; font-size: 0.85rem; display: none;">退室</button>
-                    </div>
-
-                    <!-- 入室後の待機メンバー＆準備OKリスト -->
-                    <div id="lobbyWaitingArea" style="display: none; flex-direction: column; gap: 10px;">
-                        <div class="ready-card" id="readyList"></div>
-                        <button id="readyBtn">✅ 準備OK！</button>
-                        <p style="font-size: 0.78rem; color: #aaa; margin: 0; text-align: center;">
-                            全員が「準備OK！」になると自動でバトル画面へ移動し、<strong>1, 2, 3の合図</strong>で始まります！
-                        </p>
-                    </div>
-
-                    <div id="lobbyGuideArea" style="background: #252538; padding: 14px; border-radius: 10px; text-align: center; color: #bbb; font-size: 0.84rem; line-height: 1.6;">
-                        上のボックスに友達と決めた<strong>「合言葉」</strong>を入れて<br>
-                        <strong>「エントリー！」</strong>ボタンを押して待機室に入ろう！（最大4人まで同時対戦OK）
-                    </div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                    <span id="charRankBadge" class="rank-badge rank-B">Bランク</span>
+                    <span id="charTitleText" style="font-weight:bold; font-size:0.95rem;">駆け出し戦士</span>
+                    <span id="multiColorBadge" style="display:none; background:#8e44ad; font-size:0.7rem; padding:2px 6px; border-radius:4px;">🌈多色ボーナス</span>
                 </div>
+                <div id="inkWarning" style="display:none; color:#ff7675; font-size:0.78rem; margin-bottom:6px;">
+                    ⚠️ インク量が少ないためステータスが低下中（30ドット以上描こう！）
+                </div>
+
+                <div class="stat-row">
+                    <div class="stat-label"><span>⚔️ 攻撃力 (赤系)</span><span id="statAtkVal">12</span></div>
+                    <div class="stat-bar-bg"><div id="statAtkBar" class="stat-bar-fill" style="width:45%; background:#ff4d4d;"></div></div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-label"><span>⚡ スピード (青系)</span><span id="statSpdVal">4.0</span></div>
+                    <div class="stat-bar-bg"><div id="statSpdBar" class="stat-bar-fill" style="width:55%; background:#00a2e8;"></div></div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-label"><span>❤️ 最大HP (黄・緑系)</span><span id="statHpVal">100</span></div>
+                    <div class="stat-bar-bg"><div id="statHpBar" class="stat-bar-fill" style="width:55%; background:#2ecc71;"></div></div>
+                </div>
+
+                <div style="margin-top:12px;">
+                    <div style="font-size:0.8rem; color:#aaa;">基本カラーパレット</div>
+                    <div id="palette" class="palette-grid"></div>
+                </div>
+
+                <div style="margin-top:10px;">
+                    <div style="font-size:0.8rem; color:#f1c40f;">✨ 特別インク（ガチャ解放）</div>
+                    <div id="specialPalette" class="palette-grid"></div>
+                </div>
+
+                <div style="margin-top:12px;">
+                    <div style="font-size:0.8rem; color:#aaa;">💾 マイキャラ保存スロット</div>
+                    <div id="saveSlotsContainer" class="slots-grid"></div>
+                </div>
+
+                <button class="next-step-btn" onclick="switchStep(2)">次へ：対戦ルームへ進む ➡️</button>
             </div>
         </div>
-
-        <!-- ==========================================
-             STEP 3: ③ バトルアリーナ空間（1, 2, 3 → FIGHT!）
-             ========================================== -->
-        <div id="viewStep3" class="step-view">
-            <div class="battle-layout">
-                <div class="canvas-wrapper">
-                    <canvas id="gameCanvas" width="400" height="400"></canvas>
-
-                    <!-- 勝利確定リザルトオーバーレイ -->
-                    <div id="resultOverlay" class="arena-overlay" style="display: none;">
-                        <p id="resultTitle">🏆 CHAMPION!</p>
-                        <canvas id="winnerCanvas" width="84" height="84"></canvas>
-                        <p id="winnerNameDisplay" style="font-size: 0.95rem; font-weight: bold; color: #fff; margin: 4px 0;"></p>
-                        <div class="ready-card" id="resultScoreList" style="margin-bottom: 10px; padding: 8px 12px;"></div>
-                        <button id="rematchBtn" class="primary" style="width: 90%; padding: 10px; font-size: 0.95rem; flex: none;">
-                            🔄 待機室へ戻る（再戦・キャラ変更）
-                        </button>
-                    </div>
-                </div>
-
-                <!-- スマホ用タッチ操作パッド -->
-                <div id="touchControls" class="touch-controls">
-                    <div class="dpad">
-                        <div></div>
-                        <button data-key="ArrowUp">▲</button>
-                        <div></div>
-                        <button data-key="ArrowLeft">◀</button>
-                        <button data-key="ArrowDown">▼</button>
-                        <button data-key="ArrowRight">▶</button>
-                    </div>
-                    <div class="action-pad">
-                        <button onclick="triggerShot()" style="background:#e74c3c;">🔫<br>弾</button>
-                        <button onclick="triggerMelee()" style="background:#e67e22;">⚔️<br>斬撃</button>
-                        <button onclick="triggerShield()" style="background:#00a2e8;">🛡️<br>盾</button>
-                    </div>
-                </div>
-
-                <div class="battle-bottom-bar">
-                    <div class="instructions">
-                        移動: <span class="key-badge">WASD</span> / <span class="key-badge">矢印</span> ｜
-                        弾: <span class="key-badge">Space</span> or <span class="key-badge">左クリック</span> ｜
-                        斬撃: <span class="key-badge">Enter</span> or <span class="key-badge">右クリック</span> ｜
-                        盾: <span class="key-badge">Shift</span>
-                    </div>
-                    <button id="toggleTouchBtn" style="flex: none; padding: 6px 10px; background: #3a3a52;">📱 パッド</button>
-                </div>
-            </div>
-        </div>
-
     </div>
 
+    <!-- ==========================================
+         🚪 STEP 2: ルーム入室＆待機ロビー
+    ========================================== -->
+    <div id="step2Screen" class="step-screen">
+        <div class="panel-box lobby-box">
+            <h2 style="margin-top:0;">🚪 オンライン対戦ロビー</h2>
+            <div id="connectionStatus" style="font-size:0.85rem; color:#f1c40f; margin-bottom:10px;">🟡 サーバー接続中...</div>
+
+            <div style="margin:10px auto;">
+                <canvas id="lobbyPreviewCanvas" width="96" height="96" style="background:#0f0f1a; border:2px solid #3a3a52; border-radius:8px;"></canvas>
+                <div id="lobbyCharSummary" style="font-size:0.88rem; margin-top:4px; font-weight:bold;"></div>
+            </div>
+
+            <div class="room-input-group">
+                <input id="roomInput" type="text" placeholder="合言葉を入力（例: 1234）" maxlength="16">
+                <button id="joinRoomBtn" class="btn-join">入室</button>
+                <button id="leaveRoomBtn" class="btn-leave" style="display:none;">退室</button>
+            </div>
+
+            <div id="lobbyGuideArea" style="font-size:0.85rem; color:#aaa; margin-top:12px;">
+                友達と同じ「合言葉」を入力して入室しよう！（最大4人同時対戦）
+            </div>
+
+            <div id="lobbyWaitingArea" style="display:none; flex-direction:column;">
+                <div id="readyList" class="ready-list"></div>
+                <button id="readyBtn" class="btn-ready">✅ 準備OK！</button>
+            </div>
+
+            <div style="margin-top:14px;">
+                <button class="small-btn" onclick="switchStep(1)">⬅️ キャラ作成に戻る</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         ⚔️ STEP 3: バトルアリーナ
+    ========================================== -->
+    <div id="step3Screen" class="step-screen">
+        <div class="arena-wrapper">
+            <canvas id="gameCanvas" width="640" height="640"></canvas>
+
+            <!-- リザルト表示 -->
+            <div id="resultOverlay">
+                <h1 id="resultTitle" style="font-size:2.2rem; margin:0 0 8px 0;">🏆 YOU WIN!!</h1>
+                <canvas id="winnerCanvas" width="84" height="84" style="background:#16213e; border:2px solid #f1c40f; border-radius:8px; margin:6px 0;"></canvas>
+                <div id="winnerNameDisplay" style="font-size:1.1rem; font-weight:bold; margin-bottom:12px;"></div>
+                <div id="resultScoreList" class="ready-list" style="width:100%; max-width:340px;"></div>
+                <button id="rematchBtn" class="btn-ready" style="max-width:260px; margin-top:10px;">🔄 ロビーに戻って再戦</button>
+            </div>
+
+            <div class="controls-hint">
+                移動: <span class="kbd">WASD</span> / <span class="kbd">矢印</span> ｜
+                盾: <span class="kbd">Shift</span> ｜
+                弾: <span class="kbd">Z</span> ｜
+                斬撃: <span class="kbd">X</span>
+                <button id="toggleTouchBtn" class="small-btn" style="margin-left:8px;">📱 タッチ操作</button>
+            </div>
+
+            <!-- スマホ用タッチパッド（物理キーコードで統一） -->
+            <div id="touchControls">
+                <div class="dpad">
+                    <div></div>
+                    <button data-code="ArrowUp">▲</button>
+                    <div></div>
+                    <button data-code="ArrowLeft">◀</button>
+                    <div></div>
+                    <button data-code="ArrowRight">▶</button>
+                    <div></div>
+                    <button data-code="ArrowDown">▼</button>
+                    <div></div>
+                </div>
+                <div class="action-pads">
+                    <button style="border-color:#00e5ff;" onclick="triggerShield()">🛡️盾</button>
+                    <button style="border-color:#f1c40f;" onclick="triggerShot()">🔫弾</button>
+                    <button style="border-color:#ff4d4d;" onclick="triggerMelee()">⚔️斬</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         // ==========================================
-        // 🧭 3ステップ空間ナビゲーション制御
+        // 🧭 画面ステップ切り替え管理
         // ==========================================
-        let currentUiStep = 1; // 1: 絵を描く, 2: エントリー・待機室, 3: バトル
+        let currentUiStep = 1;
 
         function switchStep(stepNum) {
             currentUiStep = stepNum;
             [1, 2, 3].forEach(n => {
-                document.getElementById(`viewStep${n}`).classList.toggle('active', n === stepNum);
-                document.getElementById(`pillStep${n}`).classList.toggle('active', n === stepNum);
+                document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
+                document.getElementById(`tabStep${n}`).classList.toggle('active', n === stepNum);
             });
             if (stepNum === 2) {
                 renderLobbyPreview();
             }
         }
 
-        function goToEntryStep() {
-            initAudio();
-            SE.click();
-            syncCharacterUpdate();
-            switchStep(2);
-        }
-
-        function backToDrawStep() {
-            initAudio();
-            SE.click();
-            if (myReady && socket && socket.connected && activeRoom) {
-                myReady = false;
-                socket.emit('toggleReady', false);
-            }
-            switchStep(1);
-        }
-
         function renderLobbyPreview() {
             const pCanvas = document.getElementById('lobbyPreviewCanvas');
+            if (!pCanvas) return;
             const pCtx = pCanvas.getContext('2d');
+            pCtx.clearRect(0, 0, 96, 96);
+            const scale = 96 / 32;
             const now = performance.now();
-            pCtx.clearRect(0, 0, 128, 128);
-            const scale = 128 / GRID_SIZE;
-            for (let y = 0; y < GRID_SIZE; y++) {
-                for (let x = 0; x < GRID_SIZE; x++) {
+            for (let y = 0; y < 32; y++) {
+                for (let x = 0; x < 32; x++) {
                     if (gridData[y][x]) {
                         pCtx.fillStyle = resolvePixelColor(gridData[y][x], now);
                         pCtx.fillRect(x * scale, y * scale, scale, scale);
                     }
                 }
             }
-            document.getElementById('lobbyCharNameDisplay').textContent = player.name;
-            const b = document.getElementById('lobbyRankBadge');
-            b.textContent = `${player.rank}ランク`;
-            b.className = `rank-badge rank-${player.rank}`;
-            document.getElementById('lobbyTitleText').textContent = player.title;
+            const summary = document.getElementById('lobbyCharSummary');
+            if (summary) {
+                summary.textContent = `[${player.rank}] ${player.name}（⚔️${player.stats.atk} / ⚡${player.stats.spd} / ❤️${player.stats.maxHp}）`;
+            }
         }
 
         // ==========================================
-        // 🎵 Web Audio API チップチューンBGM＆SEエンジン
+        // 🔊 Web Audio API サウンド＆BGMシステム
         // ==========================================
         let audioCtx = null;
         let bgmEnabled = true;
@@ -1021,22 +895,21 @@
             }
         }
 
-        function playTone(freq, type, duration, vol = 0.08, slideTo = null) {
+        function playTone(freq, type, duration, vol = 0.08, endFreq = null) {
             if (!seEnabled || !audioCtx) return;
-            const now = audioCtx.currentTime;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
-            osc.frequency.setValueAtTime(freq, now);
-            if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, now + duration);
-
-            gain.gain.setValueAtTime(vol, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            if (endFreq) {
+                osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+            }
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            osc.start(now);
-            osc.stop(now + duration);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
         }
 
         function playNoise(duration, vol = 0.08) {
@@ -1044,14 +917,14 @@
             const bufferSize = audioCtx.sampleRate * duration;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
             const noise = audioCtx.createBufferSource();
             noise.buffer = buffer;
             const gain = audioCtx.createGain();
             gain.gain.setValueAtTime(vol, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-
             noise.connect(gain);
             gain.connect(audioCtx.destination);
             noise.start();
@@ -1078,6 +951,7 @@
             shield: () => playTone(440, 'sine', 0.25, 0.08, 880),
             block: () => playTone(1200, 'square', 0.1, 0.09, 600),
             hit: () => playTone(160, 'sawtooth', 0.15, 0.1, 55),
+            zoneHit: () => playTone(110, 'sawtooth', 0.18, 0.08, 75),
             wallBreak: () => { playNoise(0.22, 0.12); playTone(140, 'square', 0.2, 0.09, 45); },
             itemSpeed: () => {
                 playTone(523, 'square', 0.08, 0.07);
@@ -1172,7 +1046,7 @@
         }
 
         // ==========================================
-        // 🎰 ポイント＆ガチャシステム（クライアント識別子管理含む）
+        // 🎰 ポイント＆ガチャシステム
         // ==========================================
         const USER_PROGRESS_KEY = 'pixel_pvp_user_progress_v1';
         const CLIENT_KEY_STORAGE = 'pixel_pvp_client_key_v1';
@@ -1392,11 +1266,17 @@
         }
 
         // ==========================================
-        // 🎨 キャラクターエディタ＆バトルロジック
+        // 🎨 キャラクターエディタ＆バトルロジック（640x640 アリーナ）
         // ==========================================
         const GRID_SIZE = 32;
         const EDITOR_CANVAS_SIZE = 384;
         const PIXEL_SIZE = EDITOR_CANVAS_SIZE / GRID_SIZE;
+
+        const ARENA_WIDTH = 640;
+        const ARENA_TOP = 28;
+        const ARENA_HEIGHT = 640;
+        const ARENA_CENTER_X = ARENA_WIDTH / 2;
+        const ARENA_CENTER_Y = (ARENA_TOP + ARENA_HEIGHT) / 2;
 
         const canvas = document.getElementById('pixelCanvas');
         const ctx = canvas.getContext('2d');
@@ -1437,8 +1317,8 @@
             name: 'ファイター',
             rank: 'B',
             title: '駆け出し戦士',
-            x: 176,
-            y: 176,
+            x: ARENA_CENTER_X - 24,
+            y: ARENA_CENTER_Y - 24,
             facing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' },
             hp: 100,
@@ -1458,8 +1338,25 @@
         };
 
         let otherPlayers = {};
+        let staticObstacles = [
+            { id: 'obs_1', x: 140, y: 140, w: 48, h: 48 },
+            { id: 'obs_2', x: 452, y: 140, w: 48, h: 48 },
+            { id: 'obs_3', x: 140, y: 468, w: 48, h: 48 },
+            { id: 'obs_4', x: 452, y: 468, w: 48, h: 48 },
+            { id: 'obs_5', x: 296, y: 210, w: 48, h: 48 },
+            { id: 'obs_6', x: 296, y: 398, w: 48, h: 48 },
+            { id: 'obs_7', x: 200, y: 304, w: 48, h: 48 },
+            { id: 'obs_8', x: 392, y: 304, w: 48, h: 48 }
+        ];
         let arenaWalls = [];
         let arenaItems = [];
+        let safeZone = {
+            cx: ARENA_CENTER_X,
+            cy: ARENA_CENTER_Y,
+            radius: 440,
+            minRadius: 95,
+            shrinking: false
+        };
         let projectiles = [];
         let meleeEffects = [];
         let floatingTexts = [];
@@ -1477,6 +1374,7 @@
             return c;
         }
 
+        // スマホ用タッチ操作（物理キーコード e.code で統一＋指が外れてもリセット）
         const toggleTouchBtn = document.getElementById('toggleTouchBtn');
         const touchControls = document.getElementById('touchControls');
         if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -1488,13 +1386,15 @@
             touchControls.classList.toggle('visible');
         });
 
-        document.querySelectorAll('.dpad button[data-key]').forEach(btn => {
-            const keyName = btn.getAttribute('data-key');
-            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
-            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
-            btn.addEventListener('mousedown', () => { keys[keyName] = true; });
-            btn.addEventListener('mouseup', () => { keys[keyName] = false; });
-            btn.addEventListener('mouseleave', () => { keys[keyName] = false; });
+        document.querySelectorAll('.dpad button[data-code]').forEach(btn => {
+            const codeName = btn.getAttribute('data-code');
+            const releaseKey = () => { keys[codeName] = false; };
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[codeName] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); releaseKey(); });
+            btn.addEventListener('touchcancel', (e) => { e.preventDefault(); releaseKey(); });
+            btn.addEventListener('mousedown', () => { keys[codeName] = true; });
+            btn.addEventListener('mouseup', releaseKey);
+            btn.addEventListener('mouseleave', releaseKey);
         });
 
         gameCanvas.addEventListener('mousedown', (e) => {
@@ -1505,6 +1405,7 @@
         });
         gameCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+        // 壊せない岩ブロック＋壊せる壁の両方との当たり判定
         function collidesWithWall(x, y, size) {
             const pad = 6;
             const left = x + pad;
@@ -1512,6 +1413,11 @@
             const top = y + pad;
             const bottom = y + size - pad;
 
+            for (const obs of staticObstacles) {
+                if (left < obs.x + obs.w && right > obs.x && top < obs.y + obs.h && bottom > obs.y) {
+                    return true;
+                }
+            }
             for (const w of arenaWalls) {
                 if (left < w.x + w.w && right > w.x && top < w.y + w.h && bottom > w.y) {
                     return true;
@@ -1767,13 +1673,12 @@
                 switchStep(3);
                 resultOverlay.style.display = 'flex';
             } else {
-                // countdown / playing -> STEP 3 バトル空間へ自動遷移！
                 switchStep(3);
                 resultOverlay.style.display = 'none';
             }
         }
 
-        // --- Socket.io 接続とギミック・アイテム同期 ---
+        // --- Socket.io 接続とギミック・セーフティゾーン同期 ---
         let socket = null;
 
         if (typeof io !== 'undefined') {
@@ -1814,6 +1719,9 @@
                 roomState = data.state;
                 arenaWalls = data.walls || [];
                 arenaItems = data.items || [];
+                if (Array.isArray(data.staticObstacles)) staticObstacles = data.staticObstacles;
+                if (data.safeZone) safeZone = data.safeZone;
+
                 const players = data.players || {};
                 if (players[socket.id]) {
                     const me = players[socket.id];
@@ -1849,6 +1757,24 @@
                 arenaItems = data.items || [];
             });
 
+            socket.on('safeZoneUpdated', (zoneData) => {
+                if (zoneData) safeZone = zoneData;
+            });
+
+            socket.on('zoneDamaged', (data) => {
+                if (data.targetId === socket.id) {
+                    SE.zoneHit();
+                    player.hp = data.hp;
+                    player.maxHp = data.maxHp;
+                    addFloatingText(player.x + 24, player.y - 12, `-${data.damage} ZONE!`, '#ff4d4d');
+                } else if (otherPlayers[data.targetId]) {
+                    const target = otherPlayers[data.targetId];
+                    target.hp = data.hp;
+                    target.maxHp = data.maxHp;
+                    addFloatingText(target.x + 24, target.y - 12, `-${data.damage}`, '#ff7675');
+                }
+            });
+
             socket.on('itemEffectApplied', (data) => {
                 const isMe = data.id === socket.id;
                 const targetObj = isMe ? player : otherPlayers[data.id];
@@ -1879,7 +1805,6 @@
                 updateLobbyUI();
             });
 
-            // 1, 2, 3の合図でSTEP 3バトル空間へ切り替え！
             socket.on('matchCountdown', (data) => {
                 roomState = 'countdown';
                 arenaWalls = [];
@@ -1889,6 +1814,8 @@
                 confettiParticles = [];
                 player.speedBoostUntil = 0;
                 player.powerBoostUntil = 0;
+                // カウントダウン開始時に全キー状態をリセット
+                for (const k in keys) keys[k] = false;
                 stopBgm();
                 updateLobbyUI();
 
@@ -1920,10 +1847,10 @@
 
             socket.on('matchResult', (data) => {
                 roomState = 'result';
+                for (const k in keys) keys[k] = false;
                 stopBgm();
                 SE.win();
 
-                // 【修正①】サーバーから明示的に送られた優勝ボーナス（winBonus）のみを確定加算
                 if (data.winnerId === socket.id && data.winBonus > 0) {
                     addUserPoints(data.winBonus);
                 }
@@ -1942,10 +1869,10 @@
 
                 confettiParticles = [];
                 const confettiColors = ['#f1c40f', '#e74c3c', '#2ecc71', '#3498db', '#9b59b6', '#ff7f27'];
-                for (let i = 0; i < 80; i++) {
+                for (let i = 0; i < 100; i++) {
                     confettiParticles.push({
-                        x: Math.random() * 400,
-                        y: Math.random() * -200,
+                        x: Math.random() * ARENA_WIDTH,
+                        y: Math.random() * -250,
                         vx: (Math.random() - 0.5) * 3,
                         vy: Math.random() * 3 + 2,
                         color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
@@ -2046,7 +1973,7 @@
                 shakeTime = 8;
                 shakeIntensity = 5;
 
-                const repelDist = 18;
+                const repelDist = 20;
                 let rx = 0, ry = 0;
                 if (data.knockbackDir === 'left') rx = repelDist;
                 if (data.knockbackDir === 'right') rx = -repelDist;
@@ -2054,8 +1981,8 @@
                 if (data.knockbackDir === 'down') ry = -repelDist;
 
                 if (data.attackerId === socket.id && data.type === 'melee') {
-                    const nextX = Math.min(352, Math.max(0, player.x + rx));
-                    const nextY = Math.min(352, Math.max(24, player.y + ry));
+                    const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + rx));
+                    const nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + ry));
                     if (!collidesWithWall(nextX, nextY, 48)) {
                         player.x = nextX;
                         player.y = nextY;
@@ -2080,7 +2007,7 @@
 
             socket.on('playerDamaged', (data) => {
                 SE.hit();
-                const kbDist = data.type === 'melee' ? 28 : 14;
+                const kbDist = data.type === 'melee' ? 32 : 16;
                 let dx = 0, dy = 0;
                 if (data.knockbackDir === 'left') dx = -kbDist;
                 if (data.knockbackDir === 'right') dx = kbDist;
@@ -2095,8 +2022,8 @@
                     player.hp = data.hp;
                     player.maxHp = data.maxHp;
                     player.invincibleUntil = performance.now() + 350;
-                    const nextX = Math.min(352, Math.max(0, player.x + dx));
-                    const nextY = Math.min(352, Math.max(24, player.y + dy));
+                    const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + dx));
+                    const nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + dy));
                     if (!collidesWithWall(nextX, nextY, 48)) {
                         player.x = nextX;
                         player.y = nextY;
@@ -2116,11 +2043,10 @@
                 shakeTime = 18;
                 shakeIntensity = 10;
 
-                // 【修正①】サーバーから送られた確定ボーナス（koBonus / survivalBonus）のみを直接加算
                 if (data.attackerId === socket.id) {
                     if (data.koBonus > 0) addUserPoints(data.koBonus);
                     player.points = data.attackerPoints ?? player.points;
-                } else if (otherPlayers[data.attackerId]) {
+                } else if (data.attackerId && otherPlayers[data.attackerId]) {
                     otherPlayers[data.attackerId].points = data.attackerPoints ?? otherPlayers[data.attackerId].points;
                 }
 
@@ -2600,31 +2526,42 @@
             renderSaveSlots();
         }
 
-        // --- キーボード入力とアクション ---
+        // --- キーボード入力とアクション（盾→Shift / 弾→Z / 斬撃→X） ---
         const keys = {};
+
+        // ウィンドウのフォーカスが外れたら全キーを強制リセット（張り付き暴走防止）
+        window.addEventListener('blur', () => {
+            for (const k in keys) {
+                keys[k] = false;
+            }
+        });
+
         window.addEventListener('keydown', (e) => {
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
 
-            if (!isTyping && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            // お絵描き画面中のみ Ctrl+Z で元に戻す
+            if (!isTyping && roomState !== 'playing' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
                 e.preventDefault();
                 undoCanvas();
                 return;
             }
 
-            if (!isTyping && ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+            if (!isTyping && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
                 e.preventDefault();
             }
-            keys[e.key] = true;
+
+            // 物理キーコード (e.code) で統一管理（Shift同時押しで文字が変わるバグを防止）
+            keys[e.code] = true;
 
             if (isTyping || player.isDead || player.isEliminated || roomState !== 'playing') return;
 
-            if (e.code === 'Space') triggerShot();
-            if (e.key === 'Enter') triggerMelee();
-            if (e.key === 'Shift') triggerShield();
+            if (e.code === 'KeyZ') triggerShot();    // 弾 → Zキー
+            if (e.code === 'KeyX') triggerMelee();   // 斬撃 → Xキー
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') triggerShield(); // 盾 → Shiftキー
         });
 
         window.addEventListener('keyup', (e) => {
-            keys[e.key] = false;
+            keys[e.code] = false;
         });
 
         function triggerShield() {
@@ -2688,7 +2625,7 @@
         }
 
         function spawnProjectile(ownerId, x, y, facing, color, spd, isMine) {
-            const bulletSpeed = 5 + spd * 0.8;
+            const bulletSpeed = 6 + spd * 0.9;
             let vx = 0, vy = 0;
             if (facing === 'left') vx = -bulletSpeed;
             if (facing === 'right') vx = bulletSpeed;
@@ -2696,16 +2633,16 @@
             if (facing === 'down') vy = bulletSpeed;
 
             projectiles.push({
-                ownerId, x, y, vx, vy, facing, color, isMine, life: 60
+                ownerId, x, y, vx, vy, facing, color, isMine, life: 85
             });
         }
 
         function spawnMeleeEffect(ownerId, x, y, facing, color, isMine) {
-            let hx = x, hy = y, hw = 36, hh = 36;
-            if (facing === 'left') { hx = x - 34; hy = y - 22; hw = 34; hh = 44; }
-            if (facing === 'right') { hx = x; hy = y - 22; hw = 34; hh = 44; }
-            if (facing === 'up') { hx = x - 22; hy = y - 34; hw = 44; hh = 34; }
-            if (facing === 'down') { hx = x - 22; hy = y; hw = 44; hh = 34; }
+            let hx = x, hy = y, hw = 38, hh = 38;
+            if (facing === 'left') { hx = x - 36; hy = y - 24; hw = 36; hh = 48; }
+            if (facing === 'right') { hx = x; hy = y - 24; hw = 36; hh = 48; }
+            if (facing === 'up') { hx = x - 24; hy = y - 36; hw = 48; hh = 36; }
+            if (facing === 'down') { hx = x - 24; hy = y; hw = 48; hh = 36; }
 
             meleeEffects.push({
                 ownerId, hx, hy, hw, hh, facing, color, isMine, timer: 10, hasHit: false
@@ -2730,9 +2667,9 @@
             for (const c of confettiParticles) {
                 c.x += c.vx;
                 c.y += c.vy;
-                if (c.y > 410) {
+                if (c.y > ARENA_HEIGHT + 10) {
                     c.y = -10;
-                    c.x = Math.random() * 400;
+                    c.x = Math.random() * ARENA_WIDTH;
                 }
             }
 
@@ -2743,7 +2680,6 @@
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
 
             if (!player.isDead && !player.isEliminated && !isTyping) {
-                let moved = false;
                 const isShielding = now < player.shieldUntil;
                 const isBoosted = now < player.speedBoostUntil;
 
@@ -2753,24 +2689,34 @@
 
                 let nextX = player.x;
                 let nextY = player.y;
+                let nextFacing = player.facing;
+                let inputPressed = false;
 
-                if (keys['ArrowUp'] || keys['w'] || keys['W']) { nextY -= spd; player.facing = 'up'; moved = true; }
-                else if (keys['ArrowDown'] || keys['s'] || keys['S']) { nextY += spd; player.facing = 'down'; moved = true; }
-                else if (keys['ArrowLeft'] || keys['a'] || keys['A']) { nextX -= spd; player.facing = 'left'; moved = true; }
-                else if (keys['ArrowRight'] || keys['d'] || keys['D']) { nextX += spd; player.facing = 'right'; moved = true; }
+                // 物理キーコード (e.code) で判定（Shift同時押しでも暴走しない）
+                if (keys['ArrowUp'] || keys['KeyW']) { nextY -= spd; nextFacing = 'up'; inputPressed = true; }
+                else if (keys['ArrowDown'] || keys['KeyS']) { nextY += spd; nextFacing = 'down'; inputPressed = true; }
+                else if (keys['ArrowLeft'] || keys['KeyA']) { nextX -= spd; nextFacing = 'left'; inputPressed = true; }
+                else if (keys['ArrowRight'] || keys['KeyD']) { nextX += spd; nextFacing = 'right'; inputPressed = true; }
 
-                const charDisplaySize = GRID_SIZE * 1.5;
-                nextX = Math.min(gameCanvas.width - charDisplaySize, Math.max(0, nextX));
-                nextY = Math.min(gameCanvas.height - charDisplaySize, Math.max(24, nextY));
+                if (inputPressed) {
+                    const charDisplaySize = GRID_SIZE * 1.5; // 48
+                    // ステージ端（0 ～ 592）でピタッと止める
+                    nextX = Math.min(ARENA_WIDTH - charDisplaySize, Math.max(0, nextX));
+                    nextY = Math.min(ARENA_HEIGHT - charDisplaySize, Math.max(ARENA_TOP, nextY));
 
-                if (moved && !collidesWithWall(nextX, nextY, charDisplaySize)) {
-                    player.x = nextX;
-                    player.y = nextY;
-                    if (socket && socket.connected && activeRoom) {
-                        socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
+                    const facingChanged = (player.facing !== nextFacing);
+                    player.facing = nextFacing;
+
+                    const canMove = !collidesWithWall(nextX, nextY, charDisplaySize);
+                    const posChanged = canMove && (Math.abs(player.x - nextX) > 0.01 || Math.abs(player.y - nextY) > 0.01);
+
+                    if (posChanged) {
+                        player.x = nextX;
+                        player.y = nextY;
                     }
-                } else if (moved) {
-                    if (socket && socket.connected && activeRoom) {
+
+                    // 座標または向きが実際に変化した時だけサーバーへ送信
+                    if ((posChanged || facingChanged) && socket && socket.connected && activeRoom) {
                         socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                     }
                 }
@@ -2795,6 +2741,20 @@
                 p.y += p.vy;
                 p.life--;
 
+                // 壊せない岩ブロックに当たったら消滅
+                let hitObstacle = false;
+                for (const obs of staticObstacles) {
+                    if (p.x >= obs.x && p.x <= obs.x + obs.w && p.y >= obs.y && p.y <= obs.y + obs.h) {
+                        hitObstacle = true;
+                        break;
+                    }
+                }
+                if (hitObstacle) {
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // 壊せる壁に当たったらダメージを与えて消滅
                 let hitWall = false;
                 for (const w of arenaWalls) {
                     if (p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h) {
@@ -2822,7 +2782,7 @@
                     }
                 }
 
-                if (p.life <= 0 || p.x < 0 || p.x > 400 || p.y < 24 || p.y > 400) {
+                if (p.life <= 0 || p.x < 0 || p.x > ARENA_WIDTH || p.y < ARENA_TOP || p.y > ARENA_HEIGHT) {
                     projectiles.splice(i, 1);
                 }
             }
@@ -2832,11 +2792,21 @@
                 m.timer--;
 
                 if (m.isMine && !m.hasHit && socket && socket.connected && activeRoom) {
-                    for (const w of arenaWalls) {
-                        if (m.hx < w.x + w.w && m.hx + m.hw > w.x && m.hy < w.y + w.h && m.hy + m.hh > w.y) {
+                    // 壊せない岩ブロックに阻まれる判定
+                    for (const obs of staticObstacles) {
+                        if (m.hx < obs.x + obs.w && m.hx + m.hw > obs.x && m.hy < obs.y + obs.h && m.hy + m.hh > obs.y) {
                             m.hasHit = true;
-                            socket.emit('damageWall', { wallId: w.id, type: 'melee' });
                             break;
+                        }
+                    }
+
+                    if (!m.hasHit) {
+                        for (const w of arenaWalls) {
+                            if (m.hx < w.x + w.w && m.hx + m.hw > w.x && m.hy < w.y + w.h && m.hy + m.hh > w.y) {
+                                m.hasHit = true;
+                                socket.emit('damageWall', { wallId: w.id, type: 'melee' });
+                                break;
+                            }
                         }
                     }
 
@@ -2872,7 +2842,7 @@
 
             if (isDead) {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-                ctx.font = 'bold 11px sans-serif';
+                ctx.font = 'bold 12px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('RESPAWNING...', x + 24, y + 28);
                 return;
@@ -2968,13 +2938,13 @@
             if (facing === 'down') { ctx.moveTo(x + 24, y + 52); ctx.lineTo(x + 20, y + 47); ctx.lineTo(x + 28, y + 47); }
             ctx.fill();
 
-            ctx.font = 'bold 10px sans-serif';
+            ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillStyle = isMe ? '#2ecc71' : '#ffffff';
             ctx.fillText(`[${rank}] ${name}`, x + 24, y - 22);
 
             const hearts = '❤️'.repeat(Math.max(0, stocks));
-            ctx.font = '9px sans-serif';
+            ctx.font = '10px sans-serif';
             ctx.fillText(hearts, x + 24, y - 12);
 
             const barWidth = 44;
@@ -2999,13 +2969,13 @@
         function drawTopHUD() {
             if (!activeRoom || roomState === 'waiting' || roomState === 'result') return;
 
-            gameCtx.fillStyle = 'rgba(15, 15, 26, 0.85)';
-            gameCtx.fillRect(0, 0, 400, 24);
+            gameCtx.fillStyle = 'rgba(15, 15, 26, 0.9)';
+            gameCtx.fillRect(0, 0, ARENA_WIDTH, ARENA_TOP);
             gameCtx.strokeStyle = '#3a3a52';
             gameCtx.lineWidth = 1;
             gameCtx.beginPath();
-            gameCtx.moveTo(0, 24);
-            gameCtx.lineTo(400, 24);
+            gameCtx.moveTo(0, ARENA_TOP);
+            gameCtx.lineTo(ARENA_WIDTH, ARENA_TOP);
             gameCtx.stroke();
 
             const participants = [
@@ -3015,15 +2985,15 @@
                 }))
             ];
 
-            const slotWidth = 400 / Math.max(1, participants.length);
+            const slotWidth = ARENA_WIDTH / Math.max(1, participants.length);
             participants.forEach((p, idx) => {
                 const cx = idx * slotWidth + slotWidth / 2;
-                gameCtx.font = 'bold 10px sans-serif';
+                gameCtx.font = 'bold 12px sans-serif';
                 gameCtx.textAlign = 'center';
                 gameCtx.fillStyle = p.isEliminated ? '#666' : (p.isMe ? '#2ecc71' : '#fff');
-                const shortName = p.name.slice(0, 5);
+                const shortName = p.name.slice(0, 6);
                 const heartStr = p.isEliminated ? '💀' : '❤️'.repeat(Math.max(0, p.stocks));
-                gameCtx.fillText(`${shortName} ${heartStr}`, cx, 15);
+                gameCtx.fillText(`${shortName} ${heartStr}`, cx, 18);
             });
         }
 
@@ -3040,13 +3010,53 @@
 
             gameCtx.clearRect(-20, -20, gameCanvas.width + 40, gameCanvas.height + 40);
 
+            // 背景グリッド（640x640）
             gameCtx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
             gameCtx.lineWidth = 1;
-            for (let i = 0; i < gameCanvas.width; i += 40) {
-                gameCtx.beginPath(); gameCtx.moveTo(i, 24); gameCtx.lineTo(i, gameCanvas.height); gameCtx.stroke();
-                gameCtx.beginPath(); gameCtx.moveTo(0, i); gameCtx.lineTo(gameCanvas.width, i); gameCtx.stroke();
+            for (let i = 0; i <= ARENA_WIDTH; i += 40) {
+                gameCtx.beginPath(); gameCtx.moveTo(i, ARENA_TOP); gameCtx.lineTo(i, ARENA_HEIGHT); gameCtx.stroke();
+            }
+            for (let j = ARENA_TOP; j <= ARENA_HEIGHT; j += 40) {
+                gameCtx.beginPath(); gameCtx.moveTo(0, j); gameCtx.lineTo(ARENA_WIDTH, j); gameCtx.stroke();
             }
 
+            // セーフティゾーン（安全地帯）と危険エリアの描画
+            if (safeZone) {
+                gameCtx.save();
+                gameCtx.beginPath();
+                gameCtx.rect(0, ARENA_TOP, ARENA_WIDTH, ARENA_HEIGHT - ARENA_TOP);
+                gameCtx.arc(safeZone.cx, safeZone.cy, safeZone.radius, 0, Math.PI * 2, true);
+                gameCtx.fillStyle = 'rgba(231, 76, 60, 0.24)';
+                gameCtx.fill();
+
+                gameCtx.beginPath();
+                gameCtx.arc(safeZone.cx, safeZone.cy, safeZone.radius, 0, Math.PI * 2);
+                gameCtx.lineWidth = safeZone.shrinking ? 3 : 2;
+                gameCtx.strokeStyle = safeZone.shrinking ? '#ff4d4d' : 'rgba(52, 152, 219, 0.65)';
+                gameCtx.setLineDash(safeZone.shrinking ? [] : [8, 6]);
+                gameCtx.stroke();
+                gameCtx.restore();
+            }
+
+            // 壊せない固定障害物（岩ブロック）の描画
+            for (const obs of staticObstacles) {
+                gameCtx.fillStyle = '#2c3e50';
+                gameCtx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                gameCtx.strokeStyle = '#5d6d7e';
+                gameCtx.lineWidth = 2;
+                gameCtx.strokeRect(obs.x + 1, obs.y + 1, obs.w - 2, obs.h - 2);
+
+                gameCtx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+                gameCtx.fillRect(obs.x + 4, obs.y + 4, obs.w - 8, 10);
+                gameCtx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+                gameCtx.beginPath();
+                gameCtx.moveTo(obs.x + 10, obs.y + 14);
+                gameCtx.lineTo(obs.x + 24, obs.y + 28);
+                gameCtx.lineTo(obs.x + 36, obs.y + 18);
+                gameCtx.stroke();
+            }
+
+            // 壊せる壁の描画
             for (const w of arenaWalls) {
                 const hpRatio = w.hp / w.maxHp;
                 gameCtx.fillStyle = hpRatio > 0.6 ? '#7f8c8d' : hpRatio > 0.3 ? '#95a5a6' : '#e67e22';
@@ -3065,6 +3075,7 @@
                 gameCtx.stroke();
             }
 
+            // アイテムの描画
             for (const it of arenaItems) {
                 const pulse = Math.sin(now / 150) * 2.5;
                 let bgCol = 'rgba(255, 242, 0, 0.3)';
@@ -3154,14 +3165,14 @@
                     gameCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
                 }
                 gameCtx.save();
-                gameCtx.font = 'bold 72px sans-serif';
+                gameCtx.font = 'bold 88px sans-serif';
                 gameCtx.textAlign = 'center';
                 gameCtx.textBaseline = 'middle';
                 gameCtx.fillStyle = countdownBanner === 'FIGHT!' ? '#ff4d4d' : '#f1c40f';
                 gameCtx.strokeStyle = '#000000';
-                gameCtx.lineWidth = 6;
-                gameCtx.strokeText(countdownBanner, 200, 200);
-                gameCtx.fillText(countdownBanner, 200, 200);
+                gameCtx.lineWidth = 7;
+                gameCtx.strokeText(countdownBanner, ARENA_CENTER_X, ARENA_CENTER_Y);
+                gameCtx.fillText(countdownBanner, ARENA_CENTER_X, ARENA_CENTER_Y);
                 gameCtx.restore();
             }
 
