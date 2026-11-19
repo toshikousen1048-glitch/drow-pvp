@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>32x32 Pixel PvP Battle</title>
+    <title>32x32 Pixel PvP & BOSS Battle</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -421,9 +421,37 @@
            🚪 STEP 2: ロビー・待機室
         ========================================== */
         .lobby-box {
-            max-width: 500px;
+            max-width: 520px;
             width: 100%;
             text-align: center;
+        }
+        .mode-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 10px 0 14px 0;
+        }
+        .mode-btn {
+            padding: 10px 8px;
+            border-radius: 8px;
+            border: 2px solid #3a3a52;
+            background: #0f0f1a;
+            color: #aaa;
+            font-weight: bold;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .mode-btn.active-pvp {
+            background: rgba(233, 69, 96, 0.22);
+            border-color: #e94560;
+            color: #fff;
+        }
+        .mode-btn.active-boss {
+            background: rgba(155, 89, 182, 0.28);
+            border-color: #9b59b6;
+            color: #f5b7ff;
+            box-shadow: 0 0 12px rgba(155, 89, 182, 0.35);
         }
         .room-input-group {
             display: flex;
@@ -550,7 +578,7 @@
         #resultOverlay {
             position: absolute;
             inset: 0;
-            background: rgba(15, 15, 26, 0.88);
+            background: rgba(15, 15, 26, 0.9);
             border-radius: 8px;
             display: none;
             flex-direction: column;
@@ -612,7 +640,7 @@
         <canvas id="demoBgCanvas" width="800" height="600"></canvas>
         <div class="home-content">
             <h1 class="game-logo">PIXEL PVP 32x32</h1>
-            <p class="game-subtitle">描いたドット絵がそのまま戦士になるオンライン対戦アクション！</p>
+            <p class="game-subtitle">描いたドット絵でオンライン対戦＆1〜4人協力BOSS討伐！</p>
             <div class="home-points-pill">
                 🪙 所持ポイント: <span id="homePointsVal">300</span> Pt
             </div>
@@ -634,7 +662,7 @@
     <div id="gachaModal" class="modal-overlay">
         <div class="modal-box">
             <h2 style="margin-top:0; color:#f1c40f;">🎰 特別インクガチャ</h2>
-            <p style="font-size:0.85rem; color:#ccc;">対戦で貯めたポイントでレアな輝きを持つインクを解放しよう！（1回 300Pt）</p>
+            <p style="font-size:0.85rem; color:#ccc;">対戦やBOSS討伐で貯めたポイントでレアインクを解放しよう！（1回 300Pt）</p>
             <div style="font-weight:bold; color:#f1c40f; margin-bottom:6px;">所持: <span id="modalPointsVal">300</span> Pt</div>
             <div id="gachaCapsule" class="gacha-capsule">🎁</div>
             <div id="gachaResultArea" style="min-height:58px; margin-bottom:12px;">
@@ -651,13 +679,13 @@
     <div id="howToModal" class="modal-overlay">
         <div class="modal-box" style="text-align:left;">
             <h2 style="margin-top:0; text-align:center; color:#2ecc71;">📖 操作方法＆ルール</h2>
-            <ul style="font-size:0.88rem; line-height:1.65; color:#ddd; padding-left:20px;">
+            <ul style="font-size:0.86rem; line-height:1.65; color:#ddd; padding-left:20px;">
                 <li><b>移動:</b> <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> または <span class="kbd">↑</span><span class="kbd">↓</span><span class="kbd">←</span><span class="kbd">→</span></li>
                 <li><b>弾（遠距離ショット）:</b> <span class="kbd">Z</span> キー（または左クリック）</li>
                 <li><b>斬撃（近接スラッシュ）:</b> <span class="kbd">X</span> キー（または右クリック）</li>
-                <li><b>盾（バリアガード）:</b> <span class="kbd">Shift</span> キー（攻撃を弾き返す！）</li>
-                <li><b>色の効果:</b> 赤系＝攻撃UP / 青系＝速度UP / 黄・緑系＝HP UP。3色以上使うとボーナス！</li>
-                <li><b>セーフティゾーン:</b> 時間経過で安全地帯が狭まる！赤い危険エリアの外にいるとダメージを受けるぞ！</li>
+                <li><b>盾（バリアガード）:</b> <span class="kbd">Shift</span> キー（攻撃を無効化＆吸引軽減！）</li>
+                <li><b>⚔️ PvP対戦:</b> 2〜4人でバトル！時間経過で安全地帯が縮小するぞ！</li>
+                <li><b>🌀 BOSS討伐（VOID TYPHOON）:</b> <b>1人でも4人協力でも出撃可能！</b>人数に応じてボスのHPが変化！</li>
             </ul>
             <div style="text-align:center; margin-top:14px;">
                 <button class="small-btn" style="padding:8px 24px;" onclick="closeHowToModal()">OK！</button>
@@ -750,7 +778,7 @@
                     <div id="saveSlotsContainer" class="slots-grid"></div>
                 </div>
 
-                <button class="next-step-btn" onclick="switchStep(2)">次へ：対戦ルームへ進む ➡️</button>
+                <button class="next-step-btn" onclick="switchStep(2)">次へ：対戦・BOSSロビーへ進む ➡️</button>
             </div>
         </div>
     </div>
@@ -760,22 +788,31 @@
     ========================================== -->
     <div id="step2Screen" class="step-screen">
         <div class="panel-box lobby-box">
-            <h2 style="margin-top:0;">🚪 オンライン対戦ロビー</h2>
+            <h2 style="margin-top:0;">🚪 オンラインバトルロビー</h2>
             <div id="connectionStatus" style="font-size:0.85rem; color:#f1c40f; margin-bottom:10px;">🟡 サーバー接続中...</div>
 
-            <div style="margin:10px auto;">
-                <canvas id="lobbyPreviewCanvas" width="96" height="96" style="background:#0f0f1a; border:2px solid #3a3a52; border-radius:8px;"></canvas>
-                <div id="lobbyCharSummary" style="font-size:0.88rem; margin-top:4px; font-weight:bold;"></div>
+            <!-- モード選択ボタン -->
+            <div class="mode-selector">
+                <button id="modePvpBtn" class="mode-btn active-pvp" onclick="selectRoomMode('pvp')">⚔️ PvP対戦 (2〜4人)</button>
+                <button id="modeBossBtn" class="mode-btn" onclick="selectRoomMode('boss')">🌀 BOSS討伐 (1〜4人協力)</button>
+            </div>
+            <div id="modeDescBanner" style="font-size:0.8rem; color:#bdc3c7; background:#0f0f1a; padding:6px 10px; border-radius:6px; margin-bottom:10px;">
+                ⚔️ プレイヤー同士のサバイバル対戦！最後の1人まで生き残れ！
+            </div>
+
+            <div style="margin:8px auto;">
+                <canvas id="lobbyPreviewCanvas" width="90" height="90" style="background:#0f0f1a; border:2px solid #3a3a52; border-radius:8px;"></canvas>
+                <div id="lobbyCharSummary" style="font-size:0.86rem; margin-top:4px; font-weight:bold;"></div>
             </div>
 
             <div class="room-input-group">
-                <input id="roomInput" type="text" placeholder="合言葉を入力（例: 1234）" maxlength="16">
+                <input id="roomInput" type="text" placeholder="合言葉を入力（1人BOSS戦は適当でOK）" maxlength="16">
                 <button id="joinRoomBtn" class="btn-join">入室</button>
                 <button id="leaveRoomBtn" class="btn-leave" style="display:none;">退室</button>
             </div>
 
-            <div id="lobbyGuideArea" style="font-size:0.85rem; color:#aaa; margin-top:12px;">
-                友達と同じ「合言葉」を入力して入室しよう！（最大4人同時対戦）
+            <div id="lobbyGuideArea" style="font-size:0.84rem; color:#aaa; margin-top:10px;">
+                好きな合言葉を入力して入室しよう！（BOSS戦は1人でもすぐ出撃できます）
             </div>
 
             <div id="lobbyWaitingArea" style="display:none; flex-direction:column;">
@@ -798,10 +835,10 @@
 
             <!-- リザルト表示 -->
             <div id="resultOverlay">
-                <h1 id="resultTitle" style="font-size:2.2rem; margin:0 0 8px 0;">🏆 YOU WIN!!</h1>
+                <h1 id="resultTitle" style="font-size:2.1rem; margin:0 0 8px 0;">🏆 YOU WIN!!</h1>
                 <canvas id="winnerCanvas" width="84" height="84" style="background:#16213e; border:2px solid #f1c40f; border-radius:8px; margin:6px 0;"></canvas>
-                <div id="winnerNameDisplay" style="font-size:1.1rem; font-weight:bold; margin-bottom:12px;"></div>
-                <div id="resultScoreList" class="ready-list" style="width:100%; max-width:340px;"></div>
+                <div id="winnerNameDisplay" style="font-size:1.05rem; font-weight:bold; margin-bottom:12px;"></div>
+                <div id="resultScoreList" class="ready-list" style="width:100%; max-width:360px;"></div>
                 <button id="rematchBtn" class="btn-ready" style="max-width:260px; margin-top:10px;">🔄 ロビーに戻って再戦</button>
             </div>
 
@@ -813,7 +850,7 @@
                 <button id="toggleTouchBtn" class="small-btn" style="margin-left:8px;">📱 タッチ操作</button>
             </div>
 
-            <!-- スマホ用タッチパッド（物理キーコードで統一） -->
+            <!-- スマホ用タッチパッド -->
             <div id="touchControls">
                 <div class="dpad">
                     <div></div>
@@ -841,6 +878,7 @@
         // 🧭 画面ステップ切り替え管理
         // ==========================================
         let currentUiStep = 1;
+        let currentRoomMode = 'pvp'; // 'pvp' or 'boss'
 
         function switchStep(stepNum) {
             currentUiStep = stepNum;
@@ -853,12 +891,41 @@
             }
         }
 
+        function updateModeButtonsUI() {
+            const pvpBtn = document.getElementById('modePvpBtn');
+            const bossBtn = document.getElementById('modeBossBtn');
+            const desc = document.getElementById('modeDescBanner');
+
+            pvpBtn.className = 'mode-btn' + (currentRoomMode === 'pvp' ? ' active-pvp' : '');
+            bossBtn.className = 'mode-btn' + (currentRoomMode === 'boss' ? ' active-boss' : '');
+
+            if (currentRoomMode === 'boss') {
+                desc.innerHTML = '🌀 <b>VOID TYPHOON 討伐戦！</b> 1〜4人で巨大ブラックホール台風に挑め！（参加人数でBOSSのHPが増加）';
+                desc.style.color = '#f5b7ff';
+            } else {
+                desc.innerHTML = '⚔️ <b>PvPサバイバル対戦！</b> 2〜4人でバトル！最後の1人まで生き残れ！';
+                desc.style.color = '#bdc3c7';
+            }
+        }
+
+        function selectRoomMode(mode) {
+            initAudio();
+            SE.click();
+            if (activeRoom && roomState !== 'waiting') return;
+            currentRoomMode = mode === 'boss' ? 'boss' : 'pvp';
+            updateModeButtonsUI();
+
+            if (activeRoom && socket && socket.connected) {
+                socket.emit('changeRoomMode', currentRoomMode);
+            }
+        }
+
         function renderLobbyPreview() {
             const pCanvas = document.getElementById('lobbyPreviewCanvas');
             if (!pCanvas) return;
             const pCtx = pCanvas.getContext('2d');
-            pCtx.clearRect(0, 0, 96, 96);
-            const scale = 96 / 32;
+            pCtx.clearRect(0, 0, 90, 90);
+            const scale = 90 / 32;
             const now = performance.now();
             for (let y = 0; y < 32; y++) {
                 for (let x = 0; x < 32; x++) {
@@ -951,6 +1018,8 @@
             shield: () => playTone(440, 'sine', 0.25, 0.08, 880),
             block: () => playTone(1200, 'square', 0.1, 0.09, 600),
             hit: () => playTone(160, 'sawtooth', 0.15, 0.1, 55),
+            bossSlash: () => { playNoise(0.25, 0.13); playTone(720, 'sawtooth', 0.22, 0.09, 110); },
+            bossPulse: () => { playNoise(0.35, 0.15); playTone(180, 'sawtooth', 0.35, 0.12, 40); },
             zoneHit: () => playTone(110, 'sawtooth', 0.18, 0.08, 75),
             wallBreak: () => { playNoise(0.22, 0.12); playTone(140, 'square', 0.2, 0.09, 45); },
             itemSpeed: () => {
@@ -981,6 +1050,7 @@
 
         const LOBBY_MELODY = [523, 0, 659, 587, 523, 0, 392, 0, 440, 0, 523, 587, 659, 0, 523, 0];
         const BATTLE_MELODY = [330, 330, 392, 330, 440, 392, 330, 294, 330, 330, 494, 440, 392, 330, 294, 247];
+        const BOSS_MELODY = [220, 220, 261, 246, 220, 196, 220, 330, 293, 261, 246, 220, 196, 174, 164, 220];
 
         function startBgm(track) {
             if (currentBgmTrack === track && bgmInterval) return;
@@ -989,8 +1059,8 @@
             if (!bgmEnabled || track === 'none') return;
 
             bgmStep = 0;
-            const tempoMs = track === 'lobby' ? 240 : track === 'pinch' ? 125 : 165;
-            const melody = track === 'lobby' ? LOBBY_MELODY : BATTLE_MELODY;
+            const tempoMs = track === 'lobby' ? 240 : track === 'pinch' ? 125 : track === 'boss' ? 145 : 165;
+            const melody = track === 'lobby' ? LOBBY_MELODY : track === 'boss' ? BOSS_MELODY : BATTLE_MELODY;
 
             bgmInterval = setInterval(() => {
                 if (!bgmEnabled || !audioCtx || audioCtx.state !== 'running') return;
@@ -998,7 +1068,7 @@
                 if (freq > 0) {
                     const osc = audioCtx.createOscillator();
                     const gain = audioCtx.createGain();
-                    osc.type = track === 'lobby' ? 'triangle' : 'square';
+                    osc.type = track === 'lobby' ? 'triangle' : track === 'boss' ? 'sawtooth' : 'square';
                     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
                     gain.gain.setValueAtTime(0.028, audioCtx.currentTime);
                     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
@@ -1035,7 +1105,7 @@
             bgmEnabled = !bgmEnabled;
             updateSoundButtonsUI();
             if (!bgmEnabled) stopBgm();
-            else startBgm(roomState === 'playing' ? 'battle' : 'lobby');
+            else startBgm(roomState === 'playing' ? (currentRoomMode === 'boss' ? 'boss' : 'battle') : 'lobby');
         }
 
         function toggleSe() {
@@ -1131,7 +1201,7 @@
             initAudio();
             if (isPullingGacha) return;
             if (userProgress.points < 300) {
-                alert('ポイントが足りません！（対戦で勝利やKOをして300Pt貯めよう）');
+                alert('ポイントが足りません！（対戦やBOSS討伐で300Pt貯めよう）');
                 return;
             }
 
@@ -1204,7 +1274,7 @@
         const demoBots = [
             { x: 150, y: 200, vx: 2.2, vy: 1.5, color: '#ff4d4d' },
             { x: 600, y: 350, vx: -2.0, vy: -1.8, color: '#00a2e8' },
-            { x: 400, y: 150, vx: 1.5, vy: -2.2, color: '#2ecc71' }
+            { x: 400, y: 150, vx: 1.5, vy: -2.2, color: '#9b59b6' }
         ];
         const demoShots = [];
 
@@ -1255,6 +1325,7 @@
                 roomState = 'waiting';
                 myReady = false;
                 otherPlayers = {};
+                bossState = null;
                 roomInput.disabled = false;
                 joinRoomBtn.style.display = 'inline-block';
                 leaveRoomBtn.style.display = 'none';
@@ -1266,7 +1337,7 @@
         }
 
         // ==========================================
-        // 🎨 キャラクターエディタ＆バトルロジック（640x640 アリーナ）
+        // 🎨 キャラクターエディタ＆バトルロジック（640x640）
         // ==========================================
         const GRID_SIZE = 32;
         const EDITOR_CANVAS_SIZE = 384;
@@ -1357,6 +1428,14 @@
             minRadius: 95,
             shrinking: false
         };
+
+        // BOSS関連状態（VOID TYPHOON）
+        let bossState = null;
+        let bossProjectiles = [];
+        let bossEffects = []; // 予兆線、闇の雷スラッシュ、ブラックホール衝撃波など
+        let bossVortexUntil = 0;
+        let bossVortexPull = 1.5;
+
         let projectiles = [];
         let meleeEffects = [];
         let floatingTexts = [];
@@ -1374,7 +1453,7 @@
             return c;
         }
 
-        // スマホ用タッチ操作（物理キーコード e.code で統一＋指が外れてもリセット）
+        // スマホ用タッチ操作
         const toggleTouchBtn = document.getElementById('toggleTouchBtn');
         const touchControls = document.getElementById('touchControls');
         if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -1405,7 +1484,6 @@
         });
         gameCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-        // 壊せない岩ブロック＋壊せる壁の両方との当たり判定
         function collidesWithWall(x, y, size) {
             const pad = 6;
             const left = x + pad;
@@ -1620,6 +1698,8 @@
         };
 
         function updateLobbyUI() {
+            updateModeButtonsUI();
+
             if (!activeRoom) {
                 lobbyWaitingArea.style.display = 'none';
                 lobbyGuideArea.style.display = 'block';
@@ -1635,7 +1715,20 @@
                 lobbyGuideArea.style.display = 'none';
                 resultOverlay.style.display = 'none';
 
-                let html = `
+                const totalMembers = 1 + Object.keys(otherPlayers).length;
+                const bossHpMap = { 1: 600, 2: 1100, 3: 1550, 4: 2000 };
+
+                let html = '';
+                if (currentRoomMode === 'boss') {
+                    html += `
+                        <div class="ready-row" style="background:rgba(155,89,182,0.18); padding:6px 8px; border-radius:6px; margin-bottom:4px;">
+                            <span style="color:#f5b7ff; font-weight:bold;">🌀 BOSS: VOID TYPHOON (${totalMembers}人参加)</span>
+                            <span style="color:#f1c40f; font-weight:bold;">BOSS HP: ${bossHpMap[Math.min(4, totalMembers)]}</span>
+                        </div>
+                    `;
+                }
+
+                html += `
                     <div class="ready-row">
                         <span>[${player.rank}] ${player.name}</span>
                         <span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : '準備中'}</span>
@@ -1643,10 +1736,12 @@
                 `;
                 const otherIds = Object.keys(otherPlayers);
                 if (otherIds.length === 0) {
+                    const waitText = currentRoomMode === 'boss'
+                        ? '👤 1人でも「準備OK！」で即スタートできます！'
+                        : '👥 対戦相手を待機中...（あと1人必要）';
                     html += `
                         <div class="ready-row">
-                            <span style="color:#888;">👥 対戦相手を待機中...</span>
-                            <span class="badge-wait">未入室</span>
+                            <span style="color:#aaa; font-size:0.82rem;">${waitText}</span>
                         </div>
                     `;
                 } else {
@@ -1666,7 +1761,7 @@
                     readyBtn.textContent = '⏳ キャンセル（待機中に戻る）';
                     readyBtn.classList.add('is-ready');
                 } else {
-                    readyBtn.textContent = '✅ 準備OK！';
+                    readyBtn.textContent = currentRoomMode === 'boss' ? '🌀 準備OK！（出撃する）' : '✅ 準備OK！';
                     readyBtn.classList.remove('is-ready');
                 }
             } else if (roomState === 'result') {
@@ -1678,7 +1773,7 @@
             }
         }
 
-        // --- Socket.io 接続とギミック・セーフティゾーン同期 ---
+        // --- Socket.io 接続とギミック・BOSS戦同期 ---
         let socket = null;
 
         if (typeof io !== 'undefined') {
@@ -1688,6 +1783,7 @@
                 if (activeRoom) {
                     socket.emit('joinRoom', {
                         roomId: activeRoom,
+                        mode: currentRoomMode,
                         clientKey: MY_CLIENT_KEY,
                         name: player.name,
                         rank: player.rank,
@@ -1717,10 +1813,12 @@
 
             socket.on('roomStateSync', (data) => {
                 roomState = data.state;
+                if (data.mode) currentRoomMode = data.mode;
                 arenaWalls = data.walls || [];
                 arenaItems = data.items || [];
                 if (Array.isArray(data.staticObstacles)) staticObstacles = data.staticObstacles;
                 if (data.safeZone) safeZone = data.safeZone;
+                bossState = data.boss || null;
 
                 const players = data.players || {};
                 if (players[socket.id]) {
@@ -1742,6 +1840,9 @@
                 otherPlayers = { ...players };
                 delete otherPlayers[socket.id];
                 projectiles = [];
+                bossProjectiles = [];
+                bossEffects = [];
+                bossVortexUntil = 0;
                 meleeEffects = [];
                 confettiParticles = [];
                 countdownBanner = '';
@@ -1759,6 +1860,86 @@
 
             socket.on('safeZoneUpdated', (zoneData) => {
                 if (zoneData) safeZone = zoneData;
+            });
+
+            // BOSSの状態・ダメージ・攻撃イベント受信
+            socket.on('bossStateUpdated', (bossData) => {
+                bossState = bossData;
+            });
+
+            socket.on('bossDamaged', (data) => {
+                if (bossState) {
+                    const prevPhase = bossState.phase;
+                    bossState.hp = data.hp;
+                    bossState.maxHp = data.maxHp;
+                    bossState.phase = data.phase;
+                    if (prevPhase === 1 && data.phase === 2) {
+                        SE.bossPulse();
+                        shakeTime = 16;
+                        shakeIntensity = 8;
+                        addFloatingText(bossState.x, bossState.y - 50, 'PHASE 2: RAGE!!', '#ff2a00');
+                    }
+                    addFloatingText(
+                        bossState.x + (Math.random() - 0.5) * 36,
+                        bossState.y - 24,
+                        `-${data.damage}`,
+                        data.attackerId === socket.id ? '#f1c40f' : '#ffffff'
+                    );
+                }
+            });
+
+            socket.on('bossAttackEvent', (ev) => {
+                if (roomState !== 'playing') return;
+                if (ev.type === 'spiral') {
+                    SE.shot();
+                    for (let i = 0; i < ev.count; i++) {
+                        const ang = ev.baseAngle + (Math.PI * 2 / ev.count) * i;
+                        bossProjectiles.push({
+                            x: ev.x,
+                            y: ev.y,
+                            vx: Math.cos(ang) * ev.speed,
+                            vy: Math.sin(ang) * ev.speed,
+                            damage: ev.damage || 12,
+                            life: 140
+                        });
+                    }
+                } else if (ev.type === 'slash_warn') {
+                    bossEffects.push({
+                        type: 'slash_warn',
+                        x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2,
+                        timer: 45
+                    });
+                } else if (ev.type === 'slash_fire') {
+                    SE.bossSlash();
+                    shakeTime = 8;
+                    shakeIntensity = 5;
+                    bossEffects.push({
+                        type: 'slash_fire',
+                        x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2,
+                        timer: 18
+                    });
+                } else if (ev.type === 'vortex') {
+                    bossVortexUntil = performance.now() + (ev.duration || 3800);
+                    bossVortexPull = ev.pullStrength || 1.5;
+                    if (bossState) {
+                        addFloatingText(bossState.x, bossState.y - 45, 'VORTEX PULL!!', '#a349a4');
+                    }
+                } else if (ev.type === 'pulse_warn') {
+                    bossEffects.push({
+                        type: 'pulse_warn',
+                        x: ev.x, y: ev.y, radius: ev.radius,
+                        timer: 54
+                    });
+                } else if (ev.type === 'pulse_fire') {
+                    SE.bossPulse();
+                    shakeTime = 14;
+                    shakeIntensity = 8;
+                    bossEffects.push({
+                        type: 'pulse_fire',
+                        x: ev.x, y: ev.y, radius: ev.radius,
+                        timer: 22
+                    });
+                }
             });
 
             socket.on('zoneDamaged', (data) => {
@@ -1807,14 +1988,17 @@
 
             socket.on('matchCountdown', (data) => {
                 roomState = 'countdown';
+                if (data.mode) currentRoomMode = data.mode;
                 arenaWalls = [];
                 arenaItems = [];
                 projectiles = [];
+                bossProjectiles = [];
+                bossEffects = [];
+                bossVortexUntil = 0;
                 meleeEffects = [];
                 confettiParticles = [];
                 player.speedBoostUntil = 0;
                 player.powerBoostUntil = 0;
-                // カウントダウン開始時に全キー状態をリセット
                 for (const k in keys) keys[k] = false;
                 stopBgm();
                 updateLobbyUI();
@@ -1834,11 +2018,13 @@
                 }, 1000);
             });
 
-            socket.on('matchStart', () => {
+            socket.on('matchStart', (data) => {
                 roomState = 'playing';
+                if (data && data.mode) currentRoomMode = data.mode;
+                if (data && data.boss) bossState = data.boss;
                 countdownBanner = 'FIGHT!';
                 SE.countdown(true);
-                startBgm('battle');
+                startBgm(currentRoomMode === 'boss' ? 'boss' : 'battle');
                 updateLobbyUI();
                 setTimeout(() => {
                     if (countdownBanner === 'FIGHT!') countdownBanner = '';
@@ -1849,11 +2035,6 @@
                 roomState = 'result';
                 for (const k in keys) keys[k] = false;
                 stopBgm();
-                SE.win();
-
-                if (data.winnerId === socket.id && data.winBonus > 0) {
-                    addUserPoints(data.winBonus);
-                }
 
                 const allPlayers = data.players || {};
                 if (allPlayers[socket.id]) {
@@ -1867,57 +2048,83 @@
                     }
                 }
 
-                confettiParticles = [];
-                const confettiColors = ['#f1c40f', '#e74c3c', '#2ecc71', '#3498db', '#9b59b6', '#ff7f27'];
-                for (let i = 0; i < 100; i++) {
-                    confettiParticles.push({
-                        x: Math.random() * ARENA_WIDTH,
-                        y: Math.random() * -250,
-                        vx: (Math.random() - 0.5) * 3,
-                        vy: Math.random() * 3 + 2,
-                        color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
-                        size: Math.random() * 6 + 4
-                    });
-                }
-
-                const winner = data.winner;
                 const resultTitle = document.getElementById('resultTitle');
                 const winnerNameDisplay = document.getElementById('winnerNameDisplay');
                 const winnerCanvas = document.getElementById('winnerCanvas');
                 const wCtx = winnerCanvas.getContext('2d');
                 wCtx.clearRect(0, 0, 84, 84);
 
-                if (winner) {
-                    const isMe = winner.id === socket.id;
-                    resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!';
-                    resultTitle.style.color = isMe ? '#f1c40f' : '#3498db';
-                    winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！`;
+                if (data.mode === 'boss') {
+                    // BOSS戦リザルト
+                    if (data.bossCleared) {
+                        SE.win();
+                        const isMvp = data.mvpId === socket.id;
+                        addUserPoints((data.clearBonus || 400) + (isMvp ? 100 : 0));
 
-                    const wGrid = isMe ? gridData : winner.characterData;
-                    if (wGrid) {
-                        const pScale = 84 / GRID_SIZE;
-                        for (let dy = 0; dy < GRID_SIZE; dy++) {
-                            for (let dx = 0; dx < GRID_SIZE; dx++) {
-                                if (wGrid[dy] && wGrid[dy][dx]) {
-                                    wCtx.fillStyle = resolvePixelColor(wGrid[dy][dx], performance.now());
-                                    wCtx.fillRect(dx * pScale, dy * pScale, pScale, pScale);
+                        resultTitle.textContent = '🌀 BOSS DEFEATED!!';
+                        resultTitle.style.color = '#f5b7ff';
+                        const mvpPlayer = data.mvpId ? allPlayers[data.mvpId] : null;
+                        winnerNameDisplay.textContent = mvpPlayer
+                            ? `VOID TYPHOON 討伐成功！ 👑MVP: ${mvpPlayer.name}`
+                            : 'VOID TYPHOON 討伐成功！';
+
+                        spawnConfetti();
+                    } else {
+                        SE.ko();
+                        resultTitle.textContent = '💀 PARTY WIPED...';
+                        resultTitle.style.color = '#e74c3c';
+                        winnerNameDisplay.textContent = 'VOID TYPHOON に敗北した...';
+                    }
+
+                    const sorted = Object.values(allPlayers).sort((a, b) => (b.bossDamageDealt || 0) - (a.bossDamageDealt || 0));
+                    const scoreHtml = sorted.map((pl, idx) => `
+                        <div class="ready-row">
+                            <span>${pl.id === data.mvpId ? '👑 ' : ''}[${pl.rank}] ${pl.name}</span>
+                            <span style="color:#f1c40f; font-weight:bold;">与ダメ: ${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span>
+                        </div>
+                    `).join('');
+                    document.getElementById('resultScoreList').innerHTML = scoreHtml;
+                } else {
+                    // PvP戦リザルト
+                    SE.win();
+                    if (data.winnerId === socket.id && data.winBonus > 0) {
+                        addUserPoints(data.winBonus);
+                    }
+                    spawnConfetti();
+
+                    const winner = data.winner;
+                    if (winner) {
+                        const isMe = winner.id === socket.id;
+                        resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!';
+                        resultTitle.style.color = isMe ? '#f1c40f' : '#3498db';
+                        winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！`;
+
+                        const wGrid = isMe ? gridData : winner.characterData;
+                        if (wGrid) {
+                            const pScale = 84 / GRID_SIZE;
+                            for (let dy = 0; dy < GRID_SIZE; dy++) {
+                                for (let dx = 0; dx < GRID_SIZE; dx++) {
+                                    if (wGrid[dy] && wGrid[dy][dx]) {
+                                        wCtx.fillStyle = resolvePixelColor(wGrid[dy][dx], performance.now());
+                                        wCtx.fillRect(dx * pScale, dy * pScale, pScale, pScale);
+                                    }
                                 }
                             }
                         }
+                    } else {
+                        resultTitle.textContent = '🤝 DRAW!';
+                        winnerNameDisplay.textContent = '引き分け！';
                     }
-                } else {
-                    resultTitle.textContent = '🤝 DRAW!';
-                    winnerNameDisplay.textContent = '引き分け！';
-                }
 
-                const sorted = Object.values(allPlayers).sort((a, b) => (b.points || 0) - (a.points || 0));
-                const scoreHtml = sorted.map((pl, idx) => `
-                    <div class="ready-row">
-                        <span>${idx + 1}位: [${pl.rank}] ${pl.name}</span>
-                        <span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span>
-                    </div>
-                `).join('');
-                document.getElementById('resultScoreList').innerHTML = scoreHtml;
+                    const sorted = Object.values(allPlayers).sort((a, b) => (b.points || 0) - (a.points || 0));
+                    const scoreHtml = sorted.map((pl, idx) => `
+                        <div class="ready-row">
+                            <span>${idx + 1}位: [${pl.rank}] ${pl.name}</span>
+                            <span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span>
+                        </div>
+                    `).join('');
+                    document.getElementById('resultScoreList').innerHTML = scoreHtml;
+                }
 
                 updateLobbyUI();
             });
@@ -2094,15 +2301,35 @@
             });
         }
 
+        function spawnConfetti() {
+            confettiParticles = [];
+            const confettiColors = ['#f1c40f', '#e74c3c', '#2ecc71', '#3498db', '#9b59b6', '#ff7f27'];
+            for (let i = 0; i < 100; i++) {
+                confettiParticles.push({
+                    x: Math.random() * ARENA_WIDTH,
+                    y: Math.random() * -250,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: Math.random() * 3 + 2,
+                    color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+                    size: Math.random() * 6 + 4
+                });
+            }
+        }
+
         // --- エントリー・準備・再戦・退室イベント ---
         joinRoomBtn.addEventListener('click', () => {
             initAudio();
             SE.click();
-            const roomName = roomInput.value.trim();
+            let roomName = roomInput.value.trim();
             if (!roomName) {
-                alert('合言葉（ルーム名）を入力してください！');
-                roomInput.focus();
-                return;
+                if (currentRoomMode === 'boss') {
+                    roomName = 'SOLO_' + Math.floor(1000 + Math.random() * 9000);
+                    roomInput.value = roomName;
+                } else {
+                    alert('合言葉（ルーム名）を入力してください！');
+                    roomInput.focus();
+                    return;
+                }
             }
             if (!socket || !socket.connected) {
                 alert('サーバーに接続されていません。少し待ってから再度お試しください。');
@@ -2123,6 +2350,7 @@
 
             socket.emit('joinRoom', {
                 roomId: activeRoom,
+                mode: currentRoomMode,
                 clientKey: MY_CLIENT_KEY,
                 name: player.name,
                 rank: player.rank,
@@ -2180,9 +2408,12 @@
             roomState = 'waiting';
             myReady = false;
             otherPlayers = {};
+            bossState = null;
             arenaWalls = [];
             arenaItems = [];
             projectiles = [];
+            bossProjectiles = [];
+            bossEffects = [];
             meleeEffects = [];
             confettiParticles = [];
             countdownBanner = '';
@@ -2529,7 +2760,6 @@
         // --- キーボード入力とアクション（盾→Shift / 弾→Z / 斬撃→X） ---
         const keys = {};
 
-        // ウィンドウのフォーカスが外れたら全キーを強制リセット（張り付き暴走防止）
         window.addEventListener('blur', () => {
             for (const k in keys) {
                 keys[k] = false;
@@ -2539,7 +2769,6 @@
         window.addEventListener('keydown', (e) => {
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
 
-            // お絵描き画面中のみ Ctrl+Z で元に戻す
             if (!isTyping && roomState !== 'playing' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
                 e.preventDefault();
                 undoCanvas();
@@ -2550,14 +2779,13 @@
                 e.preventDefault();
             }
 
-            // 物理キーコード (e.code) で統一管理（Shift同時押しで文字が変わるバグを防止）
             keys[e.code] = true;
 
             if (isTyping || player.isDead || player.isEliminated || roomState !== 'playing') return;
 
-            if (e.code === 'KeyZ') triggerShot();    // 弾 → Zキー
-            if (e.code === 'KeyX') triggerMelee();   // 斬撃 → Xキー
-            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') triggerShield(); // 盾 → Shiftキー
+            if (e.code === 'KeyZ') triggerShot();
+            if (e.code === 'KeyX') triggerMelee();
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') triggerShield();
         });
 
         window.addEventListener('keyup', (e) => {
@@ -2692,15 +2920,29 @@
                 let nextFacing = player.facing;
                 let inputPressed = false;
 
-                // 物理キーコード (e.code) で判定（Shift同時押しでも暴走しない）
                 if (keys['ArrowUp'] || keys['KeyW']) { nextY -= spd; nextFacing = 'up'; inputPressed = true; }
                 else if (keys['ArrowDown'] || keys['KeyS']) { nextY += spd; nextFacing = 'down'; inputPressed = true; }
                 else if (keys['ArrowLeft'] || keys['KeyA']) { nextX -= spd; nextFacing = 'left'; inputPressed = true; }
                 else if (keys['ArrowRight'] || keys['KeyD']) { nextX += spd; nextFacing = 'right'; inputPressed = true; }
 
-                if (inputPressed) {
-                    const charDisplaySize = GRID_SIZE * 1.5; // 48
-                    // ステージ端（0 ～ 592）でピタッと止める
+                // BOSS戦の吸引＆渦潮フィールド（Vortex Pull）の引き寄せ計算
+                let pulled = false;
+                if (currentRoomMode === 'boss' && bossState && now < bossVortexUntil) {
+                    const pcx = nextX + 24;
+                    const pcy = nextY + 24;
+                    const distToBoss = Math.hypot(bossState.x - pcx, bossState.y - pcy);
+                    if (distToBoss > bossState.radius + 10 && distToBoss < 340) {
+                        const pullAng = Math.atan2(bossState.y - pcy, bossState.x - pcx);
+                        // 盾を展開中は引き寄せ力を75%軽減！
+                        const effectivePull = isShielding ? bossVortexPull * 0.25 : bossVortexPull;
+                        nextX += Math.cos(pullAng) * effectivePull;
+                        nextY += Math.sin(pullAng) * effectivePull;
+                        pulled = true;
+                    }
+                }
+
+                if (inputPressed || pulled) {
+                    const charDisplaySize = GRID_SIZE * 1.5;
                     nextX = Math.min(ARENA_WIDTH - charDisplaySize, Math.max(0, nextX));
                     nextY = Math.min(ARENA_HEIGHT - charDisplaySize, Math.max(ARENA_TOP, nextY));
 
@@ -2715,7 +2957,6 @@
                         player.y = nextY;
                     }
 
-                    // 座標または向きが実際に変化した時だけサーバーへ送信
                     if ((posChanged || facingChanged) && socket && socket.connected && activeRoom) {
                         socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                     }
@@ -2735,13 +2976,13 @@
                 }
             }
 
+            // プレイヤーの弾更新
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
                 p.x += p.vx;
                 p.y += p.vy;
                 p.life--;
 
-                // 壊せない岩ブロックに当たったら消滅
                 let hitObstacle = false;
                 for (const obs of staticObstacles) {
                     if (p.x >= obs.x && p.x <= obs.x + obs.w && p.y >= obs.y && p.y <= obs.y + obs.h) {
@@ -2754,7 +2995,6 @@
                     continue;
                 }
 
-                // 壊せる壁に当たったらダメージを与えて消滅
                 let hitWall = false;
                 for (const w of arenaWalls) {
                     if (p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h) {
@@ -2770,7 +3010,19 @@
                     continue;
                 }
 
-                if (p.isMine && socket && socket.connected && activeRoom) {
+                // BOSS戦モードでのBOSSへの命中判定
+                if (currentRoomMode === 'boss' && bossState && bossState.hp > 0) {
+                    if (Math.hypot(p.x - bossState.x, p.y - bossState.y) <= bossState.radius + 6) {
+                        if (p.isMine && socket && socket.connected && activeRoom) {
+                            socket.emit('damageBoss', { type: 'shot' });
+                        }
+                        projectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                // PvPモードでの他プレイヤーへの命中判定
+                if (currentRoomMode === 'pvp' && p.isMine && socket && socket.connected && activeRoom) {
                     for (const id in otherPlayers) {
                         const target = otherPlayers[id];
                         if (target.isDead || target.isEliminated) continue;
@@ -2787,12 +3039,12 @@
                 }
             }
 
+            // プレイヤーの近接斬撃更新
             for (let i = meleeEffects.length - 1; i >= 0; i--) {
                 const m = meleeEffects[i];
                 m.timer--;
 
                 if (m.isMine && !m.hasHit && socket && socket.connected && activeRoom) {
-                    // 壊せない岩ブロックに阻まれる判定
                     for (const obs of staticObstacles) {
                         if (m.hx < obs.x + obs.w && m.hx + m.hw > obs.x && m.hy < obs.y + obs.h && m.hy + m.hh > obs.y) {
                             m.hasHit = true;
@@ -2810,7 +3062,18 @@
                         }
                     }
 
-                    if (!m.hasHit) {
+                    // BOSSへの斬撃命中判定
+                    if (!m.hasHit && currentRoomMode === 'boss' && bossState && bossState.hp > 0) {
+                        const mcx = m.hx + m.hw / 2;
+                        const mcy = m.hy + m.hh / 2;
+                        if (Math.hypot(mcx - bossState.x, mcy - bossState.y) <= bossState.radius + 26) {
+                            m.hasHit = true;
+                            socket.emit('damageBoss', { type: 'melee' });
+                        }
+                    }
+
+                    // PvPでの他プレイヤーへの斬撃命中判定
+                    if (!m.hasHit && currentRoomMode === 'pvp') {
                         for (const id in otherPlayers) {
                             const target = otherPlayers[id];
                             if (target.isDead || target.isEliminated) continue;
@@ -2829,11 +3092,118 @@
                 }
             }
 
+            // BOSSの渦巻き弾更新
+            for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+                const bp = bossProjectiles[i];
+                bp.x += bp.vx;
+                bp.y += bp.vy;
+                bp.life--;
+
+                // 岩ブロックに当たったら消える
+                let hitObs = false;
+                for (const obs of staticObstacles) {
+                    if (bp.x >= obs.x && bp.x <= obs.x + obs.w && bp.y >= obs.y && bp.y <= obs.y + obs.h) {
+                        hitObs = true;
+                        break;
+                    }
+                }
+                if (hitObs) {
+                    bossProjectiles.splice(i, 1);
+                    continue;
+                }
+
+                // 自分への命中判定（無敵時間中はすり抜け）
+                if (!player.isDead && !player.isEliminated && now > player.invincibleUntil) {
+                    const pcx = player.x + 24;
+                    const pcy = player.y + 24;
+                    if (Math.hypot(bp.x - pcx, bp.y - pcy) < 22) {
+                        if (socket && socket.connected && activeRoom) {
+                            socket.emit('bossProjectileHit', { damage: bp.damage });
+                        }
+                        bossProjectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (bp.life <= 0 || bp.x < 0 || bp.x > ARENA_WIDTH || bp.y < ARENA_TOP || bp.y > ARENA_HEIGHT) {
+                    bossProjectiles.splice(i, 1);
+                }
+            }
+
+            // BOSSエフェクトのタイマー更新
+            for (let i = bossEffects.length - 1; i >= 0; i--) {
+                bossEffects[i].timer--;
+                if (bossEffects[i].timer <= 0) bossEffects.splice(i, 1);
+            }
+
             for (let i = floatingTexts.length - 1; i >= 0; i--) {
                 floatingTexts[i].y -= 0.8;
                 floatingTexts[i].life--;
                 if (floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
             }
+        }
+
+        // 🌀 BOSS「VOID TYPHOON」の描画（ブラックホール＋台風＋闇）
+        function drawBossEntity(ctx, boss, now) {
+            if (!boss) return;
+            const isRage = boss.phase === 2;
+            const bx = boss.x;
+            const by = boss.y;
+
+            ctx.save();
+
+            // 1. 吸引＆渦潮フィールド発動中の巨大台風オーラ
+            if (now < bossVortexUntil) {
+                const spin = now / 180;
+                for (let ring = 1; ring <= 4; ring++) {
+                    ctx.beginPath();
+                    ctx.arc(bx, by, 65 * ring, spin + ring, spin + ring + Math.PI * 1.4);
+                    ctx.strokeStyle = isRage ? 'rgba(255, 42, 0, 0.25)' : 'rgba(163, 73, 164, 0.25)';
+                    ctx.lineWidth = 6;
+                    ctx.stroke();
+                }
+            }
+
+            // 2. 外周の台風の渦（回転する闇の腕）
+            const armCount = 4;
+            const rot = now / (isRage ? 220 : 350);
+            for (let a = 0; a < armCount; a++) {
+                const startAng = rot + (Math.PI * 2 / armCount) * a;
+                ctx.beginPath();
+                ctx.arc(bx, by, boss.radius + 14, startAng, startAng + 1.1);
+                ctx.strokeStyle = isRage ? 'rgba(255, 60, 40, 0.7)' : 'rgba(138, 43, 226, 0.7)';
+                ctx.lineWidth = 7;
+                ctx.stroke();
+            }
+
+            // 3. 降着円盤（ブラックホールの光のリング）
+            ctx.beginPath();
+            ctx.ellipse(bx, by, boss.radius + 10, 18, Math.sin(now / 500) * 0.25, 0, Math.PI * 2);
+            ctx.strokeStyle = isRage ? '#ff6b6b' : '#4cc9f0';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            // 4. ブラックホール本体（漆黒の事象の地平面）
+            const grad = ctx.createRadialGradient(bx, by, 10, bx, by, boss.radius);
+            grad.addColorStop(0, '#000000');
+            grad.addColorStop(0.7, '#0d0221');
+            grad.addColorStop(1, isRage ? '#880015' : '#3f48cc');
+
+            ctx.beginPath();
+            ctx.arc(bx, by, boss.radius, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = isRage ? '#ff2a00' : '#00ffff';
+            ctx.stroke();
+
+            // 5. ドット絵風の不気味な双眸（目）
+            const eyeColor = isRage ? '#ff2a00' : '#00ffff';
+            ctx.fillStyle = eyeColor;
+            ctx.fillRect(bx - 18, by - 8, 12, 6);
+            ctx.fillRect(bx + 6, by - 8, 12, 6);
+
+            ctx.restore();
         }
 
         function drawEntity(ctx, x, y, facing, charData, hp, maxHp, stocks, isDead, isEliminated, isInvincible, isShielding, isSpeedBoosted, isPowerBoosted, shieldCdRatio, name, rank, isMe) {
@@ -2969,7 +3339,7 @@
         function drawTopHUD() {
             if (!activeRoom || roomState === 'waiting' || roomState === 'result') return;
 
-            gameCtx.fillStyle = 'rgba(15, 15, 26, 0.9)';
+            gameCtx.fillStyle = 'rgba(15, 15, 26, 0.94)';
             gameCtx.fillRect(0, 0, ARENA_WIDTH, ARENA_TOP);
             gameCtx.strokeStyle = '#3a3a52';
             gameCtx.lineWidth = 1;
@@ -2978,6 +3348,33 @@
             gameCtx.lineTo(ARENA_WIDTH, ARENA_TOP);
             gameCtx.stroke();
 
+            // BOSS戦モード専用HUD（巨大HPバー表示）
+            if (currentRoomMode === 'boss' && bossState) {
+                const hpRatio = Math.max(0, Math.min(1, bossState.hp / bossState.maxHp));
+                gameCtx.font = 'bold 12px sans-serif';
+                gameCtx.textAlign = 'left';
+                gameCtx.fillStyle = bossState.phase === 2 ? '#ff4d4d' : '#f5b7ff';
+                gameCtx.fillText(`🌀 ${bossState.name}`, 10, 18);
+
+                const barX = 165;
+                const barW = 340;
+                const barH = 12;
+                gameCtx.fillStyle = '#2c2c3e';
+                gameCtx.fillRect(barX, 8, barW, barH);
+                gameCtx.fillStyle = bossState.phase === 2 ? '#e74c3c' : '#9b59b6';
+                gameCtx.fillRect(barX, 8, barW * hpRatio, barH);
+                gameCtx.strokeStyle = '#fff';
+                gameCtx.lineWidth = 1;
+                gameCtx.strokeRect(barX, 8, barW, barH);
+
+                gameCtx.font = 'bold 11px monospace';
+                gameCtx.textAlign = 'right';
+                gameCtx.fillStyle = '#fff';
+                gameCtx.fillText(`${bossState.hp}/${bossState.maxHp}`, ARENA_WIDTH - 12, 18);
+                return;
+            }
+
+            // PvPモード専用HUD
             const participants = [
                 { name: player.name, stocks: player.stocks, isMe: true, isEliminated: player.isEliminated },
                 ...Object.values(otherPlayers).map(op => ({
@@ -3020,8 +3417,8 @@
                 gameCtx.beginPath(); gameCtx.moveTo(0, j); gameCtx.lineTo(ARENA_WIDTH, j); gameCtx.stroke();
             }
 
-            // セーフティゾーン（安全地帯）と危険エリアの描画
-            if (safeZone) {
+            // PvPモードのセーフティゾーン描画
+            if (currentRoomMode === 'pvp' && safeZone) {
                 gameCtx.save();
                 gameCtx.beginPath();
                 gameCtx.rect(0, ARENA_TOP, ARENA_WIDTH, ARENA_HEIGHT - ARENA_TOP);
@@ -3038,7 +3435,7 @@
                 gameCtx.restore();
             }
 
-            // 壊せない固定障害物（岩ブロック）の描画
+            // 壊せない固定障害物（岩ブロック）
             for (const obs of staticObstacles) {
                 gameCtx.fillStyle = '#2c3e50';
                 gameCtx.fillRect(obs.x, obs.y, obs.w, obs.h);
@@ -3056,7 +3453,7 @@
                 gameCtx.stroke();
             }
 
-            // 壊せる壁の描画
+            // 壊せる壁
             for (const w of arenaWalls) {
                 const hpRatio = w.hp / w.maxHp;
                 gameCtx.fillStyle = hpRatio > 0.6 ? '#7f8c8d' : hpRatio > 0.3 ? '#95a5a6' : '#e67e22';
@@ -3064,18 +3461,9 @@
                 gameCtx.strokeStyle = '#ecf0f1';
                 gameCtx.lineWidth = 2;
                 gameCtx.strokeRect(w.x + 1, w.y + 1, w.w - 2, w.h - 2);
-
-                gameCtx.strokeStyle = 'rgba(0,0,0,0.35)';
-                gameCtx.beginPath();
-                gameCtx.moveTo(w.x, w.y + 20); gameCtx.lineTo(w.x + 40, w.y + 20);
-                gameCtx.moveTo(w.x + 20, w.y); gameCtx.lineTo(w.x + 20, w.y + 20);
-                if (hpRatio <= 0.6) {
-                    gameCtx.moveTo(w.x + 8, w.y + 8); gameCtx.lineTo(w.x + 32, w.y + 32);
-                }
-                gameCtx.stroke();
             }
 
-            // アイテムの描画
+            // アイテム
             for (const it of arenaItems) {
                 const pulse = Math.sin(now / 150) * 2.5;
                 let bgCol = 'rgba(255, 242, 0, 0.3)';
@@ -3109,6 +3497,57 @@
                 gameCtx.restore();
             }
 
+            // BOSS「VOID TYPHOON」の描画
+            if (currentRoomMode === 'boss' && bossState) {
+                drawBossEntity(gameCtx, bossState, now);
+            }
+
+            // BOSS攻撃エフェクト（予兆線・闇の雷・ブラックホール衝撃波）
+            for (const ef of bossEffects) {
+                gameCtx.save();
+                if (ef.type === 'slash_warn') {
+                    gameCtx.beginPath();
+                    gameCtx.moveTo(ef.x1, ef.y1);
+                    gameCtx.lineTo(ef.x2, ef.y2);
+                    gameCtx.strokeStyle = 'rgba(255, 50, 80, 0.65)';
+                    gameCtx.lineWidth = 3;
+                    gameCtx.setLineDash([8, 6]);
+                    gameCtx.stroke();
+                } else if (ef.type === 'slash_fire') {
+                    gameCtx.beginPath();
+                    gameCtx.moveTo(ef.x1, ef.y1);
+                    gameCtx.lineTo(ef.x2, ef.y2);
+                    gameCtx.strokeStyle = '#bf00ff';
+                    gameCtx.lineWidth = 18;
+                    gameCtx.stroke();
+
+                    gameCtx.beginPath();
+                    gameCtx.moveTo(ef.x1, ef.y1);
+                    gameCtx.lineTo(ef.x2, ef.y2);
+                    gameCtx.strokeStyle = '#ffffff';
+                    gameCtx.lineWidth = 5;
+                    gameCtx.stroke();
+                } else if (ef.type === 'pulse_warn') {
+                    gameCtx.beginPath();
+                    gameCtx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+                    gameCtx.fillStyle = 'rgba(191, 0, 255, 0.14)';
+                    gameCtx.fill();
+                    gameCtx.strokeStyle = '#ff4d4d';
+                    gameCtx.lineWidth = 2;
+                    gameCtx.setLineDash([6, 6]);
+                    gameCtx.stroke();
+                } else if (ef.type === 'pulse_fire') {
+                    gameCtx.beginPath();
+                    gameCtx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+                    gameCtx.fillStyle = 'rgba(138, 43, 226, 0.45)';
+                    gameCtx.fill();
+                    gameCtx.strokeStyle = '#00ffff';
+                    gameCtx.lineWidth = 6;
+                    gameCtx.stroke();
+                }
+                gameCtx.restore();
+            }
+
             const myShieldCdRatio = (now - player.lastShieldTime) / SHIELD_COOLDOWN;
             drawEntity(
                 gameCtx, player.x, player.y, player.facing, gridData,
@@ -3127,6 +3566,7 @@
                 );
             }
 
+            // プレイヤーの弾
             for (const p of projectiles) {
                 gameCtx.fillStyle = p.color;
                 gameCtx.beginPath();
@@ -3134,6 +3574,17 @@
                 gameCtx.fill();
                 gameCtx.strokeStyle = '#fff';
                 gameCtx.lineWidth = 1.5;
+                gameCtx.stroke();
+            }
+
+            // BOSSの渦巻き弾
+            for (const bp of bossProjectiles) {
+                gameCtx.fillStyle = '#bf00ff';
+                gameCtx.beginPath();
+                gameCtx.arc(bp.x, bp.y, 7, 0, Math.PI * 2);
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#00ffff';
+                gameCtx.lineWidth = 2;
                 gameCtx.stroke();
             }
 
