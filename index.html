@@ -364,6 +364,7 @@
         .rank-A { background: #e74c3c; color: #fff; }
         .rank-B { background: #3498db; color: #fff; }
         .rank-C { background: #7f8c8d; color: #fff; }
+        .rank-UNJUDGED { background: #2c2c3e; color: #bdc3c7; border: 1px dashed #57606f; }
 
         .slots-grid {
             display: grid;
@@ -681,11 +682,11 @@
             <h2 style="margin-top:0; text-align:center; color:#2ecc71;">📖 操作方法＆ルール</h2>
             <ul style="font-size:0.86rem; line-height:1.65; color:#ddd; padding-left:20px;">
                 <li><b>移動:</b> <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> または <span class="kbd">↑</span><span class="kbd">↓</span><span class="kbd">←</span><span class="kbd">→</span></li>
-                <li><b>弾（遠距離ショット）:</b> <span class="kbd">Z</span> キー（または左クリック）</li>
+                <li><b>バリア（ガード）:</b> <span class="kbd">Z</span> キー（攻撃を無効化＆吸引軽減！）</li>
                 <li><b>斬撃（近接スラッシュ）:</b> <span class="kbd">X</span> キー（または右クリック）</li>
-                <li><b>盾（バリアガード）:</b> <span class="kbd">Shift</span> キー（攻撃を無効化＆吸引軽減！）</li>
+                <li><b>玉（遠距離ショット）:</b> <span class="kbd">C</span> キー（または左クリック）</li>
                 <li><b>⚔️ PvP対戦:</b> 2〜4人でバトル！時間経過で安全地帯が縮小するぞ！</li>
-                <li><b>🌀 BOSS討伐（VOID TYPHOON）:</b> <b>1人でも4人協力でも出撃可能！</b>人数に応じてボスのHPが変化！</li>
+                <li><b>🌀 BOSS討伐（VOID TYPHOON）:</b> <b>1人でも4人協力でも出撃可能！</b>人数に応じてボスのHPや弾数が変化！</li>
             </ul>
             <div style="text-align:center; margin-top:14px;">
                 <button class="small-btn" style="padding:8px 24px;" onclick="closeHowToModal()">OK！</button>
@@ -741,26 +742,23 @@
                     <input id="charNameInput" type="text" maxlength="12" value="ファイター" style="width:100%; padding:7px; margin-top:3px; border-radius:6px; border:1px solid #3a3a52; background:#0f0f1a; color:#fff; font-weight:bold;">
                 </div>
 
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                    <span id="charRankBadge" class="rank-badge rank-B">Bランク</span>
-                    <span id="charTitleText" style="font-weight:bold; font-size:0.95rem;">駆け出し戦士</span>
-                    <span id="multiColorBadge" style="display:none; background:#8e44ad; font-size:0.7rem; padding:2px 6px; border-radius:4px;">🌈多色ボーナス</span>
-                </div>
-                <div id="inkWarning" style="display:none; color:#ff7675; font-size:0.78rem; margin-bottom:6px;">
-                    ⚠️ インク量が少ないためステータスが低下中（30ドット以上描こう！）
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                    <span id="charRankBadge" class="rank-badge rank-UNJUDGED">未判定</span>
+                    <span id="charTitleText" style="font-weight:bold; font-size:0.9rem; color:#bdc3c7;">編集中（ロビー移動・保存時に判定）</span>
+                    <span id="titleBoostBadge" style="display:none; background:linear-gradient(135deg, #f39c12, #e74c3c); color:#fff; font-size:0.72rem; font-weight:bold; padding:2px 6px; border-radius:4px;">👑 称号ボーナス +10%</span>
                 </div>
 
                 <div class="stat-row">
-                    <div class="stat-label"><span>⚔️ 攻撃力 (赤系)</span><span id="statAtkVal">12</span></div>
-                    <div class="stat-bar-bg"><div id="statAtkBar" class="stat-bar-fill" style="width:45%; background:#ff4d4d;"></div></div>
+                    <div class="stat-label"><span>⚔️ 攻撃力 (赤系)</span><span id="statAtkVal">--</span></div>
+                    <div class="stat-bar-bg"><div id="statAtkBar" class="stat-bar-fill" style="width:0%; background:#ff4d4d;"></div></div>
                 </div>
                 <div class="stat-row">
-                    <div class="stat-label"><span>⚡ スピード (青系)</span><span id="statSpdVal">4.0</span></div>
-                    <div class="stat-bar-bg"><div id="statSpdBar" class="stat-bar-fill" style="width:55%; background:#00a2e8;"></div></div>
+                    <div class="stat-label"><span>⚡ スピード (青系)</span><span id="statSpdVal">--</span></div>
+                    <div class="stat-bar-bg"><div id="statSpdBar" class="stat-bar-fill" style="width:0%; background:#00a2e8;"></div></div>
                 </div>
                 <div class="stat-row">
-                    <div class="stat-label"><span>❤️ 最大HP (黄・緑系)</span><span id="statHpVal">100</span></div>
-                    <div class="stat-bar-bg"><div id="statHpBar" class="stat-bar-fill" style="width:55%; background:#2ecc71;"></div></div>
+                    <div class="stat-label"><span>❤️ 最大HP (黄・緑系)</span><span id="statHpVal">--</span></div>
+                    <div class="stat-bar-bg"><div id="statHpBar" class="stat-bar-fill" style="width:0%; background:#2ecc71;"></div></div>
                 </div>
 
                 <div style="margin-top:12px;">
@@ -774,11 +772,11 @@
                 </div>
 
                 <div style="margin-top:12px;">
-                    <div style="font-size:0.8rem; color:#aaa;">💾 マイキャラ保存スロット</div>
+                    <div style="font-size:0.8rem; color:#aaa;">💾 マイキャラ保存スロット（保存時に一括判定）</div>
                     <div id="saveSlotsContainer" class="slots-grid"></div>
                 </div>
 
-                <button class="next-step-btn" onclick="switchStep(2)">次へ：対戦・BOSSロビーへ進む ➡️</button>
+                <button class="next-step-btn" onclick="proceedToLobby()">次へ：判定してロビーへ進む ➡️</button>
             </div>
         </div>
     </div>
@@ -803,6 +801,7 @@
             <div style="margin:8px auto;">
                 <canvas id="lobbyPreviewCanvas" width="90" height="90" style="background:#0f0f1a; border:2px solid #3a3a52; border-radius:8px;"></canvas>
                 <div id="lobbyCharSummary" style="font-size:0.86rem; margin-top:4px; font-weight:bold;"></div>
+                <div id="lobbyTitleSummary" style="font-size:0.78rem; color:#f1c40f; margin-top:2px;"></div>
             </div>
 
             <div class="room-input-group">
@@ -838,19 +837,19 @@
                 <h1 id="resultTitle" style="font-size:2.1rem; margin:0 0 8px 0;">🏆 YOU WIN!!</h1>
                 <canvas id="winnerCanvas" width="84" height="84" style="background:#16213e; border:2px solid #f1c40f; border-radius:8px; margin:6px 0;"></canvas>
                 <div id="winnerNameDisplay" style="font-size:1.05rem; font-weight:bold; margin-bottom:12px;"></div>
-                <div id="resultScoreList" class="ready-list" style="width:100%; max-width:360px;"></div>
+                <div id="resultScoreList" class="ready-list" style="width:100%; max-width:440px;"></div>
                 <button id="rematchBtn" class="btn-ready" style="max-width:260px; margin-top:10px;">🔄 ロビーに戻って再戦</button>
             </div>
 
             <div class="controls-hint">
                 移動: <span class="kbd">WASD</span> / <span class="kbd">矢印</span> ｜
-                盾: <span class="kbd">Shift</span> ｜
-                弾: <span class="kbd">Z</span> ｜
-                斬撃: <span class="kbd">X</span>
+                バリア: <span class="kbd">Z</span> ｜
+                斬撃: <span class="kbd">X</span> ｜
+                玉: <span class="kbd">C</span>
                 <button id="toggleTouchBtn" class="small-btn" style="margin-left:8px;">📱 タッチ操作</button>
             </div>
 
-            <!-- スマホ用タッチパッド -->
+            <!-- スマホ用タッチパッド（Z=バリア / X=斬撃 / C=玉 の順に統一） -->
             <div id="touchControls">
                 <div class="dpad">
                     <div></div>
@@ -864,9 +863,9 @@
                     <div></div>
                 </div>
                 <div class="action-pads">
-                    <button style="border-color:#00e5ff;" onclick="triggerShield()">🛡️盾</button>
-                    <button style="border-color:#f1c40f;" onclick="triggerShot()">🔫弾</button>
-                    <button style="border-color:#ff4d4d;" onclick="triggerMelee()">⚔️斬</button>
+                    <button style="border-color:#00e5ff;" onclick="triggerShield()">🛡️バリア</button>
+                    <button style="border-color:#ff4d4d;" onclick="triggerMelee()">⚔️斬撃</button>
+                    <button style="border-color:#f1c40f;" onclick="triggerShot()">🔮玉</button>
                 </div>
             </div>
         </div>
@@ -881,6 +880,11 @@
         let currentRoomMode = 'pvp'; // 'pvp' or 'boss'
 
         function switchStep(stepNum) {
+            if (stepNum === 2 && isDraftEditing) {
+                const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
+                applyJudgmentToPlayer(judged, true);
+                syncCharacterUpdate();
+            }
             currentUiStep = stepNum;
             [1, 2, 3].forEach(n => {
                 document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
@@ -889,6 +893,15 @@
             if (stepNum === 2) {
                 renderLobbyPreview();
             }
+        }
+
+        function proceedToLobby() {
+            initAudio();
+            SE.click();
+            const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
+            applyJudgmentToPlayer(judged, true);
+            syncCharacterUpdate();
+            switchStep(2);
         }
 
         function updateModeButtonsUI() {
@@ -900,7 +913,7 @@
             bossBtn.className = 'mode-btn' + (currentRoomMode === 'boss' ? ' active-boss' : '');
 
             if (currentRoomMode === 'boss') {
-                desc.innerHTML = '🌀 <b>VOID TYPHOON 討伐戦！</b> 1〜4人で巨大ブラックホール台風に挑め！（参加人数でBOSSのHPが増加）';
+                desc.innerHTML = '🌀 <b>VOID TYPHOON 討伐戦！</b> 1〜4人で巨大ブラックホール台風に挑め！（参加人数でBOSSのHPと弾数が増加）';
                 desc.style.color = '#f5b7ff';
             } else {
                 desc.innerHTML = '⚔️ <b>PvPサバイバル対戦！</b> 2〜4人でバトル！最後の1人まで生き残れ！';
@@ -938,6 +951,12 @@
             const summary = document.getElementById('lobbyCharSummary');
             if (summary) {
                 summary.textContent = `[${player.rank}] ${player.name}（⚔️${player.stats.atk} / ⚡${player.stats.spd} / ❤️${player.stats.maxHp}）`;
+            }
+            const titleSummary = document.getElementById('lobbyTitleSummary');
+            if (titleSummary) {
+                titleSummary.textContent = player.title
+                    ? `称号: ${player.title}${player.hasTitleBoost ? '（ステータス+10%適用済）' : ''}`
+                    : '';
             }
         }
 
@@ -1365,6 +1384,7 @@
         const charNameInput = document.getElementById('charNameInput');
         const charRankBadge = document.getElementById('charRankBadge');
         const charTitleText = document.getElementById('charTitleText');
+        const titleBoostBadge = document.getElementById('titleBoostBadge');
 
         let gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
         let undoHistory = [];
@@ -1372,6 +1392,7 @@
         let roomState = 'waiting';
         let myReady = false;
         let countdownBanner = '';
+        let isDraftEditing = true; // 編集中は未判定
 
         const gameCanvas = document.getElementById('gameCanvas');
         const gameCtx = gameCanvas.getContext('2d');
@@ -1388,6 +1409,7 @@
             name: 'ファイター',
             rank: 'B',
             title: '駆け出し戦士',
+            hasTitleBoost: false,
             x: ARENA_CENTER_X - 24,
             y: ARENA_CENTER_Y - 24,
             facing: 'right',
@@ -1432,9 +1454,9 @@
         // BOSS関連状態（VOID TYPHOON）
         let bossState = null;
         let bossProjectiles = [];
-        let bossEffects = []; // 予兆線、闇の雷スラッシュ、ブラックホール衝撃波など
+        let bossEffects = [];
         let bossVortexUntil = 0;
-        let bossVortexPull = 1.5;
+        let bossVortexPull = 1.55;
 
         let projectiles = [];
         let meleeEffects = [];
@@ -1504,7 +1526,11 @@
             return false;
         }
 
-        function calculateStatsAndRank(grid) {
+        // ==========================================
+        // 🏅 ランク(C/B/A/S)・称号・ステータス一括判定
+        // 称号獲得時は基礎値に1回だけ +10% 上昇（二重適用防止）
+        // ==========================================
+        function finalizeCharacterJudgment(grid, rawName) {
             let powerCount = 0;
             let speedCount = 0;
             let toughCount = 0;
@@ -1560,34 +1586,29 @@
                 maxHp = Math.round(80 + tRatio * 75);
             }
 
-            const multiColorBadge = document.getElementById('multiColorBadge');
             if (uniqueColors >= 3 && totalPixels >= 60) {
                 atk = Math.min(28, Math.round(atk * 1.1));
                 spd = Math.min(6.8, Number((spd * 1.1).toFixed(1)));
                 maxHp = Math.min(180, Math.round(maxHp * 1.1));
-                if (multiColorBadge) multiColorBadge.style.display = 'inline';
-            } else {
-                if (multiColorBadge) multiColorBadge.style.display = 'none';
             }
 
-            const inkWarning = document.getElementById('inkWarning');
             if (totalPixels < 30) {
                 atk = Math.max(6, Math.round(atk * 0.7));
                 spd = Number(Math.max(2.5, spd * 0.8).toFixed(1));
                 maxHp = Math.max(50, Math.round(maxHp * 0.7));
-                if (inkWarning) inkWarning.style.display = 'block';
-            } else {
-                if (inkWarning) inkWarning.style.display = 'none';
             }
 
             let rank = 'C';
-            let title = '落書き見習い';
+            let title = '';
+            let hasTitleBoost = false;
 
             if (totalPixels < 30) {
                 rank = 'C';
                 title = 'インク不足の卵';
+                hasTitleBoost = false;
             } else if (totalPixels >= 150 && uniqueColors >= 4) {
                 rank = 'S';
+                hasTitleBoost = true;
                 if (hasSpecialInk) title = '虹色の超越者';
                 else if (pRatio >= 0.55) title = '紅蓮の覇王';
                 else if (sRatio >= 0.55) title = '音速の幻影';
@@ -1595,6 +1616,7 @@
                 else title = '極彩色のマスター';
             } else if (totalPixels >= 80 && (uniqueColors >= 3 || pRatio >= 0.65 || sRatio >= 0.65 || tRatio >= 0.65)) {
                 rank = 'A';
+                hasTitleBoost = true;
                 if (pRatio >= 0.52) title = '猛攻のアタッカー';
                 else if (sRatio >= 0.52) title = '疾風の剣士';
                 else if (tRatio >= 0.52) title = '鉄壁の重戦士';
@@ -1602,25 +1624,75 @@
             } else {
                 rank = 'B';
                 title = '駆け出し戦士';
+                hasTitleBoost = false;
             }
 
-            charRankBadge.textContent = `${rank}ランク`;
-            charRankBadge.className = `rank-badge rank-${rank}`;
-            charTitleText.textContent = title;
+            // 称号獲得時にステータスを10%上昇（1回のみ適用）
+            if (hasTitleBoost) {
+                atk = Math.min(35, Math.round(atk * 1.1));
+                spd = Math.min(7.5, Number((spd * 1.1).toFixed(1)));
+                maxHp = Math.min(220, Math.round(maxHp * 1.1));
+            }
 
-            document.getElementById('statAtkVal').textContent = atk;
-            document.getElementById('statAtkBar').style.width = `${Math.min(100, (atk / 28) * 100)}%`;
+            const cleanName = (rawName || '').trim().slice(0, 12) || 'ファイター';
 
-            document.getElementById('statSpdVal').textContent = spd.toFixed(1);
-            document.getElementById('statSpdBar').style.width = `${Math.min(100, (spd / 6.8) * 100)}%`;
-
-            document.getElementById('statHpVal').textContent = maxHp;
-            document.getElementById('statHpBar').style.width = `${Math.min(100, (maxHp / 180) * 100)}%`;
-
-            return { stats: { atk, spd, maxHp, mainColor }, rank, title };
+            return {
+                name: cleanName,
+                rank,
+                title,
+                hasTitleBoost,
+                stats: { atk, spd, maxHp, mainColor }
+            };
         }
 
-        const SAVE_SLOTS_KEY = 'pixel_pvp_saved_slots_v1';
+        function refreshEditorJudgmentUI() {
+            if (isDraftEditing) {
+                charRankBadge.textContent = '未判定';
+                charRankBadge.className = 'rank-badge rank-UNJUDGED';
+                charTitleText.textContent = '編集中（ロビー移動・保存時に判定）';
+                charTitleText.style.color = '#bdc3c7';
+                titleBoostBadge.style.display = 'none';
+
+                document.getElementById('statAtkVal').textContent = '--';
+                document.getElementById('statAtkBar').style.width = '0%';
+                document.getElementById('statSpdVal').textContent = '--';
+                document.getElementById('statSpdBar').style.width = '0%';
+                document.getElementById('statHpVal').textContent = '--';
+                document.getElementById('statHpBar').style.width = '0%';
+            } else {
+                charRankBadge.textContent = `${player.rank}ランク`;
+                charRankBadge.className = `rank-badge rank-${player.rank}`;
+                charTitleText.textContent = player.title || '称号なし';
+                charTitleText.style.color = '#ffffff';
+                titleBoostBadge.style.display = player.hasTitleBoost ? 'inline-block' : 'none';
+
+                document.getElementById('statAtkVal').textContent = player.stats.atk;
+                document.getElementById('statAtkBar').style.width = `${Math.min(100, (player.stats.atk / 35) * 100)}%`;
+
+                document.getElementById('statSpdVal').textContent = player.stats.spd.toFixed(1);
+                document.getElementById('statSpdBar').style.width = `${Math.min(100, (player.stats.spd / 7.5) * 100)}%`;
+
+                document.getElementById('statHpVal').textContent = player.stats.maxHp;
+                document.getElementById('statHpBar').style.width = `${Math.min(100, (player.stats.maxHp / 220) * 100)}%`;
+            }
+        }
+
+        function applyJudgmentToPlayer(result, resetHpToMax = true) {
+            isDraftEditing = false;
+            player.name = result.name;
+            player.rank = result.rank;
+            player.title = result.title;
+            player.hasTitleBoost = Boolean(result.hasTitleBoost);
+            player.stats = { ...result.stats };
+            player.maxHp = result.stats.maxHp;
+            if (resetHpToMax || player.hp > player.maxHp) {
+                player.hp = player.maxHp;
+            }
+            refreshEditorJudgmentUI();
+            renderLobbyPreview();
+        }
+
+        const SAVE_SLOTS_KEY = 'pixel_pvp_saved_slots_v2';
 
         function renderSaveSlots() {
             const container = document.getElementById('saveSlotsContainer');
@@ -1637,7 +1709,7 @@
 
                 if (slot) {
                     card.innerHTML = `
-                        <div class="slot-header">[${slot.rank}] ${slot.name}</div>
+                        <div class="slot-header">[${slot.rank}] ${slot.name} (${slot.stats ? slot.stats.atk : '--'}/${slot.stats ? slot.stats.spd : '--'}/${slot.stats ? slot.stats.maxHp : '--'})</div>
                         <div class="slot-btns">
                             <button class="primary" onclick="loadCharacterSlot(${i})">読込</button>
                             <button onclick="saveCharacterSlot(${i})">上書</button>
@@ -1647,7 +1719,7 @@
                     card.innerHTML = `
                         <div class="slot-header" style="color:#777;">空き枠 ${i + 1}</div>
                         <div class="slot-btns">
-                            <button onclick="saveCharacterSlot(${i})">💾 保存</button>
+                            <button onclick="saveCharacterSlot(${i})">💾 保存・判定</button>
                         </div>
                     `;
                 }
@@ -1663,14 +1735,18 @@
                 slots = JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY)) || [];
             } catch (e) { slots = []; }
 
-            const name = charNameInput.value.trim() || 'ファイター';
-            const calc = calculateStatsAndRank(gridData);
+            const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
             slots[index] = {
-                name: name,
-                rank: calc.rank,
+                name: judged.name,
+                rank: judged.rank,
+                title: judged.title,
+                hasTitleBoost: judged.hasTitleBoost,
+                stats: judged.stats,
                 gridData: JSON.parse(JSON.stringify(gridData))
             };
             localStorage.setItem(SAVE_SLOTS_KEY, JSON.stringify(slots));
+            applyJudgmentToPlayer(judged, true);
+            syncCharacterUpdate();
             renderSaveSlots();
         };
 
@@ -1692,6 +1768,19 @@
             pushUndoHistory();
             gridData = JSON.parse(JSON.stringify(slot.gridData));
             charNameInput.value = slot.name;
+            localStorage.setItem('pixel_character_name_v1', slot.name);
+
+            const loadedResult = slot.stats
+                ? {
+                    name: slot.name,
+                    rank: slot.rank || 'B',
+                    title: slot.title || '',
+                    hasTitleBoost: Boolean(slot.hasTitleBoost),
+                    stats: { ...slot.stats }
+                }
+                : finalizeCharacterJudgment(gridData, slot.name);
+
+            applyJudgmentToPlayer(loadedResult, true);
             drawEditorGrid();
             autoSave();
             syncCharacterUpdate();
@@ -1716,7 +1805,7 @@
                 resultOverlay.style.display = 'none';
 
                 const totalMembers = 1 + Object.keys(otherPlayers).length;
-                const bossHpMap = { 1: 600, 2: 1100, 3: 1550, 4: 2000 };
+                const bossHpMap = { 1: 540, 2: 1100, 3: 1550, 4: 2000 };
 
                 let html = '';
                 if (currentRoomMode === 'boss') {
@@ -1862,7 +1951,6 @@
                 if (zoneData) safeZone = zoneData;
             });
 
-            // BOSSの状態・ダメージ・攻撃イベント受信
             socket.on('bossStateUpdated', (bossData) => {
                 bossState = bossData;
             });
@@ -1877,7 +1965,7 @@
                         SE.bossPulse();
                         shakeTime = 16;
                         shakeIntensity = 8;
-                        addFloatingText(bossState.x, bossState.y - 50, 'PHASE 2: RAGE!!', '#ff2a00');
+                        addFloatingText(bossState.x, bossState.y - 50, 'PHASE 2: TEMPO RUSH!!', '#ff2a00');
                     }
                     addFloatingText(
                         bossState.x + (Math.random() - 0.5) * 36,
@@ -1920,7 +2008,7 @@
                     });
                 } else if (ev.type === 'vortex') {
                     bossVortexUntil = performance.now() + (ev.duration || 3800);
-                    bossVortexPull = ev.pullStrength || 1.5;
+                    bossVortexPull = ev.pullStrength || 1.55;
                     if (bossState) {
                         addFloatingText(bossState.x, bossState.y - 45, 'VORTEX PULL!!', '#a349a4');
                     }
@@ -2031,15 +2119,24 @@
                 }, 900);
             });
 
+            // サーバー基準のポイント確定を反映（二重加算なし）
             socket.on('matchResult', (data) => {
                 roomState = 'result';
                 for (const k in keys) keys[k] = false;
                 stopBgm();
 
                 const allPlayers = data.players || {};
-                if (allPlayers[socket.id]) {
-                    player.wins = allPlayers[socket.id].wins || 0;
-                    player.points = allPlayers[socket.id].points || 0;
+                const myServerData = allPlayers[socket.id];
+                const myReward = (data.rewardsByPlayer && data.rewardsByPlayer[socket.id]) || (myServerData && myServerData.lastPointBreakdown);
+                const earnedThisMatch = myReward ? (myReward.totalEarned || 0) : (myServerData ? (myServerData.lastEarnedPoints || 0) : 0);
+
+                if (earnedThisMatch > 0) {
+                    addUserPoints(earnedThisMatch);
+                }
+
+                if (myServerData) {
+                    player.wins = myServerData.wins || 0;
+                    player.points = myServerData.points || 0;
                 }
                 for (const id in otherPlayers) {
                     if (allPlayers[id]) {
@@ -2055,41 +2152,38 @@
                 wCtx.clearRect(0, 0, 84, 84);
 
                 if (data.mode === 'boss') {
-                    // BOSS戦リザルト
                     if (data.bossCleared) {
                         SE.win();
-                        const isMvp = data.mvpId === socket.id;
-                        addUserPoints((data.clearBonus || 400) + (isMvp ? 100 : 0));
-
                         resultTitle.textContent = '🌀 BOSS DEFEATED!!';
                         resultTitle.style.color = '#f5b7ff';
                         const mvpPlayer = data.mvpId ? allPlayers[data.mvpId] : null;
                         winnerNameDisplay.textContent = mvpPlayer
-                            ? `VOID TYPHOON 討伐成功！ 👑MVP: ${mvpPlayer.name}`
-                            : 'VOID TYPHOON 討伐成功！';
-
+                            ? `VOID TYPHOON 討伐成功！ 👑MVP: ${mvpPlayer.name} (+${earnedThisMatch}Pt獲得)`
+                            : `VOID TYPHOON 討伐成功！ (+${earnedThisMatch}Pt獲得)`;
                         spawnConfetti();
                     } else {
                         SE.ko();
                         resultTitle.textContent = '💀 PARTY WIPED...';
                         resultTitle.style.color = '#e74c3c';
-                        winnerNameDisplay.textContent = 'VOID TYPHOON に敗北した...';
+                        winnerNameDisplay.textContent = 'VOID TYPHOON に敗北した...（貢献度ボーナスなし）';
                     }
 
                     const sorted = Object.values(allPlayers).sort((a, b) => (b.bossDamageDealt || 0) - (a.bossDamageDealt || 0));
-                    const scoreHtml = sorted.map((pl, idx) => `
-                        <div class="ready-row">
-                            <span>${pl.id === data.mvpId ? '👑 ' : ''}[${pl.rank}] ${pl.name}</span>
-                            <span style="color:#f1c40f; font-weight:bold;">与ダメ: ${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span>
-                        </div>
-                    `).join('');
+                    const scoreHtml = sorted.map((pl) => {
+                        const bd = (data.rewardsByPlayer && data.rewardsByPlayer[pl.id]) || pl.lastPointBreakdown || {};
+                        const breakdownText = data.bossCleared
+                            ? `基本${bd.clearBonus || 0}+貢献${bd.contributionBonus || 0}${bd.mvpBonus ? `+MVP${bd.mvpBonus}` : ''}`
+                            : `獲得0Pt`;
+                        return `
+                            <div class="ready-row">
+                                <span>${pl.id === data.mvpId ? '👑 ' : ''}[${pl.rank}] ${pl.name} <small style="color:#a4b0be;">(${breakdownText})</small></span>
+                                <span style="color:#f1c40f; font-weight:bold;">与ダメ:${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span>
+                            </div>
+                        `;
+                    }).join('');
                     document.getElementById('resultScoreList').innerHTML = scoreHtml;
                 } else {
-                    // PvP戦リザルト
                     SE.win();
-                    if (data.winnerId === socket.id && data.winBonus > 0) {
-                        addUserPoints(data.winBonus);
-                    }
                     spawnConfetti();
 
                     const winner = data.winner;
@@ -2097,7 +2191,7 @@
                         const isMe = winner.id === socket.id;
                         resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!';
                         resultTitle.style.color = isMe ? '#f1c40f' : '#3498db';
-                        winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！`;
+                        winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！${isMe ? ` (+${earnedThisMatch}Pt獲得)` : ''}`;
 
                         const wGrid = isMe ? gridData : winner.characterData;
                         if (wGrid) {
@@ -2113,6 +2207,7 @@
                         }
                     } else {
                         resultTitle.textContent = '🤝 DRAW!';
+                        resultTitle.style.color = '#bdc3c7';
                         winnerNameDisplay.textContent = '引き分け！';
                     }
 
@@ -2245,6 +2340,7 @@
                 }
             });
 
+            // サーバー基準のポイント増分を反映（二重加算なし）
             socket.on('playerKO', (data) => {
                 SE.ko();
                 shakeTime = 18;
@@ -2338,15 +2434,8 @@
 
             activeRoom = roomName;
             myReady = false;
-            player.name = charNameInput.value.trim() || 'ファイター';
-            const calc = calculateStatsAndRank(gridData);
-            player.stats = calc.stats;
-            player.rank = calc.rank;
-            player.title = calc.title;
-            player.maxHp = player.stats.maxHp;
-            player.hp = player.maxHp;
-            player.isDead = false;
-            player.isEliminated = false;
+            const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
+            applyJudgmentToPlayer(judged, true);
 
             socket.emit('joinRoom', {
                 roomId: activeRoom,
@@ -2377,13 +2466,19 @@
         charNameInput.addEventListener('input', () => {
             player.name = charNameInput.value.trim() || 'ファイター';
             localStorage.setItem('pixel_character_name_v1', player.name);
-            syncCharacterUpdate();
+            if (!isDraftEditing) {
+                syncCharacterUpdate();
+            }
         });
 
         readyBtn.addEventListener('click', () => {
             initAudio();
             SE.click();
             if (!socket || !socket.connected || !activeRoom || roomState !== 'waiting') return;
+            if (isDraftEditing) {
+                const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
+                applyJudgmentToPlayer(judged, true);
+            }
             syncCharacterUpdate();
             myReady = !myReady;
             socket.emit('toggleReady', myReady);
@@ -2426,7 +2521,7 @@
             updateLobbyUI();
         });
 
-        // --- エディタ機能 ---
+        // --- エディタ機能（描いている間は未判定） ---
         const colors = [
             '#000000', '#ffffff', '#7f7f7f', '#c3c3c3', '#880015',
             '#ed1c24', '#ff7f27', '#ffc90e', '#fff200', '#22b14c',
@@ -2537,6 +2632,11 @@
             if (undoHistory.length > 20) undoHistory.shift();
         }
 
+        function markDraftUnjudged() {
+            isDraftEditing = true;
+            refreshEditorJudgmentUI();
+        }
+
         function undoCanvas() {
             if (activeRoom && roomState !== 'waiting') return;
             if (undoHistory.length === 0) return;
@@ -2544,9 +2644,9 @@
             SE.undo();
             const prev = undoHistory.pop();
             gridData = JSON.parse(prev);
+            markDraftUnjudged();
             drawEditorGrid();
             autoSave();
-            syncCharacterUpdate();
         }
 
         function floodFill(startX, startY, fillColor) {
@@ -2574,12 +2674,6 @@
 
         function syncCharacterUpdate() {
             player.name = charNameInput.value.trim() || 'ファイター';
-            const calc = calculateStatsAndRank(gridData);
-            player.stats = calc.stats;
-            player.rank = calc.rank;
-            player.title = calc.title;
-            player.maxHp = player.stats.maxHp;
-            if (player.hp > player.maxHp) player.hp = player.maxHp;
             if (socket && socket.connected && activeRoom && roomState === 'waiting') {
                 socket.emit('updateCharacter', {
                     name: player.name,
@@ -2598,9 +2692,9 @@
                 SE.undo();
                 pushUndoHistory();
                 gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
+                markDraftUnjudged();
                 drawEditorGrid();
                 autoSave();
-                syncCharacterUpdate();
             }
         }
 
@@ -2679,9 +2773,9 @@
                 if (isMirrorMode) {
                     floodFill((GRID_SIZE - 1) - pos.x, pos.y, currentColor);
                 }
+                markDraftUnjudged();
                 drawEditorGrid();
                 autoSave();
-                syncCharacterUpdate();
                 return;
             }
 
@@ -2689,8 +2783,8 @@
             if (applyBrushAt(pos.x, pos.y, newColor)) {
                 if (toolMode === 'eraser') SE.erase();
                 else SE.draw();
+                markDraftUnjudged();
                 drawEditorGrid();
-                syncCharacterUpdate();
             }
         }
 
@@ -2748,16 +2842,13 @@
                 player.name = savedName;
             }
             drawEditorGrid();
-            const calc = calculateStatsAndRank(gridData);
-            player.stats = calc.stats;
-            player.rank = calc.rank;
-            player.title = calc.title;
-            player.maxHp = player.stats.maxHp;
-            player.hp = player.maxHp;
+            // 描いている間は未判定状態からスタート（ロビー移動・スロット保存時に一括判定）
+            isDraftEditing = true;
+            refreshEditorJudgmentUI();
             renderSaveSlots();
         }
 
-        // --- キーボード入力とアクション（盾→Shift / 弾→Z / 斬撃→X） ---
+        // --- キーボード入力とアクション（Z=バリア / X=斬撃 / C=玉） ---
         const keys = {};
 
         window.addEventListener('blur', () => {
@@ -2783,9 +2874,9 @@
 
             if (isTyping || player.isDead || player.isEliminated || roomState !== 'playing') return;
 
-            if (e.code === 'KeyZ') triggerShot();
-            if (e.code === 'KeyX') triggerMelee();
-            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') triggerShield();
+            if (e.code === 'KeyZ') triggerShield(); // バリア
+            if (e.code === 'KeyX') triggerMelee();  // 斬撃
+            if (e.code === 'KeyC') triggerShot();   // 玉
         });
 
         window.addEventListener('keyup', (e) => {
@@ -2933,7 +3024,6 @@
                     const distToBoss = Math.hypot(bossState.x - pcx, bossState.y - pcy);
                     if (distToBoss > bossState.radius + 10 && distToBoss < 340) {
                         const pullAng = Math.atan2(bossState.y - pcy, bossState.x - pcx);
-                        // 盾を展開中は引き寄せ力を75%軽減！
                         const effectivePull = isShielding ? bossVortexPull * 0.25 : bossVortexPull;
                         nextX += Math.cos(pullAng) * effectivePull;
                         nextY += Math.sin(pullAng) * effectivePull;
@@ -2976,7 +3066,7 @@
                 }
             }
 
-            // プレイヤーの弾更新
+            // プレイヤーの玉更新
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
                 p.x += p.vx;
@@ -3010,7 +3100,6 @@
                     continue;
                 }
 
-                // BOSS戦モードでのBOSSへの命中判定
                 if (currentRoomMode === 'boss' && bossState && bossState.hp > 0) {
                     if (Math.hypot(p.x - bossState.x, p.y - bossState.y) <= bossState.radius + 6) {
                         if (p.isMine && socket && socket.connected && activeRoom) {
@@ -3021,7 +3110,6 @@
                     }
                 }
 
-                // PvPモードでの他プレイヤーへの命中判定
                 if (currentRoomMode === 'pvp' && p.isMine && socket && socket.connected && activeRoom) {
                     for (const id in otherPlayers) {
                         const target = otherPlayers[id];
@@ -3062,7 +3150,6 @@
                         }
                     }
 
-                    // BOSSへの斬撃命中判定
                     if (!m.hasHit && currentRoomMode === 'boss' && bossState && bossState.hp > 0) {
                         const mcx = m.hx + m.hw / 2;
                         const mcy = m.hy + m.hh / 2;
@@ -3072,7 +3159,6 @@
                         }
                     }
 
-                    // PvPでの他プレイヤーへの斬撃命中判定
                     if (!m.hasHit && currentRoomMode === 'pvp') {
                         for (const id in otherPlayers) {
                             const target = otherPlayers[id];
@@ -3099,7 +3185,6 @@
                 bp.y += bp.vy;
                 bp.life--;
 
-                // 岩ブロックに当たったら消える
                 let hitObs = false;
                 for (const obs of staticObstacles) {
                     if (bp.x >= obs.x && bp.x <= obs.x + obs.w && bp.y >= obs.y && bp.y <= obs.y + obs.h) {
@@ -3112,7 +3197,6 @@
                     continue;
                 }
 
-                // 自分への命中判定（無敵時間中はすり抜け）
                 if (!player.isDead && !player.isEliminated && now > player.invincibleUntil) {
                     const pcx = player.x + 24;
                     const pcy = player.y + 24;
@@ -3130,7 +3214,6 @@
                 }
             }
 
-            // BOSSエフェクトのタイマー更新
             for (let i = bossEffects.length - 1; i >= 0; i--) {
                 bossEffects[i].timer--;
                 if (bossEffects[i].timer <= 0) bossEffects.splice(i, 1);
@@ -3143,7 +3226,6 @@
             }
         }
 
-        // 🌀 BOSS「VOID TYPHOON」の描画（ブラックホール＋台風＋闇）
         function drawBossEntity(ctx, boss, now) {
             if (!boss) return;
             const isRage = boss.phase === 2;
@@ -3152,7 +3234,6 @@
 
             ctx.save();
 
-            // 1. 吸引＆渦潮フィールド発動中の巨大台風オーラ
             if (now < bossVortexUntil) {
                 const spin = now / 180;
                 for (let ring = 1; ring <= 4; ring++) {
@@ -3164,7 +3245,6 @@
                 }
             }
 
-            // 2. 外周の台風の渦（回転する闇の腕）
             const armCount = 4;
             const rot = now / (isRage ? 220 : 350);
             for (let a = 0; a < armCount; a++) {
@@ -3176,14 +3256,12 @@
                 ctx.stroke();
             }
 
-            // 3. 降着円盤（ブラックホールの光のリング）
             ctx.beginPath();
             ctx.ellipse(bx, by, boss.radius + 10, 18, Math.sin(now / 500) * 0.25, 0, Math.PI * 2);
             ctx.strokeStyle = isRage ? '#ff6b6b' : '#4cc9f0';
             ctx.lineWidth = 4;
             ctx.stroke();
 
-            // 4. ブラックホール本体（漆黒の事象の地平面）
             const grad = ctx.createRadialGradient(bx, by, 10, bx, by, boss.radius);
             grad.addColorStop(0, '#000000');
             grad.addColorStop(0.7, '#0d0221');
@@ -3197,7 +3275,6 @@
             ctx.strokeStyle = isRage ? '#ff2a00' : '#00ffff';
             ctx.stroke();
 
-            // 5. ドット絵風の不気味な双眸（目）
             const eyeColor = isRage ? '#ff2a00' : '#00ffff';
             ctx.fillStyle = eyeColor;
             ctx.fillRect(bx - 18, by - 8, 12, 6);
@@ -3348,16 +3425,15 @@
             gameCtx.lineTo(ARENA_WIDTH, ARENA_TOP);
             gameCtx.stroke();
 
-            // BOSS戦モード専用HUD（巨大HPバー表示）
             if (currentRoomMode === 'boss' && bossState) {
                 const hpRatio = Math.max(0, Math.min(1, bossState.hp / bossState.maxHp));
                 gameCtx.font = 'bold 12px sans-serif';
                 gameCtx.textAlign = 'left';
                 gameCtx.fillStyle = bossState.phase === 2 ? '#ff4d4d' : '#f5b7ff';
-                gameCtx.fillText(`🌀 ${bossState.name}`, 10, 18);
+                gameCtx.fillText(`🌀 ${bossState.name} (P${bossState.phase})`, 10, 18);
 
-                const barX = 165;
-                const barW = 340;
+                const barX = 175;
+                const barW = 330;
                 const barH = 12;
                 gameCtx.fillStyle = '#2c2c3e';
                 gameCtx.fillRect(barX, 8, barW, barH);
@@ -3374,7 +3450,6 @@
                 return;
             }
 
-            // PvPモード専用HUD
             const participants = [
                 { name: player.name, stocks: player.stocks, isMe: true, isEliminated: player.isEliminated },
                 ...Object.values(otherPlayers).map(op => ({
@@ -3407,7 +3482,6 @@
 
             gameCtx.clearRect(-20, -20, gameCanvas.width + 40, gameCanvas.height + 40);
 
-            // 背景グリッド（640x640）
             gameCtx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
             gameCtx.lineWidth = 1;
             for (let i = 0; i <= ARENA_WIDTH; i += 40) {
@@ -3417,7 +3491,6 @@
                 gameCtx.beginPath(); gameCtx.moveTo(0, j); gameCtx.lineTo(ARENA_WIDTH, j); gameCtx.stroke();
             }
 
-            // PvPモードのセーフティゾーン描画
             if (currentRoomMode === 'pvp' && safeZone) {
                 gameCtx.save();
                 gameCtx.beginPath();
@@ -3435,7 +3508,6 @@
                 gameCtx.restore();
             }
 
-            // 壊せない固定障害物（岩ブロック）
             for (const obs of staticObstacles) {
                 gameCtx.fillStyle = '#2c3e50';
                 gameCtx.fillRect(obs.x, obs.y, obs.w, obs.h);
@@ -3453,7 +3525,6 @@
                 gameCtx.stroke();
             }
 
-            // 壊せる壁
             for (const w of arenaWalls) {
                 const hpRatio = w.hp / w.maxHp;
                 gameCtx.fillStyle = hpRatio > 0.6 ? '#7f8c8d' : hpRatio > 0.3 ? '#95a5a6' : '#e67e22';
@@ -3463,7 +3534,6 @@
                 gameCtx.strokeRect(w.x + 1, w.y + 1, w.w - 2, w.h - 2);
             }
 
-            // アイテム
             for (const it of arenaItems) {
                 const pulse = Math.sin(now / 150) * 2.5;
                 let bgCol = 'rgba(255, 242, 0, 0.3)';
@@ -3497,12 +3567,10 @@
                 gameCtx.restore();
             }
 
-            // BOSS「VOID TYPHOON」の描画
             if (currentRoomMode === 'boss' && bossState) {
                 drawBossEntity(gameCtx, bossState, now);
             }
 
-            // BOSS攻撃エフェクト（予兆線・闇の雷・ブラックホール衝撃波）
             for (const ef of bossEffects) {
                 gameCtx.save();
                 if (ef.type === 'slash_warn') {
@@ -3566,7 +3634,6 @@
                 );
             }
 
-            // プレイヤーの弾
             for (const p of projectiles) {
                 gameCtx.fillStyle = p.color;
                 gameCtx.beginPath();
@@ -3577,7 +3644,6 @@
                 gameCtx.stroke();
             }
 
-            // BOSSの渦巻き弾
             for (const bp of bossProjectiles) {
                 gameCtx.fillStyle = '#bf00ff';
                 gameCtx.beginPath();
