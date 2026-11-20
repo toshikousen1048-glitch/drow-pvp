@@ -40,13 +40,20 @@ const SPAWN_POINTS = [
     { x: 48,  y: 560, facing: 'right' }
 ];
 
-// 人数に応じたBOSS最大HPスケーリング
+// 人数に応じたBOSS最大HPスケーリング（ソロはテンポ重視で540、マルチは人数比例で増加）
 const BOSS_HP_BY_PLAYERS = {
-    1: 600,
+    1: 540,
     2: 1100,
     3: 1550,
     4: 2000
 };
+
+// 報酬ポイント定数（サーバー基準で一括計算）
+const REWARD_PVP_WIN = 450;
+const REWARD_PVP_KO = 100;
+const REWARD_BOSS_CLEAR = 650;
+const REWARD_BOSS_CONTRIBUTION_POOL = 200; // 与ダメージ割合に応じて配分
+const REWARD_BOSS_MVP = 150;
 
 function sanitizeStats(stats) {
     if (!stats) return { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' };
@@ -71,7 +78,7 @@ function sanitizeName(raw) {
 
 function sanitizeRank(raw) {
     const valid = ['C', 'B', 'A', 'S'];
-    return valid.includes(raw) ? raw : 'C';
+    return valid.includes(raw) ? raw : 'B';
 }
 
 function createInitialSafeZone() {
@@ -86,7 +93,7 @@ function createInitialSafeZone() {
 
 function createBossState(playerCount) {
     const count = Math.min(4, Math.max(1, playerCount || 1));
-    const maxHp = BOSS_HP_BY_PLAYERS[count] || 600;
+    const maxHp = BOSS_HP_BY_PLAYERS[count] || 540;
     return {
         name: 'VOID TYPHOON',
         x: ARENA_CENTER_X,
@@ -97,7 +104,8 @@ function createBossState(playerCount) {
         phase: 1,
         spiralAngle: 0,
         vortexActive: false,
-        pulseCharging: false
+        pulseCharging: false,
+        initialPlayerCount: count
     };
 }
 
@@ -164,6 +172,21 @@ function findSafePosition(room, size) {
     return { x: 48, y: 56 };
 }
 
+function registerBossTimeout(room, fn, delayMs) {
+    if (!room) return null;
+    if (!Array.isArray(room.bossPendingTimeouts)) {
+        room.bossPendingTimeouts = [];
+    }
+    const timerId = setTimeout(() => {
+        if (room && Array.isArray(room.bossPendingTimeouts)) {
+            room.bossPendingTimeouts = room.bossPendingTimeouts.filter(id => id !== timerId);
+        }
+        fn();
+    }, delayMs);
+    room.bossPendingTimeouts.push(timerId);
+    return timerId;
+}
+
 function startGimmickLoop(roomId) {
     stopGimmickLoop(roomId);
     const room = rooms[roomId];
@@ -171,7 +194,7 @@ function startGimmickLoop(roomId) {
 
     const currentMatchId = room.matchId;
 
-    // 壊せる壁（PvPのみ生成、BOSS戦では弾の邪魔を減らすため少なめ）
+    // 壊せる壁（PvPのみ6個まで、BOSS戦では弾の邪魔を減らすため3個まで）
     room.wallTimer = setInterval(() => {
         const r = rooms[roomId];
         if (!r || r.state !== 'playing' || r.matchId !== currentMatchId) {
@@ -218,7 +241,7 @@ function startGimmickLoop(roomId) {
                 io.to(roomId).emit('gimmicksUpdated', { walls: r.walls, items: r.items });
             }
         }
-    }, room.mode === 'boss' ? 9000 : 12000);
+    }, room.mode === 'boss' ? 8500 : 12000);
 
     // PvPモードのセーフティゾーン収縮ループ
     if (room.mode === 'pvp') {
@@ -283,6 +306,9 @@ function startBossAILoop(roomId, matchId) {
         const boss = r.boss;
         tick++;
 
+        const activePlayerCount = Object.keys(r.players).length;
+        const isSolo = activePlayerCount <= 1;
+
         // 生きている一番近いプレイヤーを探す
         let nearest = null;
         let minDist = Infinity;
@@ -298,7 +324,18 @@ function startBossAILoop(roomId, matchId) {
 
         if (nearest && !boss.pulseCharging) {
             const angle = Math.atan2((nearest.y + 24) - boss.y, (nearest.x + 24) - boss.x);
-            const moveSpd = boss.phase === 2 ? 3.2 : 2.0;
+            // ソロ時は移動をやや早めにして緊張感とテンポをアップ、第2形態はさらにスピード重視
+            let moveSpd;
+            if (boss.phase === 2) {
+                moveSpd = isSolo ? 3.8 : 3.4;
+            } else {
+                moveSpd = isSolo ? 2.6 : 2.2;
+            }
+            // 吸引（渦潮）発動中は前進を少し抑えて回避の余地を確保
+            if (boss.vortexActive) {
+                moveSpd *= 0.65;
+            }
+
             boss.x += Math.cos(angle) * moveSpd;
             boss.y += Math.sin(angle) * moveSpd;
 
@@ -307,7 +344,7 @@ function startBossAILoop(roomId, matchId) {
             boss.y = Math.max(ARENA_TOP + 75, Math.min(ARENA_HEIGHT - 85, boss.y));
         }
 
-        // 5ティック（1秒）ごとに渦潮コア接触ダメージ判定
+        // 5ティック（1秒）ごとに渦潮コア接触ダメージ判定（威力は現行維持）
         if (tick % 5 === 0) {
             for (const id in r.players) {
                 const p = r.players[id];
@@ -323,13 +360,14 @@ function startBossAILoop(roomId, matchId) {
         io.to(roomId).emit('bossStateUpdated', boss);
     }, 200);
 
-    // 攻撃パターン発動ループ（第1形態: 2.8秒ごと / 第2形態: 2.1秒ごと）
+    // 攻撃パターン発動ループ
+    // 第1形態: 2450ms（高密度アクション） / 第2形態: 1950ms（避けきれる限界を超えないテンポ重視）
     let attackCount = 0;
     const scheduleNextAttack = () => {
         const r = rooms[roomId];
         if (!r || r.state !== 'playing' || r.matchId !== matchId || !r.boss) return;
 
-        const interval = r.boss.phase === 2 ? 2100 : 2800;
+        const interval = r.boss.phase === 2 ? 1950 : 2450;
         r.bossAttackTimer = setTimeout(() => {
             const cur = rooms[roomId];
             if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
@@ -348,6 +386,7 @@ function executeBossAttack(roomId, count, matchId) {
     if (!room || room.state !== 'playing' || room.matchId !== matchId || !room.boss) return;
     const boss = room.boss;
 
+    const allPlayerCount = Math.min(4, Math.max(1, Object.keys(room.players).length));
     const alivePlayers = Object.values(room.players).filter(p => !p.isDead && !p.isEliminated);
     if (alivePlayers.length === 0) return;
 
@@ -358,8 +397,12 @@ function executeBossAttack(roomId, count, matchId) {
     const patternIdx = count % 4;
 
     if (patternIdx === 0) {
-        // パターン1: 渦巻き弾幕（Spiral Barrage・1発12ダメージ）
-        const bulletCount = boss.phase === 2 ? 12 : 8;
+        // パターン1: 渦巻き弾幕（Spiral Barrage・1発12ダメージ・威力維持）
+        // 第1形態は高密度アクション向けに基本弾数を少し充実、マルチは基本数＋参加人数に応じた追加弾数（弾速は詰めすぎない）
+        const baseCount = boss.phase === 2 ? 11 : 9;
+        const extraBulletsByPlayers = (allPlayerCount - 1) * 3; // 1人:+0, 2人:+3, 3人:+6, 4人:+9
+        const bulletCount = baseCount + extraBulletsByPlayers;
+
         boss.spiralAngle = (boss.spiralAngle + 0.45) % (Math.PI * 2);
         io.to(roomId).emit('bossAttackEvent', {
             type: 'spiral',
@@ -367,25 +410,27 @@ function executeBossAttack(roomId, count, matchId) {
             y: boss.y,
             count: bulletCount,
             baseAngle: boss.spiralAngle,
-            speed: boss.phase === 2 ? 4.8 : 3.8,
+            speed: boss.phase === 2 ? 4.5 : 3.8,
             damage: 12
         });
     } else if (patternIdx === 1) {
-        // パターン2: 闇の雷スラッシュ（Void Slash・予兆ライン→斬撃20ダメージ）
+        // パターン2: 闇の雷スラッシュ（Void Slash・予兆ライン→斬撃20ダメージ・威力維持）
         const angle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
         const length = 360;
         const endX = boss.x + Math.cos(angle) * length;
         const endY = boss.y + Math.sin(angle) * length;
+        const warnDuration = boss.phase === 2 ? 680 : 750;
 
         io.to(roomId).emit('bossAttackEvent', {
             type: 'slash_warn',
             x1: boss.x,
             y1: boss.y,
             x2: endX,
-            y2: endY
+            y2: endY,
+            warnDuration
         });
 
-        setTimeout(() => {
+        registerBossTimeout(room, () => {
             const cur = rooms[roomId];
             if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
 
@@ -398,7 +443,6 @@ function executeBossAttack(roomId, count, matchId) {
                 damage: 20
             });
 
-            // ライン上のプレイヤーに当たり判定
             for (const id in cur.players) {
                 const p = cur.players[id];
                 if (p.isDead || p.isEliminated) continue;
@@ -407,34 +451,38 @@ function executeBossAttack(roomId, count, matchId) {
                     applyBossDamageToPlayer(roomId, p, 20, 'slash', matchId);
                 }
             }
-        }, 750);
+        }, warnDuration);
     } else if (patternIdx === 2) {
-        // パターン3: 吸引＆渦潮フィールド（Vortex Pull・4秒間引き寄せ）
+        // パターン3: 吸引＆渦潮フィールド（Vortex Pull）
+        const duration = boss.phase === 2 ? 3400 : 3800;
         boss.vortexActive = true;
         io.to(roomId).emit('bossAttackEvent', {
             type: 'vortex',
             active: true,
-            duration: 3800,
-            pullStrength: boss.phase === 2 ? 2.1 : 1.5
+            duration,
+            pullStrength: boss.phase === 2 ? 1.95 : 1.55
         });
 
-        setTimeout(() => {
-            if (rooms[roomId] && rooms[roomId].boss) {
+        registerBossTimeout(room, () => {
+            if (rooms[roomId] && rooms[roomId].matchId === matchId && rooms[roomId].boss) {
                 rooms[roomId].boss.vortexActive = false;
             }
-        }, 3800);
+        }, duration);
     } else if (patternIdx === 3) {
-        // パターン4: ブラックホール収縮パルス（Singularity Pulse・溜め→全方位衝撃波26ダメージ）
+        // パターン4: ブラックホール収縮パルス（Singularity Pulse・溜め→全方位衝撃波26ダメージ・威力維持）
         boss.pulseCharging = true;
-        const pulseRadius = boss.phase === 2 ? 210 : 175;
+        const pulseRadius = boss.phase === 2 ? 205 : 180;
+        const chargeDuration = boss.phase === 2 ? 800 : 900;
+
         io.to(roomId).emit('bossAttackEvent', {
             type: 'pulse_warn',
             x: boss.x,
             y: boss.y,
-            radius: pulseRadius
+            radius: pulseRadius,
+            chargeDuration
         });
 
-        setTimeout(() => {
+        registerBossTimeout(room, () => {
             const cur = rooms[roomId];
             if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
             cur.boss.pulseCharging = false;
@@ -455,7 +503,7 @@ function executeBossAttack(roomId, count, matchId) {
                     applyBossDamageToPlayer(roomId, p, 26, 'pulse', matchId);
                 }
             }
-        }, 900);
+        }, chargeDuration);
     }
 }
 
@@ -472,7 +520,7 @@ function applyBossDamageToPlayer(roomId, target, damage, attackType, matchId) {
     if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
     if (!target || target.isDead || target.isEliminated) return;
 
-    // 盾（シールド）を展開中ならブロック成功！
+    // 盾（バリア）を展開中ならブロック成功！
     if (Date.now() < target.shieldUntil) {
         io.to(roomId).emit('attackBlocked', {
             targetId: target.id,
@@ -507,6 +555,12 @@ function stopGimmickLoop(roomId) {
     if (room.zoneTimer) { clearInterval(room.zoneTimer); room.zoneTimer = null; }
     if (room.bossMoveTimer) { clearInterval(room.bossMoveTimer); room.bossMoveTimer = null; }
     if (room.bossAttackTimer) { clearTimeout(room.bossAttackTimer); room.bossAttackTimer = null; }
+    if (Array.isArray(room.bossPendingTimeouts)) {
+        for (const tid of room.bossPendingTimeouts) {
+            clearTimeout(tid);
+        }
+        room.bossPendingTimeouts = [];
+    }
 }
 
 function saveSessionRecord(room, playerObj) {
@@ -528,7 +582,7 @@ function handlePlayerKO(roomId, target, attacker, matchIdAtKO) {
     target.powerBoostUntil = 0;
     target.stocks = Math.max(0, target.stocks - 1);
 
-    const koBonus = attacker ? 100 : 0;
+    const koBonus = attacker ? REWARD_PVP_KO : 0;
     if (attacker) {
         attacker.points = (attacker.points || 0) + koBonus;
         saveSessionRecord(room, attacker);
@@ -601,7 +655,7 @@ function checkAllReadyAndStart(roomId) {
     if (!room || room.state !== 'waiting') return;
 
     const playerIds = Object.keys(room.players);
-    // PvPは2人以上必須、BOSS戦は1人から開始可能！
+    // PvPは2人以上必須、BOSS戦は1人から開始可能
     const minRequired = room.mode === 'boss' ? 1 : 2;
     if (playerIds.length < minRequired) return;
 
@@ -626,6 +680,8 @@ function checkAllReadyAndStart(roomId) {
         p.speedBoostUntil = 0;
         p.powerBoostUntil = 0;
         p.bossDamageDealt = 0;
+        p.lastEarnedPoints = 0;
+        p.lastPointBreakdown = null;
         p.hp = p.maxHp;
         p.x = spawn.x;
         p.y = spawn.y;
@@ -659,75 +715,128 @@ function checkMatchWinner(roomId) {
     const survivors = playerIds.filter(id => !room.players[id].isEliminated);
 
     if (room.mode === 'boss') {
-        // BOSS討伐成功判定
+        // BOSS討伐成功判定（討伐成功時のみクリア報酬・貢献度報酬・MVP報酬をサーバー基準で計算）
         if (room.boss && room.boss.hp <= 0) {
             room.state = 'result';
             stopGimmickLoop(roomId);
-            const clearBonus = 400;
 
-            // 最もダメージを与えたMVPを特定
             let mvpId = null;
             let maxDmg = -1;
+            let totalDamageDealt = 0;
+
             playerIds.forEach(id => {
-                const p = room.players[id];
-                p.wins = (p.wins || 0) + 1;
-                p.points = (p.points || 0) + clearBonus;
-                if ((p.bossDamageDealt || 0) > maxDmg) {
-                    maxDmg = p.bossDamageDealt || 0;
+                const dmg = room.players[id].bossDamageDealt || 0;
+                totalDamageDealt += dmg;
+                if (dmg > maxDmg) {
+                    maxDmg = dmg;
                     mvpId = id;
                 }
-                saveSessionRecord(room, p);
             });
 
-            if (mvpId && room.players[mvpId]) {
-                room.players[mvpId].points += 100;
-                saveSessionRecord(room, room.players[mvpId]);
+            // 与ダメージが0の場合でも破綻しないようにガード
+            if (maxDmg <= 0) {
+                mvpId = null;
             }
+
+            const rewardsByPlayer = {};
+
+            playerIds.forEach(id => {
+                const p = room.players[id];
+                const dmg = p.bossDamageDealt || 0;
+                const dmgRatio = totalDamageDealt > 0 ? (dmg / totalDamageDealt) : (1 / Math.max(1, playerIds.length));
+                const contributionBonus = Math.round(REWARD_BOSS_CONTRIBUTION_POOL * dmgRatio);
+                const mvpBonus = (id === mvpId) ? REWARD_BOSS_MVP : 0;
+                const totalEarned = REWARD_BOSS_CLEAR + contributionBonus + mvpBonus;
+
+                p.wins = (p.wins || 0) + 1;
+                p.points = (p.points || 0) + totalEarned;
+                p.lastEarnedPoints = totalEarned;
+                p.lastPointBreakdown = {
+                    clearBonus: REWARD_BOSS_CLEAR,
+                    contributionBonus: contributionBonus,
+                    mvpBonus: mvpBonus,
+                    damageRatioPercent: Math.round(dmgRatio * 100),
+                    totalEarned: totalEarned
+                };
+
+                rewardsByPlayer[id] = p.lastPointBreakdown;
+                saveSessionRecord(room, p);
+            });
 
             io.to(roomId).emit('matchResult', {
                 mode: 'boss',
                 bossCleared: true,
                 mvpId: mvpId,
-                clearBonus: clearBonus,
+                clearBonus: REWARD_BOSS_CLEAR,
+                contributionPool: REWARD_BOSS_CONTRIBUTION_POOL,
+                mvpBonus: REWARD_BOSS_MVP,
+                rewardsByPlayer: rewardsByPlayer,
                 players: room.players
             });
             return;
         }
 
-        // プレイヤー全滅判定
+        // プレイヤー全滅判定（討伐失敗時は貢献度ポイントを加算しない）
         if (survivors.length === 0) {
             room.state = 'result';
             stopGimmickLoop(roomId);
+
+            const rewardsByPlayer = {};
+            playerIds.forEach(id => {
+                const p = room.players[id];
+                p.lastEarnedPoints = 0;
+                p.lastPointBreakdown = {
+                    clearBonus: 0,
+                    contributionBonus: 0,
+                    mvpBonus: 0,
+                    damageRatioPercent: 0,
+                    totalEarned: 0
+                };
+                rewardsByPlayer[id] = p.lastPointBreakdown;
+                saveSessionRecord(room, p);
+            });
+
             io.to(roomId).emit('matchResult', {
                 mode: 'boss',
                 bossCleared: false,
                 mvpId: null,
                 clearBonus: 0,
+                contributionPool: 0,
+                mvpBonus: 0,
+                rewardsByPlayer: rewardsByPlayer,
                 players: room.players
             });
         }
         return;
     }
 
-    // 通常PvPの勝敗判定
+    // 通常PvPの勝敗判定（勝利ボーナス増量：450Pt）
     if (survivors.length <= 1) {
         room.state = 'result';
         stopGimmickLoop(roomId);
         const winnerId = survivors.length === 1 ? survivors[0] : null;
-        const winBonus = 300;
+        const rewardsByPlayer = {};
 
-        if (winnerId && room.players[winnerId]) {
-            room.players[winnerId].wins = (room.players[winnerId].wins || 0) + 1;
-            room.players[winnerId].points = (room.players[winnerId].points || 0) + winBonus;
-            saveSessionRecord(room, room.players[winnerId]);
-        }
+        playerIds.forEach(id => {
+            const p = room.players[id];
+            const earned = (id === winnerId) ? REWARD_PVP_WIN : 0;
+            if (id === winnerId) {
+                p.wins = (p.wins || 0) + 1;
+                p.points = (p.points || 0) + earned;
+            }
+            p.lastEarnedPoints = earned;
+            p.lastPointBreakdown = { totalEarned: earned };
+            rewardsByPlayer[id] = p.lastPointBreakdown;
+            saveSessionRecord(room, p);
+        });
 
         const winnerObj = winnerId ? room.players[winnerId] : null;
         io.to(roomId).emit('matchResult', {
             mode: 'pvp',
             winner: winnerObj,
             winnerId: winnerId,
-            winBonus: winnerId ? winBonus : 0,
+            winBonus: winnerId ? REWARD_PVP_WIN : 0,
+            rewardsByPlayer: rewardsByPlayer,
             players: room.players
         });
     }
@@ -812,7 +921,8 @@ io.on('connection', (socket) => {
                 itemTimer: null,
                 zoneTimer: null,
                 bossMoveTimer: null,
-                bossAttackTimer: null
+                bossAttackTimer: null,
+                bossPendingTimeouts: []
             };
         }
 
@@ -844,6 +954,8 @@ io.on('connection', (socket) => {
             speedBoostUntil: 0,
             powerBoostUntil: 0,
             bossDamageDealt: 0,
+            lastEarnedPoints: 0,
+            lastPointBreakdown: null,
             isReady: false,
             wins: prevRecord.wins,
             points: prevRecord.points
@@ -916,6 +1028,8 @@ io.on('connection', (socket) => {
             room.players[id].speedBoostUntil = 0;
             room.players[id].powerBoostUntil = 0;
             room.players[id].bossDamageDealt = 0;
+            room.players[id].lastEarnedPoints = 0;
+            room.players[id].lastPointBreakdown = null;
             room.players[id].hp = room.players[id].maxHp;
             saveSessionRecord(room, room.players[id]);
         }
@@ -1095,12 +1209,12 @@ io.on('connection', (socket) => {
         room.boss.hp = Math.max(0, room.boss.hp - damage);
         attacker.bossDamageDealt = (attacker.bossDamageDealt || 0) + damage;
 
-        // HP50%以下で第2形態（怒りモード）へ移行
+        // HP50%以下で第2形態（テンポ重視モード）へ移行
         if (room.boss.phase === 1 && room.boss.hp <= room.boss.maxHp * 0.5) {
             room.boss.phase = 2;
         }
 
-        io.to(currentRoom).emit('bossDamaged', {
+        io.to(roomIdFromSocket(currentRoom)).emit('bossDamaged', {
             attackerId: attacker.id,
             damage: damage,
             hp: room.boss.hp,
@@ -1113,7 +1227,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // BOSSの弾に当たったときの処理（クライアントからの自己申告＋シールド判定）
+    // BOSSの弾に当たったときの処理
     socket.on('bossProjectileHit', (data) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
@@ -1176,6 +1290,10 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+function roomIdFromSocket(roomId) {
+    return roomId;
+}
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
