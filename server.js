@@ -10,34 +10,34 @@ app.use(express.static(__dirname));
 
 const rooms = {};
 const MAX_PLAYERS_PER_ROOM = 4;
-const INITIAL_STOCKS = 3;
+const INITIAL_STOCKS = 1;
 
-// 640x640 アリーナ設定
-const ARENA_WIDTH = 640;
+// 960x720 アリーナ設定
+const ARENA_WIDTH = 960;
 const ARENA_TOP = 28;
-const ARENA_HEIGHT = 640;
-const ARENA_CENTER_X = ARENA_WIDTH / 2;
-const ARENA_CENTER_Y = (ARENA_TOP + ARENA_HEIGHT) / 2; // 334
+const ARENA_HEIGHT = 720;
+const ARENA_CENTER_X = ARENA_WIDTH / 2; // 480
+const ARENA_CENTER_Y = (ARENA_TOP + ARENA_HEIGHT) / 2; // 374
 const CHAR_SIZE = 48;
 
-// 壊せない固定障害物（岩ブロック）
+// 壊せない固定障害物（岩ブロック・index.html と完全同期）
 const STATIC_OBSTACLES = [
-    { id: 'obs_1', x: 140, y: 140, w: 48, h: 48 },
-    { id: 'obs_2', x: 452, y: 140, w: 48, h: 48 },
-    { id: 'obs_3', x: 140, y: 468, w: 48, h: 48 },
-    { id: 'obs_4', x: 452, y: 468, w: 48, h: 48 },
-    { id: 'obs_5', x: 296, y: 210, w: 48, h: 48 },
-    { id: 'obs_6', x: 296, y: 398, w: 48, h: 48 },
-    { id: 'obs_7', x: 200, y: 304, w: 48, h: 48 },
-    { id: 'obs_8', x: 392, y: 304, w: 48, h: 48 }
+    { id: 'obs_1', x: 190, y: 150, w: 52, h: 52 },
+    { id: 'obs_2', x: 718, y: 150, w: 52, h: 52 },
+    { id: 'obs_3', x: 190, y: 546, w: 52, h: 52 },
+    { id: 'obs_4', x: 718, y: 546, w: 52, h: 52 },
+    { id: 'obs_5', x: 454, y: 210, w: 52, h: 52 },
+    { id: 'obs_6', x: 454, y: 486, w: 52, h: 52 },
+    { id: 'obs_7', x: 300, y: 348, w: 52, h: 52 },
+    { id: 'obs_8', x: 608, y: 348, w: 52, h: 52 }
 ];
 
-// 4隅の初期スポーン地点
+// 4隅の初期スポーン地点（960x720 アリーナ対応）
 const SPAWN_POINTS = [
-    { x: 48,  y: 56,  facing: 'right' },
-    { x: 544, y: 560, facing: 'left'  },
-    { x: 544, y: 56,  facing: 'left'  },
-    { x: 48,  y: 560, facing: 'right' }
+    { x: 64,  y: 64,  facing: 'right' },
+    { x: 848, y: 624, facing: 'left'  },
+    { x: 848, y: 64,  facing: 'left'  },
+    { x: 64,  y: 624, facing: 'right' }
 ];
 
 // 人数に応じたBOSS最大HPスケーリング（ソロはテンポ重視で540、マルチは人数比例で増加）
@@ -81,14 +81,63 @@ function sanitizeRank(raw) {
     return valid.includes(raw) ? raw : 'B';
 }
 
-function createInitialSafeZone() {
-    return {
-        cx: ARENA_CENTER_X,
-        cy: ARENA_CENTER_Y,
-        radius: 440,
-        minRadius: 95,
-        shrinking: false
-    };
+// ==========================================
+// 🛡️ 不正対策ヘルパー（クライアント送信イベントの検証）
+// ==========================================
+const VALID_FACING = ['up', 'down', 'left', 'right'];
+const BOSS_SPIRAL_DAMAGE = 12;       // 渦巻き弾幕の1発ダメージ（サーバー固定値）
+const CREDIT_TTL_MS = { shot: 4000, melee: 1500 };
+const MELEE_MAX_DIST_PVP = 150;      // 近接ヒット時の攻撃者-対象の中心間距離の上限（実際の判定は約60px、遅延ぶんの余裕込み）
+const MELEE_BOSS_EXTRA_DIST = 150;   // 近接ヒット時の「ボス半径＋この値」を上限にする
+
+function createPlayerGuards() {
+    return { buckets: {}, credits: { shot: [], melee: [] }, nextShieldAt: 0, lastMoveAt: 0 };
+}
+
+// トークンバケット方式のレート制限（短時間のバースト2回まで許容し、ラグによる誤判定を減らす）
+function takeToken(p, key, refillMs, capacity) {
+    const now = Date.now();
+    const b = p.buckets[key] || (p.buckets[key] = { tokens: capacity, last: now });
+    b.tokens = Math.min(capacity, b.tokens + (now - b.last) / refillMs);
+    b.last = now;
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
+}
+
+// 「攻撃した実績（クレジット）」：playerAttack を受理したぶんだけ、後続のダメージ報告を受け付ける
+function addCredit(p, type) {
+    const list = p.credits[type];
+    const now = Date.now();
+    while (list.length && list[0] < now) list.shift();
+    list.push(now + CREDIT_TTL_MS[type]);
+    if (list.length > 6) list.shift();
+}
+
+function useCredit(p, type) {
+    const list = p.credits[type];
+    if (!list) return false;
+    const now = Date.now();
+    while (list.length && list[0] < now) list.shift();
+    if (list.length === 0) return false;
+    list.shift();
+    return true;
+}
+
+function sanitizeHitType(raw) {
+    return raw === 'melee' ? 'melee' : (raw === 'shot' ? 'shot' : null);
+}
+
+function playerCenter(p) {
+    return { x: p.x + CHAR_SIZE / 2, y: p.y + CHAR_SIZE / 2 };
+}
+
+function overlapsStaticObstacle(x, y, size, pad) {
+    const left = x + pad, right = x + size - pad, top = y + pad, bottom = y + size - pad;
+    for (const obs of STATIC_OBSTACLES) {
+        if (left < obs.x + obs.w && right > obs.x && top < obs.y + obs.h && bottom > obs.y) return true;
+    }
+    return false;
 }
 
 function createBossState(playerCount) {
@@ -97,7 +146,7 @@ function createBossState(playerCount) {
     return {
         name: 'VOID TYPHOON',
         x: ARENA_CENTER_X,
-        y: 165,
+        y: 175,
         radius: 44,
         hp: maxHp,
         maxHp: maxHp,
@@ -132,28 +181,21 @@ function overlapsObstacleOrWall(room, x, y, size) {
 }
 
 function findSafePosition(room, size) {
-    const zone = room.safeZone || createInitialSafeZone();
-
     for (let attempt = 0; attempt < 60; attempt++) {
-        const x = Math.floor(Math.random() * (ARENA_WIDTH - size - 40)) + 20;
-        const y = Math.floor(Math.random() * (ARENA_HEIGHT - ARENA_TOP - size - 40)) + ARENA_TOP + 20;
-
-        if (room.mode === 'pvp') {
-            const distFromCenter = Math.hypot((x + size / 2) - zone.cx, (y + size / 2) - zone.cy);
-            if (distFromCenter > Math.max(60, zone.radius - size)) continue;
-        }
+        const x = Math.floor(Math.random() * (ARENA_WIDTH - size - 48)) + 24;
+        const y = Math.floor(Math.random() * (ARENA_HEIGHT - ARENA_TOP - size - 48)) + ARENA_TOP + 24;
 
         if (overlapsObstacleOrWall(room, x, y, size)) continue;
 
         if (room.mode === 'boss' && room.boss) {
-            if (Math.hypot((x + size / 2) - room.boss.x, (y + size / 2) - room.boss.y) < 110) continue;
+            if (Math.hypot((x + size / 2) - room.boss.x, (y + size / 2) - room.boss.y) < 120) continue;
         }
 
         let overlap = false;
         for (const id in room.players) {
             const p = room.players[id];
             if (p.isEliminated || p.isDead) continue;
-            if (Math.abs((p.x + 24) - (x + size / 2)) < 70 && Math.abs((p.y + 24) - (y + size / 2)) < 70) {
+            if (Math.abs((p.x + 24) - (x + size / 2)) < 75 && Math.abs((p.y + 24) - (y + size / 2)) < 75) {
                 overlap = true;
                 break;
             }
@@ -161,7 +203,7 @@ function findSafePosition(room, size) {
         if (overlap) continue;
 
         for (const it of room.items) {
-            if (Math.abs(it.x - (x + size / 2)) < 40 && Math.abs(it.y - (y + size / 2)) < 40) {
+            if (Math.abs(it.x - (x + size / 2)) < 45 && Math.abs(it.y - (y + size / 2)) < 45) {
                 overlap = true;
                 break;
             }
@@ -169,7 +211,7 @@ function findSafePosition(room, size) {
         if (!overlap) return { x, y };
     }
 
-    return { x: 48, y: 56 };
+    return { x: 64, y: 64 };
 }
 
 function registerBossTimeout(room, fn, delayMs) {
@@ -194,14 +236,14 @@ function startGimmickLoop(roomId) {
 
     const currentMatchId = room.matchId;
 
-    // 壊せる壁（PvPのみ6個まで、BOSS戦では弾の邪魔を減らすため3個まで）
+    // 壊せる壁（ステージ拡大に合わせてPvPは8個まで、BOSS戦は4個まで）
     room.wallTimer = setInterval(() => {
         const r = rooms[roomId];
         if (!r || r.state !== 'playing' || r.matchId !== currentMatchId) {
             stopGimmickLoop(roomId);
             return;
         }
-        const maxWalls = r.mode === 'boss' ? 3 : 6;
+        const maxWalls = r.mode === 'boss' ? 4 : 8;
         if (r.walls.length < maxWalls) {
             const wallPos = findSafePosition(r, 40);
             if (wallPos) {
@@ -217,9 +259,9 @@ function startGimmickLoop(roomId) {
                 io.to(roomId).emit('gimmicksUpdated', { walls: r.walls, items: r.items });
             }
         }
-    }, 9000);
+    }, 8500);
 
-    // アイテム生成（BOSS戦では回復・パワー・スピードが多めに出現）
+    // アイテム生成（ステージ拡大に合わせて同時出現上限を少し増加）
     const ITEM_TYPES = ['speed', 'heal', 'power'];
     room.itemTimer = setInterval(() => {
         const r = rooms[roomId];
@@ -227,7 +269,7 @@ function startGimmickLoop(roomId) {
             stopGimmickLoop(roomId);
             return;
         }
-        const maxItems = r.mode === 'boss' ? 5 : 4;
+        const maxItems = r.mode === 'boss' ? 6 : 5;
         if (r.items.length < maxItems) {
             const itemPos = findSafePosition(r, 24);
             if (itemPos) {
@@ -241,49 +283,7 @@ function startGimmickLoop(roomId) {
                 io.to(roomId).emit('gimmicksUpdated', { walls: r.walls, items: r.items });
             }
         }
-    }, room.mode === 'boss' ? 8500 : 12000);
-
-    // PvPモードのセーフティゾーン収縮ループ
-    if (room.mode === 'pvp') {
-        let elapsedSec = 0;
-        room.zoneTimer = setInterval(() => {
-            const r = rooms[roomId];
-            if (!r || r.state !== 'playing' || r.matchId !== currentMatchId) {
-                stopGimmickLoop(roomId);
-                return;
-            }
-
-            elapsedSec++;
-            if (elapsedSec >= 12 && r.safeZone.radius > r.safeZone.minRadius) {
-                r.safeZone.shrinking = true;
-                r.safeZone.radius = Math.max(r.safeZone.minRadius, r.safeZone.radius - 6);
-                io.to(roomId).emit('safeZoneUpdated', r.safeZone);
-            } else if (r.safeZone.radius <= r.safeZone.minRadius) {
-                r.safeZone.shrinking = false;
-            }
-
-            for (const id in r.players) {
-                const p = r.players[id];
-                if (p.isDead || p.isEliminated) continue;
-
-                const dist = Math.hypot((p.x + 24) - r.safeZone.cx, (p.y + 24) - r.safeZone.cy);
-                if (dist > r.safeZone.radius) {
-                    const zoneDmg = 8;
-                    p.hp = Math.max(0, p.hp - zoneDmg);
-                    io.to(roomId).emit('zoneDamaged', {
-                        targetId: p.id,
-                        damage: zoneDmg,
-                        hp: p.hp,
-                        maxHp: p.maxHp
-                    });
-
-                    if (p.hp <= 0) {
-                        handlePlayerKO(roomId, p, null, currentMatchId);
-                    }
-                }
-            }
-        }, 1000);
-    }
+    }, room.mode === 'boss' ? 8000 : 11000);
 
     // BOSS戦モードのAI＆攻撃ループ
     if (room.mode === 'boss') {
@@ -324,14 +324,12 @@ function startBossAILoop(roomId, matchId) {
 
         if (nearest && !boss.pulseCharging) {
             const angle = Math.atan2((nearest.y + 24) - boss.y, (nearest.x + 24) - boss.x);
-            // ソロ時は移動をやや早めにして緊張感とテンポをアップ、第2形態はさらにスピード重視
             let moveSpd;
             if (boss.phase === 2) {
-                moveSpd = isSolo ? 3.8 : 3.4;
+                moveSpd = isSolo ? 4.0 : 3.6;
             } else {
-                moveSpd = isSolo ? 2.6 : 2.2;
+                moveSpd = isSolo ? 2.8 : 2.4;
             }
-            // 吸引（渦潮）発動中は前進を少し抑えて回避の余地を確保
             if (boss.vortexActive) {
                 moveSpd *= 0.65;
             }
@@ -339,12 +337,12 @@ function startBossAILoop(roomId, matchId) {
             boss.x += Math.cos(angle) * moveSpd;
             boss.y += Math.sin(angle) * moveSpd;
 
-            // アリーナ中央エリア内に収める
-            boss.x = Math.max(85, Math.min(ARENA_WIDTH - 85, boss.x));
-            boss.y = Math.max(ARENA_TOP + 75, Math.min(ARENA_HEIGHT - 85, boss.y));
+            // アリーナ中央エリア内に収める（960x720対応）
+            boss.x = Math.max(95, Math.min(ARENA_WIDTH - 95, boss.x));
+            boss.y = Math.max(ARENA_TOP + 85, Math.min(ARENA_HEIGHT - 95, boss.y));
         }
 
-        // 5ティック（1秒）ごとに渦潮コア接触ダメージ判定（威力は現行維持）
+        // 5ティック（1秒）ごとに渦潮コア接触ダメージ判定
         if (tick % 5 === 0) {
             for (const id in r.players) {
                 const p = r.players[id];
@@ -361,7 +359,6 @@ function startBossAILoop(roomId, matchId) {
     }, 200);
 
     // 攻撃パターン発動ループ
-    // 第1形態: 2450ms（高密度アクション） / 第2形態: 1950ms（避けきれる限界を超えないテンポ重視）
     let attackCount = 0;
     const scheduleNextAttack = () => {
         const r = rooms[roomId];
@@ -397,26 +394,26 @@ function executeBossAttack(roomId, count, matchId) {
     const patternIdx = count % 4;
 
     if (patternIdx === 0) {
-        // パターン1: 渦巻き弾幕（Spiral Barrage・1発12ダメージ・威力維持）
-        // 第1形態は高密度アクション向けに基本弾数を少し充実、マルチは基本数＋参加人数に応じた追加弾数（弾速は詰めすぎない）
+        // パターン1: 渦巻き弾幕（Spiral Barrage）
         const baseCount = boss.phase === 2 ? 11 : 9;
-        const extraBulletsByPlayers = (allPlayerCount - 1) * 3; // 1人:+0, 2人:+3, 3人:+6, 4人:+9
+        const extraBulletsByPlayers = (allPlayerCount - 1) * 3;
         const bulletCount = baseCount + extraBulletsByPlayers;
 
         boss.spiralAngle = (boss.spiralAngle + 0.45) % (Math.PI * 2);
+        room.lastSpiralAt = Date.now();
         io.to(roomId).emit('bossAttackEvent', {
             type: 'spiral',
             x: boss.x,
             y: boss.y,
             count: bulletCount,
             baseAngle: boss.spiralAngle,
-            speed: boss.phase === 2 ? 4.5 : 3.8,
-            damage: 12
+            speed: boss.phase === 2 ? 4.6 : 3.9,
+            damage: BOSS_SPIRAL_DAMAGE
         });
     } else if (patternIdx === 1) {
-        // パターン2: 闇の雷スラッシュ（Void Slash・予兆ライン→斬撃20ダメージ・威力維持）
+        // パターン2: 闇の雷スラッシュ（ステージ拡大に合わせて射程を 360 -> 480 に調整）
         const angle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
-        const length = 360;
+        const length = 480;
         const endX = boss.x + Math.cos(angle) * length;
         const endY = boss.y + Math.sin(angle) * length;
         const warnDuration = boss.phase === 2 ? 680 : 750;
@@ -469,9 +466,9 @@ function executeBossAttack(roomId, count, matchId) {
             }
         }, duration);
     } else if (patternIdx === 3) {
-        // パターン4: ブラックホール収縮パルス（Singularity Pulse・溜め→全方位衝撃波26ダメージ・威力維持）
+        // パターン4: ブラックホール収縮パルス（ステージ拡大に合わせて半径を 225 / 195 に調整）
         boss.pulseCharging = true;
-        const pulseRadius = boss.phase === 2 ? 205 : 180;
+        const pulseRadius = boss.phase === 2 ? 225 : 195;
         const chargeDuration = boss.phase === 2 ? 800 : 900;
 
         io.to(roomId).emit('bossAttackEvent', {
@@ -552,7 +549,6 @@ function stopGimmickLoop(roomId) {
     if (!room) return;
     if (room.wallTimer) { clearInterval(room.wallTimer); room.wallTimer = null; }
     if (room.itemTimer) { clearInterval(room.itemTimer); room.itemTimer = null; }
-    if (room.zoneTimer) { clearInterval(room.zoneTimer); room.zoneTimer = null; }
     if (room.bossMoveTimer) { clearInterval(room.bossMoveTimer); room.bossMoveTimer = null; }
     if (room.bossAttackTimer) { clearTimeout(room.bossAttackTimer); room.bossAttackTimer = null; }
     if (Array.isArray(room.bossPendingTimeouts)) {
@@ -667,7 +663,6 @@ function checkAllReadyAndStart(roomId) {
     const startingMatchId = room.matchId;
     room.walls = [];
     room.items = [];
-    room.safeZone = createInitialSafeZone();
     room.boss = room.mode === 'boss' ? createBossState(playerIds.length) : null;
 
     playerIds.forEach((id, index) => {
@@ -682,6 +677,7 @@ function checkAllReadyAndStart(roomId) {
         p.bossDamageDealt = 0;
         p.lastEarnedPoints = 0;
         p.lastPointBreakdown = null;
+        Object.assign(p, createPlayerGuards());
         p.hp = p.maxHp;
         p.x = spawn.x;
         p.y = spawn.y;
@@ -690,9 +686,7 @@ function checkAllReadyAndStart(roomId) {
 
     io.to(roomId).emit('currentPlayers', room.players);
     io.to(roomId).emit('gimmicksUpdated', { walls: [], items: [] });
-    if (room.mode === 'pvp') {
-        io.to(roomId).emit('safeZoneUpdated', room.safeZone);
-    } else {
+    if (room.mode === 'boss') {
         io.to(roomId).emit('bossStateUpdated', room.boss);
     }
     io.to(roomId).emit('matchCountdown', { seconds: 3, mode: room.mode });
@@ -733,7 +727,6 @@ function checkMatchWinner(roomId) {
                 }
             });
 
-            // 与ダメージが0の場合でも破綻しないようにガード
             if (maxDmg <= 0) {
                 mvpId = null;
             }
@@ -879,7 +872,6 @@ function handlePlayerExit(socket, roomId) {
                 walls: [],
                 items: [],
                 staticObstacles: STATIC_OBSTACLES,
-                safeZone: createInitialSafeZone(),
                 boss: null
             });
         }
@@ -894,7 +886,11 @@ io.on('connection', (socket) => {
         const roomId = sanitizeRoomId(payload && payload.roomId);
         if (!roomId) return;
 
-        if (rooms[roomId] && Object.keys(rooms[roomId].players).length >= MAX_PLAYERS_PER_ROOM) {
+        // 自分自身は人数に数えない（同じ部屋への再参加で満員扱いされるのを防ぐ）
+        const occupied = rooms[roomId]
+            ? Object.keys(rooms[roomId].players).filter(id => id !== socket.id).length
+            : 0;
+        if (occupied >= MAX_PLAYERS_PER_ROOM) {
             socket.emit('roomFull', { roomId });
             return;
         }
@@ -915,11 +911,9 @@ io.on('connection', (socket) => {
                 sessionRecords: {},
                 walls: [],
                 items: [],
-                safeZone: createInitialSafeZone(),
                 boss: null,
                 wallTimer: null,
                 itemTimer: null,
-                zoneTimer: null,
                 bossMoveTimer: null,
                 bossAttackTimer: null,
                 bossPendingTimeouts: []
@@ -928,9 +922,13 @@ io.on('connection', (socket) => {
 
         const room = rooms[roomId];
         const cleanStats = sanitizeStats(payload.stats);
-        const clientKey = typeof payload.clientKey === 'string' && payload.clientKey
+        let clientKey = typeof payload.clientKey === 'string' && payload.clientKey
             ? payload.clientKey.slice(0, 40)
             : socket.id;
+        // 同じ clientKey の別接続（別タブなど）が同室にいる場合は、戦績の共有を避けるため別キーにする
+        if (Object.values(room.players).some(other => other.clientKey === clientKey && other.id !== socket.id)) {
+            clientKey = clientKey.slice(0, 30) + '_' + socket.id.slice(0, 8);
+        }
 
         const prevRecord = room.sessionRecords[clientKey] || { wins: 0, points: 0 };
 
@@ -958,7 +956,8 @@ io.on('connection', (socket) => {
             lastPointBreakdown: null,
             isReady: false,
             wins: prevRecord.wins,
-            points: prevRecord.points
+            points: prevRecord.points,
+            ...createPlayerGuards()
         };
 
         io.to(roomId).emit('roomStateSync', {
@@ -968,7 +967,6 @@ io.on('connection', (socket) => {
             walls: room.walls,
             items: room.items,
             staticObstacles: STATIC_OBSTACLES,
-            safeZone: room.safeZone,
             boss: room.boss
         });
     });
@@ -990,7 +988,6 @@ io.on('connection', (socket) => {
             walls: room.walls,
             items: room.items,
             staticObstacles: STATIC_OBSTACLES,
-            safeZone: room.safeZone,
             boss: null
         });
     });
@@ -1018,7 +1015,6 @@ io.on('connection', (socket) => {
         room.walls = [];
         room.items = [];
         room.boss = null;
-        room.safeZone = createInitialSafeZone();
         for (const id in room.players) {
             room.players[id].isReady = false;
             room.players[id].isDead = false;
@@ -1040,7 +1036,6 @@ io.on('connection', (socket) => {
             walls: [],
             items: [],
             staticObstacles: STATIC_OBSTACLES,
-            safeZone: room.safeZone,
             boss: null
         });
     });
@@ -1057,15 +1052,39 @@ io.on('connection', (socket) => {
     socket.on('playerMovement', (data) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
-        if (room.state !== 'playing') return;
+        if (room.state !== 'playing' || !data) return;
 
         const p = room.players[socket.id];
         if (p && !p.isDead && !p.isEliminated) {
+            const now = Date.now();
             const maxX = ARENA_WIDTH - CHAR_SIZE;
             const maxY = ARENA_HEIGHT - CHAR_SIZE;
-            p.x = Math.max(0, Math.min(maxX, Number(data.x) || 0));
-            p.y = Math.max(ARENA_TOP, Math.min(maxY, Number(data.y) || ARENA_TOP));
-            p.facing = data.facing || p.facing;
+            let nx = Math.max(0, Math.min(maxX, Number(data.x) || 0));
+            let ny = Math.max(ARENA_TOP, Math.min(maxY, Number(data.y) || ARENA_TOP));
+
+            // 速度チェック：前回の受理からの経過時間で動ける距離を超えたら、超えた分は切り捨てる
+            // （クライアントは60回/秒・1回あたり spd px 動く。ブースト・渦潮の引き寄せ・ノックバックぶんの余裕込み）
+            const dt = Math.min(1500, Math.max(16, now - (p.lastMoveAt || now)));
+            const boosted = now < p.speedBoostUntil + 500;
+            const perSec = (p.stats.spd * (boosted ? 1.4 : 1) + (room.mode === 'boss' ? 2.2 : 0)) * 60;
+            const budget = perSec * (dt / 1000) * 1.3 + 64;
+            const dist = Math.hypot(nx - p.x, ny - p.y);
+            if (dist > budget) {
+                const ratio = budget / dist;
+                nx = p.x + (nx - p.x) * ratio;
+                ny = p.y + (ny - p.y) * ratio;
+            }
+
+            // 固定障害物（岩）の中には入れない（クライアントより緩い判定で、正規プレイの誤判定を避ける）
+            if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12)) {
+                nx = p.x;
+                ny = p.y;
+            }
+
+            p.lastMoveAt = now;
+            p.x = nx;
+            p.y = ny;
+            p.facing = VALID_FACING.includes(data.facing) ? data.facing : p.facing;
             socket.to(currentRoom).emit('playerMoved', {
                 id: socket.id,
                 x: p.x,
@@ -1080,10 +1099,15 @@ io.on('connection', (socket) => {
         const room = rooms[currentRoom];
         if (room.state !== 'playing') return;
 
+        const p = room.players[socket.id];
+        const hitType = sanitizeHitType(data && data.type);
+        if (!p || p.isDead || p.isEliminated || !hitType) return;
+
         const wallIndex = room.walls.findIndex(w => w.id === data.wallId);
         if (wallIndex === -1) return;
+        if (!useCredit(p, hitType)) return;
 
-        const dmg = data.type === 'melee' ? 20 : 10;
+        const dmg = hitType === 'melee' ? 20 : 10;
         room.walls[wallIndex].hp -= dmg;
 
         if (room.walls[wallIndex].hp <= 0) {
@@ -1165,8 +1189,12 @@ io.on('connection', (socket) => {
 
         const p = room.players[socket.id];
         if (p && !p.isDead && !p.isEliminated) {
+            const now = Date.now();
+            // クライアントのクールダウンは4000ms。通信ゆらぎの余裕を見て3200msでサーバー側も制限
+            if (now < p.nextShieldAt) return;
+            p.nextShieldAt = now + 3200;
             const duration = 1200;
-            p.shieldUntil = Date.now() + duration;
+            p.shieldUntil = now + duration;
             io.to(currentRoom).emit('playerShielded', { id: socket.id, duration });
         }
     });
@@ -1174,23 +1202,41 @@ io.on('connection', (socket) => {
     socket.on('playerAttack', (attackData) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
-        if (room.state !== 'playing') return;
+        if (room.state !== 'playing' || !attackData) return;
 
         const p = room.players[socket.id];
-        if (p && !p.isDead && !p.isEliminated) {
-            const boostedSpd = Date.now() < p.speedBoostUntil ? p.stats.spd * 1.4 : p.stats.spd;
-            const isPowered = Date.now() < p.powerBoostUntil;
-            socket.to(currentRoom).emit('remoteAttack', {
-                attackerId: socket.id,
-                type: attackData.type,
-                x: attackData.x,
-                y: attackData.y,
-                facing: attackData.facing,
-                color: isPowered ? '#ff2222' : p.stats.mainColor,
-                spd: boostedSpd,
-                isPowered: isPowered
-            });
+        const hitType = sanitizeHitType(attackData.type);
+        if (!p || p.isDead || p.isEliminated || !hitType) return;
+
+        // 連射制限（クライアントのクールダウン: 弾450ms / 斬撃600ms。バースト2回まで許容）
+        const allowed = hitType === 'melee'
+            ? takeToken(p, 'melee', 520, 2)
+            : takeToken(p, 'shot', 400, 2);
+        if (!allowed) return;
+        addCredit(p, hitType);
+
+        // 発射位置はサーバー上の位置から大きくズレていたらサーバー位置を採用
+        const c = playerCenter(p);
+        let ox = Number(attackData.x);
+        let oy = Number(attackData.y);
+        if (!Number.isFinite(ox) || !Number.isFinite(oy) || Math.hypot(ox - c.x, oy - c.y) > 100) {
+            ox = c.x;
+            oy = c.y;
         }
+        const facing = VALID_FACING.includes(attackData.facing) ? attackData.facing : p.facing;
+
+        const boostedSpd = Date.now() < p.speedBoostUntil ? p.stats.spd * 1.4 : p.stats.spd;
+        const isPowered = Date.now() < p.powerBoostUntil;
+        socket.to(currentRoom).emit('remoteAttack', {
+            attackerId: socket.id,
+            type: hitType,
+            x: ox,
+            y: oy,
+            facing: facing,
+            color: isPowered ? '#ff2222' : p.stats.mainColor,
+            spd: boostedSpd,
+            isPowered: isPowered
+        });
     });
 
     // BOSSへのダメージ処理
@@ -1202,7 +1248,17 @@ io.on('connection', (socket) => {
         const attacker = room.players[socket.id];
         if (!attacker || attacker.isDead || attacker.isEliminated) return;
 
-        const typeMultiplier = hitData.type === 'melee' ? 1.35 : 1.0;
+        const hitType = sanitizeHitType(hitData && hitData.type);
+        if (!hitType || room.boss.hp <= 0) return;
+
+        // 近接は攻撃者がボスの近くにいる場合のみ有効（弾は軌道を追跡しないため距離制限なし）
+        if (hitType === 'melee') {
+            const c = playerCenter(attacker);
+            if (Math.hypot(c.x - room.boss.x, c.y - room.boss.y) > room.boss.radius + MELEE_BOSS_EXTRA_DIST) return;
+        }
+        if (!useCredit(attacker, hitType)) return;
+
+        const typeMultiplier = hitType === 'melee' ? 1.35 : 1.0;
         const powerMultiplier = Date.now() < attacker.powerBoostUntil ? 1.5 : 1.0;
         const damage = Math.round(attacker.stats.atk * typeMultiplier * powerMultiplier);
 
@@ -1236,8 +1292,9 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || p.isDead || p.isEliminated) return;
 
-        const dmg = Math.min(40, Math.max(5, Number(data && data.damage) || 12));
-        applyBossDamageToPlayer(currentRoom, p, dmg, 'spiral', room.matchId);
+        // ダメージ値はクライアントの申告を使わず、サーバー固定値を使う。直近に渦巻き弾幕が発射されていない場合は無効
+        if (!room.lastSpiralAt || Date.now() - room.lastSpiralAt > 6000) return;
+        applyBossDamageToPlayer(currentRoom, p, BOSS_SPIRAL_DAMAGE, 'spiral', room.matchId);
     });
 
     // PvPモードでのプレイヤー間ダメージ（BOSS戦ではフレンドリーファイア無し）
@@ -1247,21 +1304,32 @@ io.on('connection', (socket) => {
         if (room.state !== 'playing' || room.mode === 'boss') return;
 
         const attacker = room.players[socket.id];
-        const target = room.players[hitData.targetId];
+        const hitType = sanitizeHitType(hitData && hitData.type);
+        const target = hitData ? room.players[hitData.targetId] : null;
 
-        if (!attacker || !target || attacker.isDead || attacker.isEliminated || target.isDead || target.isEliminated) return;
+        if (!attacker || !target || !hitType || attacker.id === target.id) return;
+        if (attacker.isDead || attacker.isEliminated || target.isDead || target.isEliminated) return;
+
+        // 近接は攻撃者と対象が近い場合のみ有効（弾は軌道を追跡しないため距離制限なし）
+        if (hitType === 'melee') {
+            const a = playerCenter(attacker);
+            const t = playerCenter(target);
+            if (Math.hypot(a.x - t.x, a.y - t.y) > MELEE_MAX_DIST_PVP) return;
+        }
+        if (!useCredit(attacker, hitType)) return;
+        const knockDir = VALID_FACING.includes(hitData.facing) ? hitData.facing : attacker.facing;
 
         if (Date.now() < target.shieldUntil) {
             io.to(currentRoom).emit('attackBlocked', {
                 targetId: target.id,
                 attackerId: attacker.id,
-                knockbackDir: hitData.facing,
-                type: hitData.type
+                knockbackDir: knockDir,
+                type: hitType
             });
             return;
         }
 
-        const typeMultiplier = hitData.type === 'melee' ? 1.3 : 1.0;
+        const typeMultiplier = hitType === 'melee' ? 1.3 : 1.0;
         const powerMultiplier = Date.now() < attacker.powerBoostUntil ? 1.5 : 1.0;
         const damage = Math.round(attacker.stats.atk * typeMultiplier * powerMultiplier);
 
@@ -1273,8 +1341,8 @@ io.on('connection', (socket) => {
             damage: damage,
             hp: target.hp,
             maxHp: target.maxHp,
-            knockbackDir: hitData.facing,
-            type: hitData.type
+            knockbackDir: knockDir,
+            type: hitType
         });
 
         if (target.hp <= 0) {
