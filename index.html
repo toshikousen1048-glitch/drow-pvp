@@ -354,6 +354,87 @@
             transition: width 0.2s;
         }
 
+        /* ==========================================
+           🔮 判定の間（転生の間）
+        ========================================== */
+        .judge-wrap {
+            width: 100%;
+            max-width: 520px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .judge-title { margin: 0; color: #d9c8ff; letter-spacing: 2px; text-shadow: 0 0 12px #8a5cff; }
+        .judge-canvas {
+            width: 100%;
+            max-width: 480px;
+            height: auto;
+            border-radius: 12px;
+            border: 2px solid #4b3a7a;
+            background: #0b0820;
+            box-shadow: 0 0 24px rgba(138, 92, 255, 0.35);
+        }
+        .judge-dialogue {
+            width: 100%;
+            background: rgba(22, 16, 48, 0.92);
+            border: 2px solid #6c4fc9;
+            border-radius: 10px;
+            padding: 10px 14px;
+            min-height: 76px;
+            box-sizing: border-box;
+        }
+        .judge-speaker { font-size: 0.8rem; color: #b79bff; font-weight: bold; margin-bottom: 4px; }
+        .judge-text { font-size: 0.95rem; line-height: 1.6; color: #f3eeff; min-height: 3.2em; }
+        .judge-result {
+            width: 100%;
+            background: #16213e;
+            border: 1px solid #3a3a52;
+            border-radius: 10px;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .jr-block { opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
+        .jr-block.show { opacity: 1; transform: none; }
+        .jr-counts { display: flex; justify-content: space-around; font-size: 0.9rem; color: #dfe6e9; }
+        .jr-counts b { color: #ffeaa7; font-size: 1.2rem; }
+        .jr-bar-row { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; margin: 3px 0; }
+        .jr-bar-row .lbl { width: 54px; color: #b2bec3; }
+        .jr-bar-row .val { width: 48px; text-align: right; color: #fff; font-variant-numeric: tabular-nums; }
+        .jbar { flex: 1; height: 10px; background: #0f0f1a; border-radius: 5px; overflow: hidden; }
+        .jbar > i { display: block; height: 100%; width: 0; border-radius: 5px; transition: width 0.5s ease-out; }
+        .jbar.atk > i { background: #ff6b6b; }
+        .jbar.spd > i { background: #4dd2ff; }
+        .jbar.hp > i  { background: #55efc4; }
+        .jr-rank-line { display: flex; align-items: center; justify-content: center; gap: 14px; }
+        .judge-rank-box {
+            width: 78px; height: 78px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 3rem; font-weight: 900; color: #fff;
+            background: #2c2c3e; border: 3px solid #57606f;
+            transition: box-shadow 0.3s, border-color 0.3s, background 0.3s;
+        }
+        .judge-rank-box.rank-C { background: #7f8c8d; border-color: #bdc3c7; box-shadow: 0 0 14px #95a5a6; }
+        .judge-rank-box.rank-B { background: #3498db; border-color: #aed6f1; box-shadow: 0 0 18px #3498db; }
+        .judge-rank-box.rank-A { background: #e74c3c; border-color: #f5b7b1; box-shadow: 0 0 22px #e74c3c; }
+        .judge-rank-box.rank-S { background: #f1c40f; color: #000; border-color: #fff6b0; box-shadow: 0 0 30px #f1c40f; }
+        .judge-rank-box.spinning { background: #2c2c3e; border-color: #6c4fc9; box-shadow: 0 0 16px #6c4fc9; }
+        .jr-title-text { font-size: 1.1rem; font-weight: bold; color: #fff; text-align: center; }
+        .jr-title-boost { display: inline-block; margin-top: 3px; font-size: 0.75rem; background: #e67e22; color: #fff; padding: 1px 8px; border-radius: 10px; }
+        .judge-actions { display: none; width: 100%; flex-direction: column; gap: 8px; }
+        .judge-actions.show { display: flex; }
+        .judge-skip {
+            align-self: flex-end;
+            background: transparent; border: 1px solid #57606f; color: #b2bec3;
+            border-radius: 6px; padding: 3px 10px; font-size: 0.78rem; cursor: pointer;
+        }
+        .judge-skip:hover { background: #2c2c3e; }
+        .ink-shimmer { background-size: 220% 220%; animation: inkShimmer 2.2s linear infinite; }
+        @keyframes inkShimmer { 0% { background-position: 0% 50%; } 100% { background-position: 220% 50%; } }
+
         .rank-badge {
             padding: 2px 8px;
             border-radius: 4px;
@@ -782,6 +863,48 @@
     </div>
 
     <!-- ==========================================
+         🔮 判定の間（キャラ作成後・ロビー前の判定専用空間）
+    ========================================== -->
+    <div id="judgeScreen" class="step-screen">
+        <div class="judge-wrap">
+            <h2 class="judge-title">🔮 判定の間</h2>
+            <button id="judgeSkipBtn" class="judge-skip" onclick="skipJudgment()">⏩ スキップ</button>
+            <canvas id="judgeCanvas" class="judge-canvas" width="480" height="320"></canvas>
+            <div class="judge-dialogue">
+                <div class="judge-speaker">🕊️ 判定の女神</div>
+                <div id="judgeText" class="judge-text"></div>
+            </div>
+            <div class="judge-result">
+                <div id="jrCounts" class="jr-block jr-counts">
+                    <span>ドット数 <b id="jrDots">0</b></span>
+                    <span>使用色 <b id="jrColors">0</b></span>
+                </div>
+                <div id="jrBalance" class="jr-block">
+                    <div class="jr-bar-row"><span class="lbl">⚔️ 攻撃</span><div class="jbar atk"><i id="jbPower"></i></div><span class="val" id="jvPower">0%</span></div>
+                    <div class="jr-bar-row"><span class="lbl">⚡ 速度</span><div class="jbar spd"><i id="jbSpeed"></i></div><span class="val" id="jvSpeed">0%</span></div>
+                    <div class="jr-bar-row"><span class="lbl">🛡️ 耐久</span><div class="jbar hp"><i id="jbTough"></i></div><span class="val" id="jvTough">0%</span></div>
+                </div>
+                <div id="jrRank" class="jr-block jr-rank-line">
+                    <div id="judgeRankBox" class="judge-rank-box">?</div>
+                    <div>
+                        <div id="jrTitle" class="jr-title-text">???</div>
+                        <div id="jrBoost" class="jr-title-boost" style="display:none;">称号ボーナス ステータス+10%</div>
+                    </div>
+                </div>
+                <div id="jrStats" class="jr-block">
+                    <div class="jr-bar-row"><span class="lbl">⚔️ ATK</span><div class="jbar atk"><i id="jsAtkBar"></i></div><span class="val" id="jsAtk">0</span></div>
+                    <div class="jr-bar-row"><span class="lbl">⚡ SPD</span><div class="jbar spd"><i id="jsSpdBar"></i></div><span class="val" id="jsSpd">0</span></div>
+                    <div class="jr-bar-row"><span class="lbl">❤️ HP</span><div class="jbar hp"><i id="jsHpBar"></i></div><span class="val" id="jsHp">0</span></div>
+                </div>
+            </div>
+            <div id="judgeActions" class="judge-actions">
+                <button class="next-step-btn" onclick="completeJudgment()">🌀 この姿で転生する（ロビーへ） ➡️</button>
+                <button class="small-btn" onclick="backToDrawing()">🎨 描き直す</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
          🚪 STEP 2: ルーム入室＆待機ロビー
     ========================================== -->
     <div id="step2Screen" class="step-screen">
@@ -880,11 +1003,12 @@
         let currentRoomMode = 'pvp'; // 'pvp' or 'boss'
 
         function switchStep(stepNum) {
+            // 未判定のままロビーへ進む場合は、必ず「判定の間」を通す
             if (stepNum === 2 && isDraftEditing) {
-                const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
-                applyJudgmentToPlayer(judged, true);
-                syncCharacterUpdate();
+                enterJudgmentRoom();
+                return;
             }
+            leaveJudgmentRoom();
             currentUiStep = stepNum;
             [1, 2, 3].forEach(n => {
                 document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
@@ -898,10 +1022,372 @@
         function proceedToLobby() {
             initAudio();
             SE.click();
-            const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
-            applyJudgmentToPlayer(judged, true);
+            enterJudgmentRoom();       // 描いた後は必ず「判定の間」を通る
+        }
+
+        // ==========================================
+        // 🔮 判定の間（転生の間）：描いたキャラの魂を判定する専用空間
+        // 判定ロジックは finalizeCharacterJudgment をそのまま使用（演出だけを追加）
+        // ==========================================
+        const JUDGE_RANK_COLORS = { C: '#95a5a6', B: '#3498db', A: '#e74c3c', S: '#f1c40f' };
+        const JUDGE_RANK_LINES = {
+            C: '……インクが少し足りませんね。でも大丈夫、ここからが伸びしろです！',
+            B: 'ふむ、悪くない魂です。駆け出しとしては上出来でしょう。',
+            A: '素晴らしい！歴戦の風格を感じます。これは頼もしい戦士ですね。',
+            S: 'なんと……！ 世界の理を揺るがすほどの魂です！ これは伝説の始まりですよ！'
+        };
+        const judgeState = {
+            active: false, token: 0, skip: false, raf: 0,
+            result: null, charAlpha: 0, circlePower: 0.25, rankColor: '#8a5cff',
+            flash: 0, particles: [],
+            stars: Array.from({ length: 70 }, () => ({ x: Math.random() * 480, y: Math.random() * 320, r: Math.random() * 1.5 + 0.4, p: Math.random() * 6.28 }))
+        };
+
+        function jEl(id) { return document.getElementById(id); }
+
+        function jWait(ms, tok) {
+            return new Promise(resolve => {
+                const start = performance.now();
+                const tick = () => {
+                    if (tok !== judgeState.token) return resolve(false);
+                    if (judgeState.skip || performance.now() - start >= ms) return resolve(true);
+                    setTimeout(tick, 30);
+                };
+                tick();
+            });
+        }
+
+        async function jSay(text, tok) {
+            const box = jEl('judgeText');
+            box.textContent = '';
+            for (let i = 1; i <= text.length; i++) {
+                if (tok !== judgeState.token) return false;
+                if (judgeState.skip) { box.textContent = text; return true; }
+                box.textContent = text.slice(0, i);
+                await jWait(26, tok);
+            }
+            return tok === judgeState.token;
+        }
+
+        async function jCount(el, to, tok, suffix = '', ms = 700) {
+            const steps = 14;
+            for (let i = 1; i <= steps; i++) {
+                if (judgeState.skip) break;
+                el.textContent = Math.round(to * i / steps) + suffix;
+                if (i % 2 === 0) SE.judgeTick();
+                if (!(await jWait(ms / steps, tok))) return false;
+            }
+            el.textContent = to + suffix;
+            return tok === judgeState.token;
+        }
+
+        function jBurst(color, n) {
+            for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = 1 + Math.random() * 4;
+                judgeState.particles.push({ x: 240, y: 190, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 50 + Math.random() * 40, color });
+            }
+        }
+
+        function resetJudgeUI() {
+            judgeState.charAlpha = 0;
+            judgeState.circlePower = 0.25;
+            judgeState.rankColor = '#8a5cff';
+            judgeState.flash = 0;
+            judgeState.particles = [];
+            judgeState.skip = false;
+            jEl('judgeText').textContent = '';
+            ['jrCounts', 'jrBalance', 'jrStats'].forEach(id => jEl(id).classList.remove('show'));
+            jEl('jrRank').classList.add('show');
+            jEl('jrDots').textContent = '0';
+            jEl('jrColors').textContent = '0';
+            ['jbPower', 'jbSpeed', 'jbTough', 'jsAtkBar', 'jsSpdBar', 'jsHpBar'].forEach(id => { jEl(id).style.width = '0%'; });
+            ['jvPower', 'jvSpeed', 'jvTough'].forEach(id => { jEl(id).textContent = '0%'; });
+            jEl('jsAtk').textContent = '0'; jEl('jsSpd').textContent = '0'; jEl('jsHp').textContent = '0';
+            const box = jEl('judgeRankBox');
+            box.className = 'judge-rank-box';
+            box.textContent = '?';
+            jEl('jrTitle').textContent = '???';
+            jEl('jrBoost').style.display = 'none';
+            jEl('judgeActions').classList.remove('show');
+            jEl('judgeSkipBtn').style.display = '';
+        }
+
+        function drawJudgeCanvas(t) {
+            const cv = jEl('judgeCanvas');
+            if (!cv) return;
+            const ctx = cv.getContext('2d');
+            const W = 480, H = 320, cx = 240, cy = 190;
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, '#0b0820');
+            grad.addColorStop(1, '#241046');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            for (const s of judgeState.stars) {
+                ctx.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(t / 700 + s.p));
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(s.x, s.y, s.r, s.r);
+            }
+
+            // 天から降り注ぐ光
+            const power = judgeState.circlePower;
+            ctx.globalAlpha = 0.12 + 0.28 * power;
+            const beam = ctx.createLinearGradient(0, 0, 0, H);
+            beam.addColorStop(0, 'rgba(255,255,255,0.9)');
+            beam.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = beam;
+            ctx.beginPath();
+            ctx.moveTo(cx - 40, 0); ctx.lineTo(cx + 40, 0); ctx.lineTo(cx + 130, H); ctx.lineTo(cx - 130, H);
+            ctx.closePath();
+            ctx.fill();
+
+            // 魔法陣
+            ctx.save();
+            ctx.translate(cx, cy + 62);
+            ctx.scale(1, 0.38);
+            ctx.globalAlpha = 0.35 + 0.65 * power;
+            ctx.strokeStyle = judgeState.rankColor;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = judgeState.rankColor;
+            ctx.shadowBlur = 14 * power;
+            for (const rad of [150, 118]) { ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2); ctx.stroke(); }
+            ctx.rotate(t / (1800 - 900 * power));
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const a = (Math.PI * 2 * i * 2) / 5 - Math.PI / 2;
+                const px = Math.cos(a) * 118, py = Math.sin(a) * 118;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            for (let i = 0; i < 24; i++) {
+                const a = (Math.PI * 2 * i) / 24;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(a) * 140, Math.sin(a) * 140);
+                ctx.lineTo(Math.cos(a) * 150, Math.sin(a) * 150);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // キャラクター（台座の上でふわふわ浮遊）
+            if (judgeState.charAlpha > 0.01) {
+                const bob = Math.sin(t / 420) * 5;
+                const size = 160, ox = cx - size / 2, oy = cy - size / 2 - 4 + bob;
+                ctx.globalAlpha = 0.25 * judgeState.charAlpha;
+                ctx.fillStyle = '#000000';
+                ctx.beginPath(); ctx.ellipse(cx, cy + 66, 50 - bob, 9, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = judgeState.charAlpha;
+                const cell = size / GRID_SIZE;
+                for (let y = 0; y < GRID_SIZE; y++) {
+                    for (let x = 0; x < GRID_SIZE; x++) {
+                        const c = gridData[y][x];
+                        if (!c) continue;
+                        ctx.fillStyle = resolvePixelColor(c, t);
+                        ctx.fillRect(ox + x * cell, oy + y * cell, cell + 0.5, cell + 0.5);
+                    }
+                }
+            }
+
+            // パーティクル
+            for (let i = judgeState.particles.length - 1; i >= 0; i--) {
+                const p = judgeState.particles[i];
+                p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.life--;
+                if (p.life <= 0) { judgeState.particles.splice(i, 1); continue; }
+                ctx.globalAlpha = Math.min(1, p.life / 30);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 3, 3);
+            }
+
+            if (judgeState.flash > 0.01) {
+                ctx.globalAlpha = judgeState.flash;
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, W, H);
+                judgeState.flash *= 0.9;
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function judgeLoop(ts) {
+            if (!judgeState.active) return;
+            drawJudgeCanvas(typeof ts === 'number' ? ts : performance.now());
+            judgeState.raf = requestAnimationFrame(judgeLoop);
+        }
+
+        function leaveJudgmentRoom() {
+            judgeState.token++;
+            judgeState.active = false;
+            if (judgeState.raf) cancelAnimationFrame(judgeState.raf);
+            judgeState.raf = 0;
+            const screen = jEl('judgeScreen');
+            if (screen) screen.classList.remove('active');
+        }
+
+        function enterJudgmentRoom() {
+            initAudio();
+            leaveJudgmentRoom();
+            const result = finalizeCharacterJudgment(gridData, charNameInput.value);
+            judgeState.result = result;
+            const tok = judgeState.token;
+            currentUiStep = 'judge';
+            [1, 2, 3].forEach(n => {
+                document.getElementById(`step${n}Screen`).classList.remove('active');
+                document.getElementById(`tabStep${n}`).classList.remove('active');
+            });
+            jEl('judgeScreen').classList.add('active');
+            resetJudgeUI();
+            judgeState.active = true;
+            judgeState.raf = requestAnimationFrame(judgeLoop);
+            runJudgeSequence(tok, result);
+        }
+
+        function skipJudgment() {
+            judgeState.skip = true;
+            jEl('judgeSkipBtn').style.display = 'none';
+        }
+
+        async function runJudgeSequence(tok, r) {
+            const d = r.detail;
+            const S = judgeState;
+            const quiet = () => S.skip;
+            try {
+                if (!(await jWait(500, tok))) return;
+                // 1) 魂の降臨
+                S.charAlpha = 1;
+                S.circlePower = 0.5;
+                if (!quiet()) SE.judgeTick();
+                const hello = d.totalPixels === 0
+                    ? 'ようこそ、判定の間へ。……おや？ キャンバスが真っ白ですね。ひとまず見てみましょう。'
+                    : 'ようこそ、判定の間へ。あなたの描いた魂を、これから見極めましょう。';
+                if (!(await jSay(hello, tok))) return;
+                if (!(await jWait(400, tok))) return;
+
+                // 2) ドット数・使用色
+                jEl('jrCounts').classList.add('show');
+                if (!(await jSay('インクの量と、色の数を数えます……', tok))) return;
+                if (!(await jCount(jEl('jrDots'), d.totalPixels, tok))) return;
+                if (!(await jCount(jEl('jrColors'), d.uniqueColors, tok, '', 400))) return;
+                if (!(await jWait(300, tok))) return;
+
+                // 3) 属性バランス
+                S.circlePower = 0.7;
+                jEl('jrBalance').classList.add('show');
+                if (!(await jWait(150, tok))) return;
+                const pct = v => Math.round(v * 100);
+                jEl('jbPower').style.width = pct(d.pRatio) + '%'; jEl('jvPower').textContent = pct(d.pRatio) + '%';
+                jEl('jbSpeed').style.width = pct(d.sRatio) + '%'; jEl('jvSpeed').textContent = pct(d.sRatio) + '%';
+                jEl('jbTough').style.width = pct(d.tRatio) + '%'; jEl('jvTough').textContent = pct(d.tRatio) + '%';
+                if (!quiet()) SE.judgeTick();
+                let balanceLine = '色の配分は、とても調和が取れていますね。';
+                if (d.totalPixels === 0) balanceLine = '色の気配が……ありませんね。';
+                else if (d.pRatio >= 0.52) balanceLine = '攻めの色が強く出ています。燃えるような闘志を感じますよ！';
+                else if (d.sRatio >= 0.52) balanceLine = '風のような軽やかな色使い。素早く動き回る魂ですね。';
+                else if (d.tRatio >= 0.52) balanceLine = 'どっしりとした守りの色。簡単には倒れそうにありません。';
+                if (d.hasSpecialInk) balanceLine += ' ……こ、この虹色は、特別なインク！？';
+                if (!(await jSay(balanceLine, tok))) return;
+                if (!(await jWait(500, tok))) return;
+
+                // 4) ランク判定（ドラムロール）
+                if (!(await jSay('それでは、判定いたします……！', tok))) return;
+                const box = jEl('judgeRankBox');
+                box.className = 'judge-rank-box spinning';
+                S.circlePower = 1;
+                const letters = ['C', 'B', 'A', 'S'];
+                const spinStart = performance.now();
+                let i = 0;
+                while (!S.skip && performance.now() - spinStart < 1500) {
+                    box.textContent = letters[i++ % 4];
+                    SE.judgeTick();
+                    const progress = (performance.now() - spinStart) / 1500;
+                    if (!(await jWait(50 + progress * 130, tok))) return;
+                }
+                box.textContent = r.rank;
+                box.className = `judge-rank-box rank-${r.rank}`;
+                S.rankColor = JUDGE_RANK_COLORS[r.rank];
+                S.flash = 0.9;
+                jBurst(S.rankColor, r.rank === 'S' ? 120 : (r.rank === 'A' ? 80 : 40));
+                if (!quiet()) SE.judgeRank(r.rank);
+                if (!(await jWait(700, tok))) return;
+
+                // 5) 称号
+                jEl('jrTitle').textContent = r.title || '称号なし';
+                if (r.hasTitleBoost) jEl('jrBoost').style.display = 'inline-block';
+                let rankLine = JUDGE_RANK_LINES[r.rank];
+                if (d.totalPixels === 0) rankLine = '……何も描かれていませんでした。次はぜひ、あなたの魂を描いてくださいね。';
+                else if (d.hasSpecialInk && r.rank === 'S') rankLine = '虹色に輝く魂……！ ' + JUDGE_RANK_LINES.S;
+                if (!(await jSay(rankLine, tok))) return;
+                if (r.hasTitleBoost) {
+                    if (!(await jWait(300, tok))) return;
+                    if (!(await jSay(`称号「${r.title}」の力で、ステータスが10%上昇します！`, tok))) return;
+                }
+                if (!(await jWait(400, tok))) return;
+
+                // 6) ステータス確定
+                jEl('jrStats').classList.add('show');
+                if (!(await jWait(150, tok))) return;
+                jEl('jsAtkBar').style.width = Math.min(100, r.stats.atk / 35 * 100) + '%';
+                jEl('jsSpdBar').style.width = Math.min(100, r.stats.spd / 7.5 * 100) + '%';
+                jEl('jsHpBar').style.width = Math.min(100, r.stats.maxHp / 220 * 100) + '%';
+                if (!(await jCount(jEl('jsAtk'), r.stats.atk, tok, '', 500))) return;
+                if (!(await jCount(jEl('jsHp'), r.stats.maxHp, tok, '', 500))) return;
+                jEl('jsSpd').textContent = r.stats.spd.toFixed(1);
+                if (!quiet()) SE.judgeTick();
+
+                if (!(await jSay('さあ、この姿で戦いの世界へ転生しましょう。あなたの旅路に祝福を！', tok))) return;
+            } finally {
+                // 途中で離脱していなければ、最後は必ず確定状態（スキップ時もここで整える）
+                if (tok === judgeState.token) finalizeJudgeUI(r);
+            }
+        }
+
+        function finalizeJudgeUI(r) {
+            const d = r.detail;
+            jEl('jrCounts').classList.add('show');
+            jEl('jrBalance').classList.add('show');
+            jEl('jrStats').classList.add('show');
+            jEl('jrDots').textContent = d.totalPixels;
+            jEl('jrColors').textContent = d.uniqueColors;
+            const pct = v => Math.round(v * 100);
+            jEl('jbPower').style.width = pct(d.pRatio) + '%'; jEl('jvPower').textContent = pct(d.pRatio) + '%';
+            jEl('jbSpeed').style.width = pct(d.sRatio) + '%'; jEl('jvSpeed').textContent = pct(d.sRatio) + '%';
+            jEl('jbTough').style.width = pct(d.tRatio) + '%'; jEl('jvTough').textContent = pct(d.tRatio) + '%';
+            const box = jEl('judgeRankBox');
+            box.textContent = r.rank;
+            box.className = `judge-rank-box rank-${r.rank}`;
+            judgeState.rankColor = JUDGE_RANK_COLORS[r.rank];
+            judgeState.charAlpha = 1;
+            judgeState.circlePower = 1;
+            jEl('jrTitle').textContent = r.title || '称号なし';
+            jEl('jrBoost').style.display = r.hasTitleBoost ? 'inline-block' : 'none';
+            jEl('jsAtkBar').style.width = Math.min(100, r.stats.atk / 35 * 100) + '%';
+            jEl('jsSpdBar').style.width = Math.min(100, r.stats.spd / 7.5 * 100) + '%';
+            jEl('jsHpBar').style.width = Math.min(100, r.stats.maxHp / 220 * 100) + '%';
+            jEl('jsAtk').textContent = r.stats.atk;
+            jEl('jsSpd').textContent = r.stats.spd.toFixed(1);
+            jEl('jsHp').textContent = r.stats.maxHp;
+            jEl('judgeSkipBtn').style.display = 'none';
+            jEl('judgeActions').classList.add('show');
+        }
+
+        // 「この姿で転生する」：判定結果を確定してロビーへ
+        function completeJudgment() {
+            if (!judgeState.result) return;
+            initAudio();
+            SE.win();
+            const result = judgeState.result;
+            judgeState.result = null;
+            leaveJudgmentRoom();
+            applyJudgmentToPlayer(result, true);
             syncCharacterUpdate();
             switchStep(2);
+        }
+
+        // 「描き直す」：判定を確定せずにキャラ作成へ戻る
+        function backToDrawing() {
+            initAudio();
+            SE.click();
+            judgeState.result = null;
+            switchStep(1);
         }
 
         function updateModeButtonsUI() {
@@ -1064,7 +1550,12 @@
                 const notes = [523, 659, 784, 1046];
                 notes.forEach((n, idx) => setTimeout(() => playTone(n, 'square', idx === 3 ? 0.4 : 0.12, 0.08), idx * 120));
             },
-            gachaSpin: () => playTone(300 + Math.random() * 400, 'triangle', 0.06, 0.06)
+            gachaSpin: () => playTone(300 + Math.random() * 400, 'triangle', 0.06, 0.06),
+            judgeTick: () => playTone(700 + Math.random() * 300, 'triangle', 0.04, 0.05),
+            judgeRank: (rank) => {
+                const chords = { C: [392, 330], B: [523, 659], A: [523, 659, 784], S: [523, 659, 784, 1046, 1318] };
+                (chords[rank] || chords.B).forEach((n, idx) => setTimeout(() => playTone(n, 'square', idx === (chords[rank] || chords.B).length - 1 ? 0.5 : 0.14, 0.08), idx * 110));
+            }
         };
 
         const LOBBY_MELODY = [523, 0, 659, 587, 523, 0, 392, 0, 440, 0, 523, 587, 659, 0, 523, 0];
@@ -1152,11 +1643,11 @@
 
         const GACHA_ITEMS = [
             { id: 'rainbow',   name: '🌈 レインボーインク', rarity: 'UR', code: 'SPECIAL_RAINBOW', preview: 'linear-gradient(45deg, red, orange, yellow, green, cyan, blue, violet)', label: '虹' },
-            { id: 'gold',      name: '🌟 メタルゴールド',   rarity: 'SR', code: '#ffd700', preview: '#ffd700', label: '金' },
+            { id: 'gold',      name: '🌟 メタルゴールド',   rarity: 'SR', code: 'SPECIAL_GOLD', shimmer: true, preview: 'linear-gradient(135deg, #7a5c10 0%, #fff0b0 50%, #7a5c10 100%)', label: '金' },
             { id: 'neon_cyan', name: '✨ ネオンシアン',     rarity: 'SR', code: '#00ffff', preview: '#00ffff', label: '閃' },
             { id: 'hellfire',  name: '🔥 ヘルファイア',     rarity: 'SR', code: '#ff2a00', preview: '#ff2a00', label: '炎' },
             { id: 'crystal',   name: '💎 クリスタルブルー', rarity: 'R',  code: '#7df9ff', preview: '#7df9ff', label: '氷' },
-            { id: 'poison',    name: '🧪 ヴェノムパープル', rarity: 'R',  code: '#bf00ff', preview: '#bf00ff', label: '毒' },
+            { id: 'poison',    name: '🧪 ヴェノムパープル', rarity: 'R',  code: 'SPECIAL_VENOM', shimmer: true, preview: 'linear-gradient(135deg, #460876 0%, #d68cff 50%, #460876 100%)', label: '毒' },
             { id: 'mint',      name: '🌿 パステルミント',   rarity: 'R',  code: '#98ff98', preview: '#98ff98', label: '草' },
             { id: 'dark',      name: '🌑 アビスダーク',     rarity: 'R',  code: '#2b1b3d', preview: '#2b1b3d', label: '闇' }
         ];
@@ -1399,8 +1890,9 @@
 
         const COLOR_GROUPS = {
             power: ['#880015', '#ed1c24', '#ff7f27', '#ffaec9', '#ff2a00'],
-            speed: ['#00a2e8', '#3f48cc', '#a349a4', '#00ffff', '#7df9ff', '#bf00ff'],
-            tough: ['#ffc90e', '#fff200', '#22b14c', '#b97a57', '#ffd700', '#98ff98']
+            // ※ '#bf00ff' / '#ffd700' は旧バージョンのヴェノムパープル・メタルゴールド（保存済みキャラ互換用）
+            speed: ['#00a2e8', '#3f48cc', '#a349a4', '#00ffff', '#7df9ff', '#bf00ff', 'SPECIAL_VENOM'],
+            tough: ['#ffc90e', '#fff200', '#22b14c', '#b97a57', '#ffd700', '#98ff98', 'SPECIAL_GOLD']
         };
 
         const SHIELD_COOLDOWN = 4000;
@@ -1460,11 +1952,31 @@
         let shakeIntensity = 0;
         let hitStopUntil = 0;
 
-        function resolvePixelColor(c, timeMs) {
-            if (c === 'SPECIAL_RAINBOW') {
-                const hue = Math.floor((timeMs / 8) % 360);
-                return `hsl(${hue}, 95%, 55%)`;
+        // 特別インク：時間で色が変化する（基本パレットにない色）
+        function lerpRgb(a, b, k) {
+            return `rgb(${Math.round(a[0] + (b[0] - a[0]) * k)}, ${Math.round(a[1] + (b[1] - a[1]) * k)}, ${Math.round(a[2] + (b[2] - a[2]) * k)})`;
+        }
+        const ANIMATED_INKS = {
+            SPECIAL_RAINBOW: {
+                mainColor: '#ff0080',
+                color: (t) => `hsl(${Math.floor((t / 8) % 360)}, 95%, 55%)`
+            },
+            // メタルゴールド：暗い青銅金 ⇔ 白金のきらめき（単色の黄色には寄せない）
+            SPECIAL_GOLD: {
+                mainColor: '#d4a72c',
+                color: (t) => lerpRgb([122, 92, 16], [255, 240, 176], (Math.sin(t / 240) + 1) / 2)
+            },
+            // ヴェノムパープル：深い紫黒 ⇔ 明るい蘭の紫の脈動
+            SPECIAL_VENOM: {
+                mainColor: '#8a2be2',
+                color: (t) => lerpRgb([70, 8, 118], [214, 140, 255], (Math.sin(t / 300 + 1.5) + 1) / 2)
             }
+        };
+        function isAnimatedInk(c) {
+            return typeof c === 'string' && Object.prototype.hasOwnProperty.call(ANIMATED_INKS, c);
+        }
+        function resolvePixelColor(c, timeMs) {
+            if (isAnimatedInk(c)) return ANIMATED_INKS[c].color(timeMs);
             return c;
         }
 
@@ -1555,7 +2067,7 @@
             for (const [c, freq] of Object.entries(colorFreq)) {
                 if (freq > maxFreq && c !== '#ffffff' && c !== '#000000') {
                     maxFreq = freq;
-                    mainColor = c === 'SPECIAL_RAINBOW' ? '#ff0080' : c;
+                    mainColor = isAnimatedInk(c) ? ANIMATED_INKS[c].mainColor : c;
                 }
             }
 
@@ -1634,7 +2146,9 @@
                 rank,
                 title,
                 hasTitleBoost,
-                stats: { atk, spd, maxHp, mainColor }
+                stats: { atk, spd, maxHp, mainColor },
+                // 判定の間の演出用（ステータス計算には影響しない）
+                detail: { totalPixels, uniqueColors, pRatio, sRatio, tRatio, hasSpecialInk }
             };
         }
 
@@ -2532,7 +3046,12 @@
                 const btn = document.createElement('div');
                 btn.className = `color-btn ${unlocked ? '' : 'locked'}`;
                 if (unlocked) {
-                    btn.style.background = item.preview;
+                    if (item.shimmer) {
+                        btn.style.backgroundImage = item.preview;
+                        btn.classList.add('ink-shimmer');
+                    } else {
+                        btn.style.background = item.preview;
+                    }
                     btn.textContent = item.label;
                     btn.title = item.name;
                     btn.addEventListener('click', () => {
@@ -2949,7 +3468,7 @@
         function updateGame() {
             updateAndDrawDemoBg();
 
-            if (currentColor === 'SPECIAL_RAINBOW' || gridData.some(row => row.includes('SPECIAL_RAINBOW'))) {
+            if (isAnimatedInk(currentColor) || gridData.some(row => row.some(isAnimatedInk))) {
                 if (homeScreen.style.display === 'none' && currentUiStep === 1) {
                     drawEditorGrid();
                 } else if (homeScreen.style.display === 'none' && currentUiStep === 2) {
