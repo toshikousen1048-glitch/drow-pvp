@@ -1014,8 +1014,11 @@
                 document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
                 document.getElementById(`tabStep${n}`).classList.toggle('active', n === stepNum);
             });
-            if (stepNum === 2) {
+            if (stepNum === 1) {
+                startBgm('drawing');
+            } else if (stepNum === 2) {
                 renderLobbyPreview();
+                startBgm('menu');
             }
         }
 
@@ -1226,6 +1229,8 @@
         function enterJudgmentRoom() {
             initAudio();
             leaveJudgmentRoom();
+            // お絵描き中の BGM (drawing BGM.mp3) をそのまま継続
+            startBgm('drawing');
             const result = finalizeCharacterJudgment(gridData, charNameInput.value);
             judgeState.result = result;
             const tok = judgeState.token;
@@ -1447,15 +1452,29 @@
         }
 
         // ==========================================
-        // 🔊 Web Audio API サウンド＆BGMシステム
+        // 🔊 サウンド（SE: Web Audio API）＆ MP3 BGMシステム
         // ==========================================
         let audioCtx = null;
         let bgmEnabled = true;
         let seEnabled = true;
-        let bgmInterval = null;
         let currentBgmTrack = 'none';
-        let bgmStep = 0;
+        let currentBgmRate = 1.0;
         let lastDrawSoundTime = 0;
+
+        // 4つのMP3ファイル（固定音量 35%）
+        const BGM_VOLUME = 0.35;
+        const BGM_AUDIO_MAP = {
+            menu: new Audio('menu BGM.mp3'),
+            drawing: new Audio('drawing BGM.mp3'),
+            pvp: new Audio('PVP BGM.mp3'),
+            boss: new Audio('Boss BGM.mp3')
+        };
+        Object.values(BGM_AUDIO_MAP).forEach(audio => {
+            audio.loop = true;
+            audio.volume = BGM_VOLUME;
+            audio.preload = 'auto';
+        });
+        let activeBgmAudio = null;
 
         function initAudio() {
             if (!audioCtx) {
@@ -1465,7 +1484,18 @@
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
+            // ブラウザの自動再生ブロック解除後、待機中のBGMがあれば即再生
+            if (bgmEnabled && activeBgmAudio && activeBgmAudio.paused) {
+                activeBgmAudio.play().catch(() => {});
+            }
         }
+
+        // 初回のユーザー操作（クリック・キー入力・タッチ）でBGM自動再生を確実に開始
+        ['pointerdown', 'keydown', 'touchstart'].forEach(evName => {
+            window.addEventListener(evName, () => {
+                initAudio();
+            }, { passive: true });
+        });
 
         function playTone(freq, type, duration, vol = 0.08, endFreq = null) {
             if (!seEnabled || !audioCtx) return;
@@ -1558,45 +1588,83 @@
             }
         };
 
-        const LOBBY_MELODY = [523, 0, 659, 587, 523, 0, 392, 0, 440, 0, 523, 587, 659, 0, 523, 0];
-        const BATTLE_MELODY = [330, 330, 392, 330, 440, 392, 330, 294, 330, 330, 494, 440, 392, 330, 294, 247];
-        const BOSS_MELODY = [220, 220, 261, 246, 220, 196, 220, 330, 293, 261, 246, 220, 196, 174, 164, 220];
-
-        function startBgm(track) {
-            if (currentBgmTrack === track && bgmInterval) return;
-            stopBgm();
-            currentBgmTrack = track;
-            if (!bgmEnabled || track === 'none') return;
-
-            bgmStep = 0;
-            const tempoMs = track === 'lobby' ? 240 : track === 'pinch' ? 125 : track === 'boss' ? 145 : 165;
-            const melody = track === 'lobby' ? LOBBY_MELODY : track === 'boss' ? BOSS_MELODY : BATTLE_MELODY;
-
-            bgmInterval = setInterval(() => {
-                if (!bgmEnabled || !audioCtx || audioCtx.state !== 'running') return;
-                const freq = melody[bgmStep % melody.length];
-                if (freq > 0) {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.type = track === 'lobby' ? 'triangle' : track === 'boss' ? 'sawtooth' : 'square';
-                    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                    gain.gain.setValueAtTime(0.028, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start();
-                    osc.stop(audioCtx.currentTime + 0.15);
+        // 現在の画面状態に応じたBGM種別・テンポを返す
+        function getDesiredBgmState() {
+            if (homeScreen.style.display !== 'none') {
+                return { track: 'menu', rate: 1.0 };
+            }
+            if (roomState === 'countdown') {
+                return { track: 'none', rate: 1.0 };
+            }
+            if (roomState === 'playing') {
+                if (currentRoomMode === 'boss') {
+                    const isPhase2 = bossState && bossState.phase === 2;
+                    return { track: 'boss', rate: isPhase2 ? 1.12 : 1.0 };
+                } else {
+                    const isLowHp = !player.isDead && !player.isEliminated && player.maxHp > 0 && (player.hp / player.maxHp <= 0.30);
+                    return { track: 'pvp', rate: isLowHp ? 1.12 : 1.0 };
                 }
-                bgmStep++;
-            }, tempoMs);
+            }
+            if (roomState === 'result') {
+                return { track: 'menu', rate: 1.0 };
+            }
+            // 待機中（キャラ作成・判定の間・ルーム待機）
+            if (currentUiStep === 1 || currentUiStep === 'judge') {
+                return { track: 'drawing', rate: 1.0 };
+            }
+            return { track: 'menu', rate: 1.0 };
+        }
+
+        function setBgmPlaybackRate(rate) {
+            currentBgmRate = rate;
+            if (activeBgmAudio) {
+                activeBgmAudio.playbackRate = rate;
+            }
+        }
+
+        function startBgm(track, rate = 1.0) {
+            currentBgmRate = rate;
+
+            if (!bgmEnabled || track === 'none') {
+                stopBgm();
+                return;
+            }
+
+            const nextAudio = BGM_AUDIO_MAP[track];
+            if (!nextAudio) return;
+
+            // 同じ曲がすでに選択されている場合は、曲の頭出しをせずテンポだけ反映して継続
+            if (currentBgmTrack === track && activeBgmAudio === nextAudio) {
+                nextAudio.volume = BGM_VOLUME;
+                nextAudio.playbackRate = rate;
+                if (nextAudio.paused) {
+                    nextAudio.play().catch(() => {});
+                }
+                return;
+            }
+
+            // 別の曲に切り替える場合
+            if (activeBgmAudio && activeBgmAudio !== nextAudio) {
+                activeBgmAudio.pause();
+                activeBgmAudio.currentTime = 0;
+            }
+
+            currentBgmTrack = track;
+            activeBgmAudio = nextAudio;
+            nextAudio.currentTime = 0;
+            nextAudio.volume = BGM_VOLUME;
+            nextAudio.playbackRate = rate;
+            nextAudio.play().catch(() => {});
         }
 
         function stopBgm() {
-            if (bgmInterval) {
-                clearInterval(bgmInterval);
-                bgmInterval = null;
+            if (activeBgmAudio) {
+                activeBgmAudio.pause();
+                activeBgmAudio.currentTime = 0;
+                activeBgmAudio = null;
             }
             currentBgmTrack = 'none';
+            currentBgmRate = 1.0;
         }
 
         function updateSoundButtonsUI() {
@@ -1614,8 +1682,12 @@
             initAudio();
             bgmEnabled = !bgmEnabled;
             updateSoundButtonsUI();
-            if (!bgmEnabled) stopBgm();
-            else startBgm(roomState === 'playing' ? (currentRoomMode === 'boss' ? 'boss' : 'battle') : 'lobby');
+            if (!bgmEnabled) {
+                stopBgm();
+            } else {
+                const desired = getDesiredBgmState();
+                startBgm(desired.track, desired.rate);
+            }
         }
 
         function toggleSe() {
@@ -1823,7 +1895,6 @@
             SE.click();
             homeScreen.style.display = 'none';
             switchStep(1);
-            startBgm('lobby');
         }
 
         function returnToHome() {
@@ -1843,7 +1914,7 @@
             }
             homeScreen.style.display = 'flex';
             updatePointsDisplay();
-            startBgm('lobby');
+            startBgm('menu');
         }
 
         // ==========================================
@@ -2441,7 +2512,10 @@
                 meleeEffects = [];
                 confettiParticles = [];
                 countdownBanner = '';
-                if (homeScreen.style.display === 'none') startBgm('lobby');
+                if (homeScreen.style.display === 'none') {
+                    const desired = getDesiredBgmState();
+                    startBgm(desired.track, desired.rate);
+                }
                 updateLobbyUI();
             });
 
@@ -2454,7 +2528,11 @@
             });
 
             socket.on('bossStateUpdated', (bossData) => {
+                const prevPhase = bossState ? bossState.phase : 1;
                 bossState = bossData;
+                if (bossState && prevPhase === 1 && bossState.phase === 2 && roomState === 'playing' && currentRoomMode === 'boss') {
+                    setBgmPlaybackRate(1.12);
+                }
             });
 
             socket.on('bossDamaged', (data) => {
@@ -2468,6 +2546,9 @@
                         shakeTime = 16;
                         shakeIntensity = 8;
                         addFloatingText(bossState.x, bossState.y - 50, 'PHASE 2: TEMPO RUSH!!', '#ff2a00');
+                        if (roomState === 'playing' && currentRoomMode === 'boss') {
+                            setBgmPlaybackRate(1.12);
+                        }
                     }
                     addFloatingText(
                         bossState.x + (Math.random() - 0.5) * 36,
@@ -2544,7 +2625,12 @@
                 } else if (data.type === 'heal') {
                     targetObj.hp = data.hp;
                     targetObj.maxHp = data.maxHp;
-                    if (isMe) SE.itemHeal();
+                    if (isMe) {
+                        SE.itemHeal();
+                        if (roomState === 'playing' && currentRoomMode === 'pvp' && player.maxHp > 0 && (player.hp / player.maxHp > 0.30)) {
+                            setBgmPlaybackRate(1.0);
+                        }
+                    }
                     addFloatingText(targetObj.x + 24, targetObj.y - 16, `+${data.healAmount} HP!`, '#2ecc71');
                 } else if (data.type === 'power') {
                     targetObj.powerBoostUntil = performance.now() + data.duration;
@@ -2600,7 +2686,7 @@
                 if (data && data.boss) bossState = data.boss;
                 countdownBanner = 'FIGHT!';
                 SE.countdown(true);
-                startBgm(currentRoomMode === 'boss' ? 'boss' : 'battle');
+                startBgm(currentRoomMode === 'boss' ? 'boss' : 'pvp', 1.0);
                 updateLobbyUI();
                 setTimeout(() => {
                     if (countdownBanner === 'FIGHT!') countdownBanner = '';
@@ -2611,7 +2697,8 @@
             socket.on('matchResult', (data) => {
                 roomState = 'result';
                 for (const k in keys) keys[k] = false;
-                stopBgm();
+                // リザルト画面で menu BGM.mp3 に切り替え
+                startBgm('menu', 1.0);
 
                 const allPlayers = data.players || {};
                 const myServerData = allPlayers[socket.id];
@@ -2820,6 +2907,11 @@
                     }
                     socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                     addFloatingText(player.x + 24, player.y - 10, `-${data.damage}`, '#ff4d4d');
+
+                    // バトル中のピンチ時（残りHP 30%以下）にBGM再生速度を1.12倍にテンポアップ
+                    if (roomState === 'playing' && currentRoomMode === 'pvp' && player.hp > 0 && player.maxHp > 0 && (player.hp / player.maxHp <= 0.30)) {
+                        setBgmPlaybackRate(1.12);
+                    }
                 } else if (otherPlayers[data.targetId]) {
                     const target = otherPlayers[data.targetId];
                     target.hp = data.hp;
@@ -2851,7 +2943,9 @@
                     player.speedBoostUntil = 0;
                     player.powerBoostUntil = 0;
                     addFloatingText(player.x + 24, player.y, data.isEliminated ? 'OUT!!' : 'KO!!', '#ff0000');
-                    if (player.stocks === 1 && roomState === 'playing') startBgm('pinch');
+                    if (player.stocks === 1 && roomState === 'playing') {
+                        setBgmPlaybackRate(1.12);
+                    }
                 } else if (otherPlayers[data.targetId]) {
                     if (data.targetPoints !== undefined) otherPlayers[data.targetId].points = data.targetPoints;
                     otherPlayers[data.targetId].isDead = true;
@@ -2871,6 +2965,9 @@
                     player.x = data.x;
                     player.y = data.y;
                     player.invincibleUntil = performance.now() + 1500;
+                    if (roomState === 'playing' && currentRoomMode === 'pvp') {
+                        setBgmPlaybackRate(player.stocks === 1 ? 1.12 : 1.0);
+                    }
                 } else if (otherPlayers[data.id]) {
                     otherPlayers[data.id].isDead = false;
                     otherPlayers[data.id].hp = data.hp;
@@ -3005,7 +3102,8 @@
             roomInput.disabled = false;
             joinRoomBtn.style.display = 'inline-block';
             leaveRoomBtn.style.display = 'none';
-            startBgm('lobby');
+            const desired = getDesiredBgmState();
+            startBgm(desired.track, desired.rate);
             updateLobbyUI();
         });
 
@@ -4194,6 +4292,7 @@
         renderSpecialPalette();
         loadSavedData();
         updateLobbyUI();
+        startBgm('menu', 1.0);
         gameLoop();
     </script>
 </body>
