@@ -534,21 +534,21 @@
         }
 
         /* ==========================================
-           ⚔️ STEP 3: バトルアリーナ（640x640）
+           ⚔️ STEP 3: バトルアリーナ（960x720）
         ========================================== */
         .arena-wrapper {
             position: relative;
             width: 100%;
-            max-width: 640px;
+            max-width: 960px;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
         #gameCanvas {
             width: 100%;
-            max-width: 640px;
+            max-width: 960px;
             height: auto;
-            aspect-ratio: 1 / 1;
+            aspect-ratio: 4 / 3;
             background: #12121f;
             border: 3px solid #3a3a52;
             border-radius: 8px;
@@ -594,7 +594,7 @@
         #touchControls {
             display: none;
             width: 100%;
-            max-width: 640px;
+            max-width: 960px;
             justify-content: space-between;
             align-items: center;
             margin-top: 12px;
@@ -685,7 +685,7 @@
                 <li><b>バリア（ガード）:</b> <span class="kbd">Z</span> キー（攻撃を無効化＆吸引軽減！）</li>
                 <li><b>斬撃（近接スラッシュ）:</b> <span class="kbd">X</span> キー（または右クリック）</li>
                 <li><b>玉（遠距離ショット）:</b> <span class="kbd">C</span> キー（または左クリック）</li>
-                <li><b>⚔️ PvP対戦:</b> 2〜4人でバトル！時間経過で安全地帯が縮小するぞ！</li>
+                <li><b>⚔️ PvP対戦:</b> 2〜4人で1本勝負（残機1）のサバイバルバトル！最後まで生き残れ！</li>
                 <li><b>🌀 BOSS討伐（VOID TYPHOON）:</b> <b>1人でも4人協力でも出撃可能！</b>人数に応じてボスのHPや弾数が変化！</li>
             </ul>
             <div style="text-align:center; margin-top:14px;">
@@ -830,7 +830,7 @@
     ========================================== -->
     <div id="step3Screen" class="step-screen">
         <div class="arena-wrapper">
-            <canvas id="gameCanvas" width="640" height="640"></canvas>
+            <canvas id="gameCanvas" width="960" height="720"></canvas>
 
             <!-- リザルト表示 -->
             <div id="resultOverlay">
@@ -1356,15 +1356,15 @@
         }
 
         // ==========================================
-        // 🎨 キャラクターエディタ＆バトルロジック（640x640）
+        // 🎨 キャラクターエディタ＆バトルロジック（960x720）
         // ==========================================
         const GRID_SIZE = 32;
         const EDITOR_CANVAS_SIZE = 384;
         const PIXEL_SIZE = EDITOR_CANVAS_SIZE / GRID_SIZE;
 
-        const ARENA_WIDTH = 640;
+        const ARENA_WIDTH = 960;
         const ARENA_TOP = 28;
-        const ARENA_HEIGHT = 640;
+        const ARENA_HEIGHT = 720;
         const ARENA_CENTER_X = ARENA_WIDTH / 2;
         const ARENA_CENTER_Y = (ARENA_TOP + ARENA_HEIGHT) / 2;
 
@@ -1416,7 +1416,7 @@
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' },
             hp: 100,
             maxHp: 100,
-            stocks: 3,
+            stocks: 1,
             isDead: false,
             isEliminated: false,
             invincibleUntil: 0,
@@ -1432,24 +1432,17 @@
 
         let otherPlayers = {};
         let staticObstacles = [
-            { id: 'obs_1', x: 140, y: 140, w: 48, h: 48 },
-            { id: 'obs_2', x: 452, y: 140, w: 48, h: 48 },
-            { id: 'obs_3', x: 140, y: 468, w: 48, h: 48 },
-            { id: 'obs_4', x: 452, y: 468, w: 48, h: 48 },
-            { id: 'obs_5', x: 296, y: 210, w: 48, h: 48 },
-            { id: 'obs_6', x: 296, y: 398, w: 48, h: 48 },
-            { id: 'obs_7', x: 200, y: 304, w: 48, h: 48 },
-            { id: 'obs_8', x: 392, y: 304, w: 48, h: 48 }
+            { id: 'obs_1', x: 190, y: 150, w: 52, h: 52 },
+            { id: 'obs_2', x: 718, y: 150, w: 52, h: 52 },
+            { id: 'obs_3', x: 190, y: 546, w: 52, h: 52 },
+            { id: 'obs_4', x: 718, y: 546, w: 52, h: 52 },
+            { id: 'obs_5', x: 454, y: 210, w: 52, h: 52 },
+            { id: 'obs_6', x: 454, y: 486, w: 52, h: 52 },
+            { id: 'obs_7', x: 300, y: 348, w: 52, h: 52 },
+            { id: 'obs_8', x: 608, y: 348, w: 52, h: 52 }
         ];
         let arenaWalls = [];
         let arenaItems = [];
-        let safeZone = {
-            cx: ARENA_CENTER_X,
-            cy: ARENA_CENTER_Y,
-            radius: 440,
-            minRadius: 95,
-            shrinking: false
-        };
 
         // BOSS関連状態（VOID TYPHOON）
         let bossState = null;
@@ -1906,7 +1899,6 @@
                 arenaWalls = data.walls || [];
                 arenaItems = data.items || [];
                 if (Array.isArray(data.staticObstacles)) staticObstacles = data.staticObstacles;
-                if (data.safeZone) safeZone = data.safeZone;
                 bossState = data.boss || null;
 
                 const players = data.players || {};
@@ -1917,7 +1909,7 @@
                     player.facing = me.facing;
                     player.hp = me.hp;
                     player.maxHp = me.maxHp;
-                    player.stocks = me.stocks ?? 3;
+                    player.stocks = me.stocks ?? 1;
                     player.isDead = Boolean(me.isDead);
                     player.isEliminated = Boolean(me.isEliminated);
                     player.speedBoostUntil = 0;
@@ -1945,10 +1937,6 @@
                 }
                 arenaWalls = data.walls || [];
                 arenaItems = data.items || [];
-            });
-
-            socket.on('safeZoneUpdated', (zoneData) => {
-                if (zoneData) safeZone = zoneData;
             });
 
             socket.on('bossStateUpdated', (bossData) => {
@@ -2027,20 +2015,6 @@
                         x: ev.x, y: ev.y, radius: ev.radius,
                         timer: 22
                     });
-                }
-            });
-
-            socket.on('zoneDamaged', (data) => {
-                if (data.targetId === socket.id) {
-                    SE.zoneHit();
-                    player.hp = data.hp;
-                    player.maxHp = data.maxHp;
-                    addFloatingText(player.x + 24, player.y - 12, `-${data.damage} ZONE!`, '#ff4d4d');
-                } else if (otherPlayers[data.targetId]) {
-                    const target = otherPlayers[data.targetId];
-                    target.hp = data.hp;
-                    target.maxHp = data.maxHp;
-                    addFloatingText(target.x + 24, target.y - 12, `-${data.damage}`, '#ff7675');
                 }
             });
 
@@ -2232,7 +2206,7 @@
                     player.facing = me.facing;
                     player.hp = me.hp;
                     player.maxHp = me.maxHp;
-                    player.stocks = me.stocks ?? 3;
+                    player.stocks = me.stocks ?? 1;
                     player.isDead = Boolean(me.isDead);
                     player.isEliminated = Boolean(me.isEliminated);
                 }
@@ -3022,7 +2996,7 @@
                     const pcx = nextX + 24;
                     const pcy = nextY + 24;
                     const distToBoss = Math.hypot(bossState.x - pcx, bossState.y - pcy);
-                    if (distToBoss > bossState.radius + 10 && distToBoss < 340) {
+                    if (distToBoss > bossState.radius + 10 && distToBoss < 480) {
                         const pullAng = Math.atan2(bossState.y - pcy, bossState.x - pcx);
                         const effectivePull = isShielding ? bossVortexPull * 0.25 : bossVortexPull;
                         nextX += Math.cos(pullAng) * effectivePull;
@@ -3432,8 +3406,8 @@
                 gameCtx.fillStyle = bossState.phase === 2 ? '#ff4d4d' : '#f5b7ff';
                 gameCtx.fillText(`🌀 ${bossState.name} (P${bossState.phase})`, 10, 18);
 
-                const barX = 175;
-                const barW = 330;
+                const barX = 210;
+                const barW = 580;
                 const barH = 12;
                 gameCtx.fillStyle = '#2c2c3e';
                 gameCtx.fillRect(barX, 8, barW, barH);
@@ -3453,7 +3427,7 @@
             const participants = [
                 { name: player.name, stocks: player.stocks, isMe: true, isEliminated: player.isEliminated },
                 ...Object.values(otherPlayers).map(op => ({
-                    name: op.name || '相手', stocks: op.stocks ?? 3, isMe: false, isEliminated: op.isEliminated
+                    name: op.name || '相手', stocks: op.stocks ?? 1, isMe: false, isEliminated: op.isEliminated
                 }))
             ];
 
@@ -3489,23 +3463,6 @@
             }
             for (let j = ARENA_TOP; j <= ARENA_HEIGHT; j += 40) {
                 gameCtx.beginPath(); gameCtx.moveTo(0, j); gameCtx.lineTo(ARENA_WIDTH, j); gameCtx.stroke();
-            }
-
-            if (currentRoomMode === 'pvp' && safeZone) {
-                gameCtx.save();
-                gameCtx.beginPath();
-                gameCtx.rect(0, ARENA_TOP, ARENA_WIDTH, ARENA_HEIGHT - ARENA_TOP);
-                gameCtx.arc(safeZone.cx, safeZone.cy, safeZone.radius, 0, Math.PI * 2, true);
-                gameCtx.fillStyle = 'rgba(231, 76, 60, 0.24)';
-                gameCtx.fill();
-
-                gameCtx.beginPath();
-                gameCtx.arc(safeZone.cx, safeZone.cy, safeZone.radius, 0, Math.PI * 2);
-                gameCtx.lineWidth = safeZone.shrinking ? 3 : 2;
-                gameCtx.strokeStyle = safeZone.shrinking ? '#ff4d4d' : 'rgba(52, 152, 219, 0.65)';
-                gameCtx.setLineDash(safeZone.shrinking ? [] : [8, 6]);
-                gameCtx.stroke();
-                gameCtx.restore();
             }
 
             for (const obs of staticObstacles) {
@@ -3628,7 +3585,7 @@
                 const p = otherPlayers[id];
                 drawEntity(
                     gameCtx, p.x, p.y, p.facing || 'right', p.characterData,
-                    p.hp || 100, p.maxHp || 100, p.stocks ?? 3, p.isDead, p.isEliminated,
+                    p.hp || 100, p.maxHp || 100, p.stocks ?? 1, p.isDead, p.isEliminated,
                     false, now < (p.shieldUntil || 0), now < (p.speedBoostUntil || 0), now < (p.powerBoostUntil || 0),
                     null, p.name || '相手', p.rank || 'B', false
                 );
@@ -3696,8 +3653,20 @@
             gameCtx.restore();
         }
 
-        function gameLoop() {
-            updateGame();
+        // 固定タイムステップ：どのモニターでも1秒あたり60回だけ更新する
+        // （従来は描画1フレームごとに更新していたため、120/144Hzの画面では移動・弾・タイマーが2倍以上速かった）
+        const FIXED_STEP_MS = 1000 / 60;
+        let lastFrameTs = performance.now();
+        let stepAccumulator = 0;
+
+        function gameLoop(ts) {
+            const nowTs = (typeof ts === 'number') ? ts : performance.now();
+            stepAccumulator += Math.min(100, nowTs - lastFrameTs);
+            lastFrameTs = nowTs;
+            while (stepAccumulator >= FIXED_STEP_MS - 0.5) {
+                updateGame();
+                stepAccumulator = Math.max(0, stepAccumulator - FIXED_STEP_MS);
+            }
             drawGame();
             requestAnimationFrame(gameLoop);
         }
