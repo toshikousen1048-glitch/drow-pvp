@@ -238,7 +238,7 @@
         .mode-btn { padding: 8px 6px; border-radius: 8px; border: 2px solid #3a3a52; background: #090b16; color: #aaa; font-weight: bold; font-size: 0.84rem; cursor: pointer; }
         .mode-btn.active-pvp { background: rgba(233,69,96,0.22); border-color: #e94560; color: #fff; }
         .mode-btn.active-boss { background: rgba(155,89,182,0.28); border-color: #9b59b6; color: #f5b7ff; }
-        .boss-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 8px; }
+        .boss-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 0 0 8px; }
         .boss-card { text-align: left; padding: 6px 8px; border-radius: 8px; border: 2px solid #3a3a52; background: #090b16; color: #8a8aa3; cursor: pointer; font-size: 0.72rem; line-height: 1.35; }
         .boss-card b { display: block; font-size: 0.8rem; color: #ddd; }
         .boss-card.active { border-color: #9b59b6; background: rgba(155,89,182,0.25); color: #f5b7ff; box-shadow: 0 0 10px rgba(155,89,182,0.35); }
@@ -629,6 +629,9 @@
             ACTIONS: { shield: { durationMs: 1200, cooldownMs: 4000 }, slash: { cooldownMs: 600 }, shot: { cooldownMs: 450 }, ultra: { cooldownMs: 6000, maxStock: 3 } },
             GACHA: { INK_COST: 300, INK_DUPLICATE_REFUND: 100, ULTRA_COST: 1000, ULTRA_MAX_STOCK: 3, ULTRA_DUPLICATE_REFUND: 300 }
         };
+
+        // サーバーティックで直接当たり判定を行う弾種（二重ダメージ防止のためクライアントからはヒット通知を送らない）
+        const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb']);
 
         let currentUiStep = 1;
         let currentRoomMode = 'pvp';
@@ -1166,7 +1169,8 @@
         function returnToHome() {
             initAudio(); SE.click();
             if (activeRoom && socket && socket.connected) {
-                socket.emit('leaveRoom'); activeRoom = null; roomState = 'waiting'; myReady = false; otherPlayers = {}; bossState = null;
+                socket.emit('leaveRoom'); activeRoom = null; roomState = 'waiting'; myReady = false; otherPlayers = {}; bossState = null; bossTrail = [];
+                player.slowUntil = 0; player.slowMultiplier = 1.0;
                 roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none'; updateLobbyUI();
             }
             homeScreen.style.display = 'flex'; updatePointsDisplay(); startBgm('menu', 1.0);
@@ -1200,13 +1204,14 @@
             x: ARENA_CENTER_X - 24, y: ARENA_CENTER_Y - 24, facing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' }, hp: 100, maxHp: 100, stocks: 1,
             isDead: false, isEliminated: false, invincibleUntil: 0, shieldUntil: 0, absoluteWallUntil: 0, counterStanceUntil: 0,
-            speedBoostUntil: 0, powerBoostUntil: 0, lastShieldTime: -SHIELD_COOLDOWN, lastShotTime: 0, lastMeleeTime: 0,
+            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowMultiplier: 1.0,
+            lastShieldTime: -SHIELD_COOLDOWN, lastShotTime: 0, lastMeleeTime: 0,
             ultraSkillId: null, ultraRemainingUses: 0, ultraMaxUses: 0, ultraCooldownUntil: 0, ultraState: null, ultraStateUntil: 0,
             wins: 0, points: 0
         };
         let otherPlayers = {};
         let staticObstacles = BOSS ? BOSS.STATIC_OBSTACLES.map((o, i) => ({ id: `obs_${i + 1}`, ...o })) : [];
-        let arenaWalls = [], arenaItems = [], bossState = null, bossProjectiles = [], bossEffects = [], bossVortexUntil = 0, bossVortexPull = 1.55;
+        let arenaWalls = [], arenaItems = [], bossState = null, bossProjectiles = [], bossEffects = [], bossTrail = [], bossVortexUntil = 0, bossVortexPull = 1.55;
         let projectiles = [], slashEffects = [], ultraEffects = [], floatingTexts = [], confettiParticles = [];
         let shakeTime = 0, shakeIntensity = 0, hitStopUntil = 0;
 
@@ -1425,6 +1430,18 @@
             return { track: 'menu', rate: 1.0 };
         }
 
+        function syncSlowFromServerEpoch(targetObj, serverSlowUntilEpoch, slowMult) {
+            if (!targetObj) return;
+            const remain = Math.max(0, (Number(serverSlowUntilEpoch) || 0) - Date.now());
+            if (remain > 0) {
+                targetObj.slowUntil = performance.now() + remain;
+                targetObj.slowMultiplier = Number(slowMult) || 0.75;
+            } else {
+                targetObj.slowUntil = 0;
+                targetObj.slowMultiplier = 1.0;
+            }
+        }
+
         // 🌐 Socket.IO 通信
         let socket = null;
         if (typeof io !== 'undefined') {
@@ -1474,6 +1491,7 @@
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
                     player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
                     player.speedBoostUntil = 0; player.powerBoostUntil = 0;
+                    syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier);
                     player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
@@ -1481,7 +1499,10 @@
                     player.wins = me.wins || 0; player.points = me.points || 0; myReady = Boolean(me.isReady);
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
-                projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = [];
+                for (const oid in otherPlayers) {
+                    syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier);
+                }
+                projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = []; bossTrail = [];
                 bossVortexUntil = 0; confettiParticles = []; countdownBanner = '';
                 if (homeScreen.style.display === 'none') { const d = getDesiredBgmState(); startBgm(d.track, d.rate); }
                 updateUltraHudButton(); updateLobbyUI();
@@ -1491,7 +1512,8 @@
                 arenaWalls = data.walls || []; arenaItems = data.items || [];
             });
             socket.on('bossStateUpdated', (bossData) => {
-                const prevPhase = bossState ? bossState.phase : 1; bossState = bossData;
+                const prevPhase = bossState ? bossState.phase : 1;
+                bossState = bossData;
                 if (bossState && prevPhase === 1 && bossState.phase === 2 && roomState === 'playing' && currentRoomMode === 'boss') setBgmPlaybackRate(1.12);
             });
             socket.on('bossDamaged', (data) => {
@@ -1500,7 +1522,8 @@
                 bossState.hp = data.hp; bossState.maxHp = data.maxHp; bossState.phase = data.phase;
                 if (prevPhase === 1 && data.phase === 2) {
                     SE.bossPulse(); shakeTime = 16; shakeIntensity = 8;
-                    addFloatingText(bossState.x, bossState.y - 52, 'PHASE 2: TEMPO RUSH!!', '#ff2a00');
+                    const p2Msg = bossState.id === 'abyss_weaver' ? 'PHASE 2: ABYSS AWAKENED!!' : 'PHASE 2: TEMPO RUSH!!';
+                    addFloatingText(bossState.x, bossState.y - 52, p2Msg, bossState.id === 'abyss_weaver' ? '#e879f9' : '#ff2a00');
                     if (roomState === 'playing' && currentRoomMode === 'boss') setBgmPlaybackRate(1.12);
                 }
                 const mult = Number(data.elementMultiplier || 1);
@@ -1517,6 +1540,15 @@
                     onShake: (time, intensity) => { shakeTime = time; shakeIntensity = intensity; },
                     setVortex: (until, pull) => { bossVortexUntil = until; bossVortexPull = pull; }, addFloatingText
                 });
+            });
+            socket.on('playerSlowed', (data) => {
+                if (!data || roomState !== 'playing') return;
+                const isMe = data.id === socket.id;
+                const targetObj = isMe ? player : otherPlayers[data.id];
+                if (!targetObj) return;
+                targetObj.slowMultiplier = Number(data.multiplier) || 0.75;
+                targetObj.slowUntil = performance.now() + (Number(data.durationMs) || 1800);
+                addFloatingText(targetObj.x + 24, targetObj.y - 22, 'SLOW -25%', '#c084fc');
             });
             socket.on('itemEffectApplied', (data) => {
                 const isMe = data.id === socket.id, targetObj = isMe ? player : otherPlayers[data.id];
@@ -1544,9 +1576,9 @@
                 if (data.stageNumber) currentStageNumber = data.stageNumber;
                 if (data.bossId && BOSS) currentBossId = BOSS.sanitizeBossId(data.bossId);
                 arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = [];
-                bossProjectiles = []; bossEffects = []; bossVortexUntil = 0; confettiParticles = [];
+                bossProjectiles = []; bossEffects = []; bossTrail = []; bossVortexUntil = 0; confettiParticles = [];
                 player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
-                player.speedBoostUntil = 0; player.powerBoostUntil = 0;
+                player.speedBoostUntil = 0; player.powerBoostUntil = 0; player.slowUntil = 0; player.slowMultiplier = 1.0;
                 player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                 player.ultraCooldownUntil = 0; player.ultraState = null; player.ultraStateUntil = 0;
                 for (const k in keys) keys[k] = false;
@@ -1560,6 +1592,7 @@
                 if (data && data.stageNumber) currentStageNumber = data.stageNumber;
                 if (data && data.bossId && BOSS) currentBossId = BOSS.sanitizeBossId(data.bossId);
                 if (data && data.boss) bossState = data.boss;
+                bossTrail = [];
                 countdownBanner = 'FIGHT!'; SE.countdown(true);
                 startBgm(currentRoomMode === 'boss' ? 'boss' : 'pvp', 1.0);
                 updateUltraHudButton(); updateLobbyUI();
@@ -1567,6 +1600,9 @@
             });
             socket.on('matchResult', (data) => {
                 roomState = 'result'; for (const k in keys) keys[k] = false;
+                player.slowUntil = 0; player.slowMultiplier = 1.0;
+                for (const oid in otherPlayers) { otherPlayers[oid].slowUntil = 0; otherPlayers[oid].slowMultiplier = 1.0; }
+                bossTrail = [];
                 startBgm('menu', 1.0); updateUltraHudButton();
                 const allPlayers = data.players || {}, myServerData = allPlayers[socket.id];
                 const myReward = (data.rewardsByPlayer && data.rewardsByPlayer[socket.id]) || (myServerData && myServerData.lastPointBreakdown);
@@ -1624,11 +1660,16 @@
                     player.x = me.x; player.y = me.y; player.facing = me.facing; player.element = me.element || player.element;
                     player.hp = me.hp; player.maxHp = me.maxHp; player.stocks = me.stocks ?? 1;
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
+                    syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier);
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
                     player.ultraState = me.ultraState || null; player.ultraStateUntil = me.ultraStateUntil || 0;
                 }
-                otherPlayers = { ...players }; delete otherPlayers[socket.id]; updateUltraHudButton();
+                otherPlayers = { ...players }; delete otherPlayers[socket.id];
+                for (const oid in otherPlayers) {
+                    syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier);
+                }
+                updateUltraHudButton();
             });
             socket.on('playerMoved', (data) => { if (otherPlayers[data.id]) { otherPlayers[data.id].x = data.x; otherPlayers[data.id].y = data.y; otherPlayers[data.id].facing = data.facing; } });
             socket.on('characterUpdated', (data) => {
@@ -1743,21 +1784,25 @@
                     if (data.targetPoints !== undefined) player.points = data.targetPoints;
                     player.isDead = true; player.stocks = data.stocks; player.isEliminated = Boolean(data.isEliminated);
                     player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0; player.speedBoostUntil = 0; player.powerBoostUntil = 0;
+                    player.slowUntil = 0; player.slowMultiplier = 1.0;
                     addFloatingText(player.x + 24, player.y, data.isEliminated ? 'OUT!!' : 'KO!!', '#ff0000'); updateUltraHudButton();
                 } else if (otherPlayers[data.targetId]) {
                     const op = otherPlayers[data.targetId];
                     if (data.targetPoints !== undefined) op.points = data.targetPoints;
                     op.isDead = true; op.stocks = data.stocks; op.isEliminated = Boolean(data.isEliminated);
                     op.shieldUntil = 0; op.absoluteWallUntil = 0; op.counterStanceUntil = 0; op.speedBoostUntil = 0; op.powerBoostUntil = 0;
+                    op.slowUntil = 0; op.slowMultiplier = 1.0;
                     addFloatingText(op.x + 24, op.y, data.isEliminated ? 'OUT!!' : 'KO!!', '#00ffcc');
                 }
             });
             socket.on('playerRespawn', (data) => {
                 if (data.id === socket.id) {
                     player.isDead = false; player.hp = data.hp; player.x = data.x; player.y = data.y;
+                    player.slowUntil = 0; player.slowMultiplier = 1.0;
                     player.invincibleUntil = performance.now() + 1500; updateUltraHudButton();
                 } else if (otherPlayers[data.id]) {
                     otherPlayers[data.id].isDead = false; otherPlayers[data.id].hp = data.hp; otherPlayers[data.id].x = data.x; otherPlayers[data.id].y = data.y;
+                    otherPlayers[data.id].slowUntil = 0; otherPlayers[data.id].slowMultiplier = 1.0;
                 }
             });
             socket.on('disconnectPlayer', (id) => { delete otherPlayers[id]; updateLobbyUI(); });
@@ -1802,7 +1847,8 @@
             initAudio(); SE.click();
             if (socket && socket.connected) socket.emit('leaveRoom');
             activeRoom = null; roomState = 'waiting'; roomHostId = null; myReady = false; otherPlayers = {}; bossState = null;
-            arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = []; confettiParticles = []; countdownBanner = '';
+            arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = []; bossTrail = []; confettiParticles = []; countdownBanner = '';
+            player.slowUntil = 0; player.slowMultiplier = 1.0;
             connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f';
             roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none';
             const d = getDesiredBgmState(); startBgm(d.track, d.rate); updateLobbyUI();
@@ -2017,9 +2063,29 @@
             const now = performance.now(); if (now < hitStopUntil) return;
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
 
+            // BOSS P2 残像トレイル記録（P1→P2の加速表現）
+            if (currentRoomMode === 'boss' && bossState && bossState.phase === 2) {
+                const last = bossTrail[bossTrail.length - 1];
+                if (!last || Math.hypot(bossState.x - last.x, bossState.y - last.y) > 4) {
+                    bossTrail.push({ x: bossState.x, y: bossState.y, radius: bossState.radius || 44, life: 14 });
+                    if (bossTrail.length > 8) bossTrail.shift();
+                }
+            }
+            for (let i = bossTrail.length - 1; i >= 0; i--) {
+                bossTrail[i].life--;
+                if (bossTrail[i].life <= 0) bossTrail.splice(i, 1);
+            }
+
             if (!player.isDead && !player.isEliminated && !isTyping) {
-                const isShielding = now < player.shieldUntil, isAbsoluteWall = now < player.absoluteWallUntil, isBoosted = now < player.speedBoostUntil;
-                let spd = player.stats.spd; if (isBoosted) spd *= RULES.ITEMS.speed.speedMultiplier; if (isShielding) spd *= 0.7;
+                const isShielding = now < player.shieldUntil;
+                const isAbsoluteWall = now < player.absoluteWallUntil;
+                const isBoosted = now < player.speedBoostUntil;
+                const isSlowed = now < (player.slowUntil || 0);
+                let spd = player.stats.spd;
+                if (isBoosted) spd *= RULES.ITEMS.speed.speedMultiplier;
+                if (isSlowed) spd *= (player.slowMultiplier || 0.75);
+                if (isShielding) spd *= 0.7;
+
                 let nextX = player.x, nextY = player.y, nextFacing = player.facing, inputPressed = false;
                 if (keys['ArrowUp'] || keys['KeyW']) { nextY -= spd; nextFacing = 'up'; inputPressed = true; }
                 else if (keys['ArrowDown'] || keys['KeyS']) { nextY += spd; nextFacing = 'down'; inputPressed = true; }
@@ -2081,9 +2147,22 @@
             }
             for (let i = slashEffects.length - 1; i >= 0; i--) if (now - slashEffects[i].startedAt >= slashEffects[i].durationMs) slashEffects.splice(i, 1);
             for (let i = ultraEffects.length - 1; i >= 0; i--) if (now - ultraEffects[i].startedAt >= ultraEffects[i].durationMs) ultraEffects.splice(i, 1);
+
+            // 双蛇の闇弾の蛇行軌跡ポイントを保存
+            for (const bp of bossProjectiles) {
+                if (bp.kind === 'snake_dark') {
+                    if (!Array.isArray(bp.trail)) bp.trail = [];
+                    bp.trail.push({ x: bp.x, y: bp.y });
+                    if (bp.trail.length > 10) bp.trail.shift();
+                }
+            }
+
             if (BOSS) BOSS.updateBossProjectilesClient(bossProjectiles, {
                 now, player, staticObstacles, arenaWidth: ARENA_WIDTH, arenaTop: ARENA_TOP, arenaHeight: ARENA_HEIGHT,
-                onHitPlayer: (bp) => { if (socket && socket.connected && activeRoom) socket.emit('bossProjectileHit', { kind: bp.kind || 'spiral' }); }
+                onHitPlayer: (bp) => {
+                    if (SERVER_AUTHORITATIVE_PROJECTILES.has(bp.kind)) return;
+                    if (socket && socket.connected && activeRoom) socket.emit('bossProjectileHit', { kind: bp.kind || 'spiral' });
+                }
             });
             for (let i = bossEffects.length - 1; i >= 0; i--) { bossEffects[i].timer--; if (bossEffects[i].timer <= 0) bossEffects.splice(i, 1); }
             for (let i = floatingTexts.length - 1; i >= 0; i--) { floatingTexts[i].y -= 0.8; floatingTexts[i].life--; if (floatingTexts[i].life <= 0) floatingTexts.splice(i, 1); }
@@ -2147,13 +2226,54 @@
             }
         }
 
-        function drawEntity(c, x, y, facing, charData, hp, maxHp, stocks, isDead, isEliminated, isInvincible, isShielding, isAbsoluteWall, isCounterStance, isSpeedBoosted, isPowerBoosted, shieldCdRatio, name, rank, elementId, isMe) {
+        function drawBossTrailAndSnakeTrails(c) {
+            if (currentRoomMode === 'boss' && bossState && bossState.phase === 2 && bossTrail.length > 0) {
+                for (const tr of bossTrail) {
+                    const alpha = Math.max(0, (tr.life / 14) * 0.26);
+                    c.save();
+                    c.globalAlpha = alpha;
+                    c.beginPath();
+                    c.arc(tr.x, tr.y, tr.radius * 0.9, 0, Math.PI * 2);
+                    c.fillStyle = bossState.id === 'abyss_weaver' ? '#a855f7' : '#ff4d4d';
+                    c.fill();
+                    c.restore();
+                }
+            }
+            for (const bp of bossProjectiles) {
+                if (bp.kind === 'snake_dark' && Array.isArray(bp.trail) && bp.trail.length > 1) {
+                    c.save();
+                    c.lineCap = 'round';
+                    c.lineJoin = 'round';
+                    for (let i = 1; i < bp.trail.length; i++) {
+                        const p0 = bp.trail[i - 1], p1 = bp.trail[i];
+                        const ratio = i / bp.trail.length;
+                        c.beginPath();
+                        c.moveTo(p0.x, p0.y);
+                        c.lineTo(p1.x, p1.y);
+                        c.strokeStyle = `rgba(217, 70, 239, ${(ratio * 0.65).toFixed(2)})`;
+                        c.lineWidth = 2 + ratio * 5;
+                        c.stroke();
+                    }
+                    c.restore();
+                }
+            }
+        }
+
+        function drawEntity(c, x, y, facing, charData, hp, maxHp, stocks, isDead, isEliminated, isInvincible, isShielding, isAbsoluteWall, isCounterStance, isSpeedBoosted, isPowerBoosted, isSlowed, shieldCdRatio, name, rank, elementId, isMe) {
             if (isEliminated) return;
             const now = performance.now();
             if (isDead) { c.fillStyle = 'rgba(255,255,255,0.4)'; c.font = 'bold 12px sans-serif'; c.textAlign = 'center'; c.fillText('RESPAWNING...', x + 24, y + 28); return; }
             if (isMe) {
                 c.save(); c.beginPath(); c.ellipse(x + 24, y + 45, 20, 7, 0, 0, Math.PI * 2);
                 c.fillStyle = 'rgba(46,204,113,0.25)'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = '#2ecc71'; c.stroke(); c.restore();
+            }
+            if (isSlowed) {
+                c.save();
+                c.beginPath(); c.ellipse(x + 24, y + 45, 24, 9, 0, 0, Math.PI * 2);
+                c.fillStyle = 'rgba(168, 85, 247, 0.28)'; c.fill();
+                c.lineWidth = 2; c.strokeStyle = '#c084fc'; c.setLineDash([4, 3]); c.stroke();
+                c.setLineDash([]);
+                c.restore();
             }
             if (isInvincible && Math.floor(now / 60) % 2 === 0) c.globalAlpha = 0.4;
             if (isSpeedBoosted) { c.save(); c.beginPath(); c.arc(x + 24, y + 24, 28 + Math.sin(now / 60) * 3, 0, Math.PI * 2); c.fillStyle = 'rgba(255,242,0,0.22)'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#fff200'; c.stroke(); c.restore(); }
@@ -2182,7 +2302,7 @@
             c.fill();
             const elemIcon = BOSS ? BOSS.getElementInfo(elementId).icon : '';
             c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.fillStyle = isMe ? '#2ecc71' : '#ffffff';
-            c.fillText(`${elemIcon}[${rank}] ${name}`, x + 24, y - 22);
+            c.fillText(`${elemIcon}[${rank}] ${name}${isSlowed ? ' 🕸️' : ''}`, x + 24, y - 22);
             c.font = '10px sans-serif'; c.fillText('❤️'.repeat(Math.max(0, stocks)), x + 24, y - 12);
             const barWidth = 44, barHeight = 5, barX = x + 2, barY = y - 8, ratio = Math.max(0, Math.min(1, hp / maxHp));
             c.fillStyle = '#333'; c.fillRect(barX, barY, barWidth, barHeight);
@@ -2198,12 +2318,15 @@
             gameCtx.fillStyle = 'rgba(15, 15, 26, 0.94)'; gameCtx.fillRect(0, 0, ARENA_WIDTH, ARENA_TOP);
             gameCtx.strokeStyle = '#3a3a52'; gameCtx.lineWidth = 1; gameCtx.beginPath(); gameCtx.moveTo(0, ARENA_TOP); gameCtx.lineTo(ARENA_WIDTH, ARENA_TOP); gameCtx.stroke();
             if (currentRoomMode === 'boss' && bossState) {
-                const elem = BOSS ? BOSS.getElementInfo(bossState.element) : { icon: '' }, hpRatio = Math.max(0, Math.min(1, bossState.hp / bossState.maxHp));
-                gameCtx.font = 'bold 12px sans-serif'; gameCtx.textAlign = 'left'; gameCtx.fillStyle = bossState.phase === 2 ? '#ff4d4d' : '#f5b7ff';
-                gameCtx.fillText(`${elem.icon} ST.${bossState.stageNumber || currentStageNumber} ${bossState.name} (P${bossState.phase})`, 10, 18);
-                const barX = 270, barW = 520, barH = 12;
+                const elem = BOSS ? BOSS.getElementInfo(bossState.element) : { icon: '', name: '無' };
+                const hpRatio = Math.max(0, Math.min(1, bossState.hp / bossState.maxHp));
+                gameCtx.font = 'bold 12px sans-serif'; gameCtx.textAlign = 'left';
+                gameCtx.fillStyle = bossState.phase === 2 ? '#ff4d4d' : '#f5b7ff';
+                gameCtx.fillText(`${elem.icon}${elem.name} ST.${bossState.stageNumber || currentStageNumber} ${bossState.name} (P${bossState.phase})`, 10, 18);
+                const barX = 310, barW = 490, barH = 12;
                 gameCtx.fillStyle = '#2c2c3e'; gameCtx.fillRect(barX, 8, barW, barH);
-                gameCtx.fillStyle = bossState.phase === 2 ? '#e74c3c' : '#9b59b6'; gameCtx.fillRect(barX, 8, barW * hpRatio, barH);
+                gameCtx.fillStyle = bossState.phase === 2 ? '#e74c3c' : (bossState.element === 'dark' ? '#9333ea' : '#9b59b6');
+                gameCtx.fillRect(barX, 8, barW * hpRatio, barH);
                 gameCtx.strokeStyle = '#fff'; gameCtx.lineWidth = 1; gameCtx.strokeRect(barX, 8, barW, barH);
                 gameCtx.font = 'bold 11px monospace'; gameCtx.textAlign = 'right'; gameCtx.fillStyle = '#fff';
                 gameCtx.fillText(`${bossState.hp}/${bossState.maxHp}`, ARENA_WIDTH - 12, 18);
@@ -2216,6 +2339,37 @@
                 gameCtx.font = 'bold 12px sans-serif'; gameCtx.textAlign = 'center'; gameCtx.fillStyle = p.isEliminated ? '#666' : (p.isMe ? '#2ecc71' : '#fff');
                 gameCtx.fillText(`${p.name.slice(0, 6)} ${p.isEliminated ? '💀' : '❤️'.repeat(Math.max(0, p.stocks))}`, cx, 18);
             });
+        }
+
+        function drawStatusDebuffHUD(nowPerf) {
+            if (!activeRoom || roomState !== 'playing') return;
+            const slowRemainMs = Math.max(0, (player.slowUntil || 0) - nowPerf);
+            if (slowRemainMs <= 0) return;
+
+            const boxX = 10;
+            const boxY = (player.ultraSkillId && player.ultraMaxUses > 0) ? (ARENA_HEIGHT - 80) : (ARENA_HEIGHT - 44);
+            const ratio = Math.min(1, slowRemainMs / 1800);
+
+            gameCtx.save();
+            gameCtx.fillStyle = 'rgba(38, 12, 68, 0.88)';
+            gameCtx.strokeStyle = '#c084fc';
+            gameCtx.lineWidth = 1.5;
+            gameCtx.fillRect(boxX, boxY, 240, 30);
+            gameCtx.strokeRect(boxX, boxY, 240, 30);
+
+            gameCtx.font = 'bold 11px sans-serif';
+            gameCtx.textAlign = 'left';
+            gameCtx.fillStyle = '#f5d0fe';
+            gameCtx.fillText(`🕸️ 闇の刻印: 移動0.75x`, boxX + 8, boxY + 15);
+            gameCtx.textAlign = 'right';
+            gameCtx.fillStyle = '#e879f9';
+            gameCtx.fillText(`${(slowRemainMs / 1000).toFixed(1)}s`, boxX + 232, boxY + 15);
+
+            gameCtx.fillStyle = '#2e1065';
+            gameCtx.fillRect(boxX + 8, boxY + 21, 224, 4);
+            gameCtx.fillStyle = '#c084fc';
+            gameCtx.fillRect(boxX + 8, boxY + 21, 224 * ratio, 4);
+            gameCtx.restore();
         }
 
         function drawUltraHUD() {
@@ -2275,6 +2429,7 @@
                 gameCtx.fillText(icon, it.x, it.y + 1); gameCtx.restore();
             }
 
+            drawBossTrailAndSnakeTrails(gameCtx);
             if (currentRoomMode === 'boss' && bossState && BOSS) BOSS.drawBossEntity(gameCtx, bossState, now, { vortexUntil: bossVortexUntil });
             if (BOSS) BOSS.drawBossEffectsAndProjectiles(gameCtx, bossEffects, []);
 
@@ -2282,14 +2437,16 @@
             drawEntity(
                 gameCtx, player.x, player.y, player.facing, gridData, player.hp, player.maxHp, player.stocks, player.isDead, player.isEliminated,
                 now < player.invincibleUntil, now < player.shieldUntil, now < player.absoluteWallUntil, now < player.counterStanceUntil,
-                now < player.speedBoostUntil, now < player.powerBoostUntil, myShieldCdRatio, player.name, player.rank, player.element, true
+                now < player.speedBoostUntil, now < player.powerBoostUntil, now < (player.slowUntil || 0),
+                myShieldCdRatio, player.name, player.rank, player.element, true
             );
             for (const id in otherPlayers) {
                 const p = otherPlayers[id];
                 drawEntity(
                     gameCtx, p.x, p.y, p.facing || 'right', p.characterData, p.hp || 100, p.maxHp || 100, p.stocks ?? 1, p.isDead, p.isEliminated,
                     false, now < (p.shieldUntil || 0), now < (p.absoluteWallUntil || 0), now < (p.counterStanceUntil || 0),
-                    now < (p.speedBoostUntil || 0), now < (p.powerBoostUntil || 0), null, p.name || '相手', p.rank || 'B', p.element || 'neutral', false
+                    now < (p.speedBoostUntil || 0), now < (p.powerBoostUntil || 0), now < (p.slowUntil || 0),
+                    null, p.name || '相手', p.rank || 'B', p.element || 'neutral', false
                 );
             }
             for (const p of projectiles) {
@@ -2304,6 +2461,7 @@
             for (const c of confettiParticles) { gameCtx.fillStyle = c.color; gameCtx.fillRect(c.x, c.y, c.size, c.size * 0.6); }
             drawTopHUD();
             drawUltraHUD();
+            drawStatusDebuffHUD(now);
 
             if (countdownBanner) {
                 if (roomState === 'countdown') { gameCtx.fillStyle = 'rgba(0,0,0,0.45)'; gameCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height); }
