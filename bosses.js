@@ -443,47 +443,47 @@
     // =========================================================================
     // 4. BOSS・ステージ定義（データ駆動・STAGE 1〜3）
     // =========================================================================
-    const BOSS_SPIRAL_DAMAGE = 12;
-    const BOSS_HOMING_DAMAGE = 13;
-    const BOSS_DRAGON_FIRE_DAMAGE = 14;
+    const BOSS_SPIRAL_DAMAGE = 15;      // 渦巻き弾幕
+    const BOSS_HOMING_DAMAGE = 12;      // 追尾ミサイル
+    const BOSS_DRAGON_FIRE_DAMAGE = 20; // ドラゴン火炎弾
 
     const BOSS_CATALOG = {
         void_typhoon: {
             id: 'void_typhoon',
             stageNumber: 1,
             stageId: 'stage_1',
-            name: 'VOID TYPHOON',
+            name: 'water cyclone',
             tag: '🌀 渦潮・吸引型',
             element: 'water',
             summary: '渦巻き弾幕とブラックホール吸引で翻弄する嵐の化身',
-            radius: 44,
-            spawnX: ARENA_CENTER_X,
-            spawnY: 175,
-            maxHp: 540,
-            hpByPlayers: { 1: 540, 2: 1100, 3: 1550, 4: 2000 },
-            speed: 2.8,
+            radius: 44, // ボスの当たり判定半径（px）
+            spawnX: ARENA_CENTER_X, // ステージ1のボスは中央に出現する
+            spawnY: 175,        // ステージ1のボスは上方に出現する
+            maxHp: 800, // 1人時の基準HP（0より大きい値）
+            hpByPlayers: { 1: 800, 2: 1600, 3: 2400, 4: 3200 }, // 参加人数(1〜4人)ごとのHP
+            speed: 2.8,     // フェーズ1移動速度（1人プレイ時）
             moveSpeed: {
-                soloP1: 2.8,
-                multiP1: 2.4,
-                soloP2: 4.0,
-                multiP2: 3.6
+                soloP1: 2.8,    // フェーズ1移動速度（1人プレイ時）
+                multiP1: 2.4,   // フェーズ1移動速度（2〜4人プレイ時）
+                soloP2: 4.0,    // フェーズ2移動速度（1人プレイ時）
+                multiP2: 6.0    // フェーズ2移動速度（2〜4人プレイ時）
             },
             attackIntervalMs: {
-                p1: 2450,
-                p2: 1950
+                p1: 2450,   // フェーズ1攻撃間隔
+                p2: 1750    // フェーズ2攻撃間隔
             },
-            attackProjectiles: ['spiral'],
-            projectileDamage: {
-                spiral: BOSS_SPIRAL_DAMAGE
+            attackProjectiles: ['spiral'],  // フェーズ1攻撃パターンの弾種（spiral, slash, vortex, pulse）
+            projectileDamage: {         // フェーズ1攻撃パターンの弾種ごとのダメージ
+                spiral: BOSS_SPIRAL_DAMAGE 
             },
             attackPatterns: [
                 { id: 'spiral', name: '渦巻き弾幕', damage: BOSS_SPIRAL_DAMAGE },
-                { id: 'slash', name: '虚空斬撃', damage: 20 },
-                { id: 'vortex', name: 'ブラックホール吸引', damage: 0 },
+                { id: 'slash', name: '虚空斬撃', damage: 40 },
+                { id: 'vortex', name: 'ブラックホール吸引', damage: 2 },
                 { id: 'pulse', name: '重力パルス爆発', damage: 26 }
             ],
-            patternCount: 4,
-            executeAttack(ctx) {
+            patternCount: 4, // 攻撃パターンの種類数（0〜3の4パターンを順番に繰り返す）
+            executeAttack(ctx) {// 攻撃パターンの実行（サーバー側で呼び出される）
                 const {
                     room, roomId, matchId, boss, allPlayerCount, targetCx, targetCy,
                     count, io, registerTimeout, pointToSegmentDistance, applyDamageToPlayer
@@ -508,16 +508,16 @@
                         speed: boss.phase === 2 ? 4.6 : 3.9,
                         damage: BOSS_SPIRAL_DAMAGE
                     });
-                } else if (patternIdx === 1) {
+                } else if (patternIdx === 1) {  // 斬撃レーザー
                     const startX = boss.x;
                     const startY = boss.y;
                     const angle = Math.atan2(targetCy - startY, targetCx - startX);
-                    const length = 480;
+                    const length = 480; // 斬撃レーザーの長さ（px）
                     const endX = startX + Math.cos(angle) * length;
                     const endY = startY + Math.sin(angle) * length;
                     const warnDuration = boss.phase === 2 ? 680 : 750;
 
-                    io.to(roomId).emit('bossAttackEvent', {
+                    io.to(roomId).emit('bossAttackEvent', {// 斬撃レーザーの予告表示
                         bossId: boss.id,
                         element: boss.element,
                         type: 'slash_warn',
@@ -533,13 +533,13 @@
                             element: cur.boss.element,
                             type: 'slash_fire',
                             x1: startX, y1: startY, x2: endX, y2: endY,
-                            damage: 20
+                            damage: 40  // 斬撃レーザーのダメージ
                         });
                         for (const id in cur.players) {
                             const p = cur.players[id];
                             if (p.isDead || p.isEliminated) continue;
                             if (pointToSegmentDistance(p.x + 24, p.y + 24, startX, startY, endX, endY) < 28) {
-                                applyDamageToPlayer(roomId, p, 20, 'slash', matchId, cur.boss.element);
+                                applyDamageToPlayer(roomId, p, 40, 'slash', matchId, cur.boss.element);
                             }
                         }
                     }, warnDuration);
@@ -660,19 +660,19 @@
             radius: 42,
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
-            maxHp: 640,
-            hpByPlayers: { 1: 640, 2: 1280, 3: 1800, 4: 2300 },
+            maxHp: 1500,
+            hpByPlayers: { 1: 1500, 2: 3000, 3: 4500, 4: 6000 },
             speed: 2.2,
             barrierDamageMultiplier: 0.45,
             moveSpeed: {
                 soloP1: 2.2,
-                multiP1: 1.9,
-                soloP2: 3.1,
-                multiP2: 2.8
+                multiP1: 3.0,
+                soloP2: 4.0,
+                multiP2: 6.0,
             },
             attackIntervalMs: {
-                p1: 2550,
-                p2: 2050
+                p1: 2050,   // フェーズ1攻撃間隔
+                p2: 1050    // フェーズ2攻撃間隔
             },
             attackProjectiles: ['homing'],
             projectileDamage: {
@@ -680,7 +680,7 @@
             },
             attackPatterns: [
                 { id: 'homing', name: '追尾ミサイル', damage: BOSS_HOMING_DAMAGE },
-                { id: 'laser', name: '薙ぎ払いレーザー', damage: 22 },
+                { id: 'laser', name: '薙ぎ払いレーザー', damage: 40 },
                 { id: 'barrier', name: '古代イージスバリア', damage: 0 }
             ],
             patternCount: 4,
@@ -756,7 +756,7 @@
                             startAngle,
                             endAngle,
                             length,
-                            damage: 22
+                            damage: 40
                         });
 
                         const steps = 6;
@@ -781,7 +781,7 @@
                         }
                     }, warnDuration);
                 } else {
-                    const duration = boss.phase === 2 ? 4200 : 3800;
+                    const duration = boss.phase === 2 ? 5200 : 4800;    // バリア展開時間
                     boss.barrierActive = true;
                     io.to(roomId).emit('bossStateUpdated', boss);
                     io.to(roomId).emit('bossAttackEvent', {
