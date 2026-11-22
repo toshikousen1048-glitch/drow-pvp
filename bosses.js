@@ -166,7 +166,7 @@
         neutral: Object.freeze({ id: 'neutral', name: '無', icon: '⚪', color: '#cbd5e1', bg: 'rgba(203, 213, 225, 0.16)' })
     });
 
-    const VALID_COMBAT_ELEMENTS = Object.freeze(['fire', 'water', 'grass', 'thunder', 'rock', 'light', 'dark']);
+    const VALID_COMBAT_ELEMENTS = Object.freeze(['fire', 'water', 'grass', 'thunder', 'rock', 'light', 'dark', 'neutral']);
     const NORMAL_TIEBREAK_ORDER = GAME_RULES.ELEMENT.NORMAL_TIEBREAK_ORDER;
 
     const ELEMENT_COLOR_MAP = Object.freeze({
@@ -430,21 +430,26 @@
     }
 
     // =========================================================================
-    // 4. BOSS・ステージ定義（データ駆動・STAGE 1〜4）
+    // 4. BOSS・ステージ定義（データ駆動・STAGE 1〜5）
     // =========================================================================
-    const BOSS_SPIRAL_DAMAGE = 15;             // 渦巻き弾幕
-    const BOSS_HOMING_DAMAGE = 12;             // 追尾ミサイル
-    const BOSS_DRAGON_FIRE_DAMAGE = 20;        // ドラゴン火炎弾
-    const BOSS_DRAGON_CLAW_DAMAGE = 40;        // クロス竜爪斬撃
-    const BOSS_DRAGON_METEOR_DAMAGE = 26;      // 煉獄メテオピラー
-    const BOSS_DRAGON_MAGMA_DURATION_MS = 2400;// 灼熱マグマ床持続時間
-    const BOSS_DRAGON_ROAR_PULSE_DAMAGE = 4;   // 覇竜の咆哮リング1パルスダメージ
-    const BOSS_DRAGON_ROAR_PULSE_COUNT = 4;    // 多段パルス回数（合計16）
-    const BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS = 160;
-    const BOSS_ABYSS_SIGIL_DAMAGE = 24;        // 闇の刻印陣
-    const BOSS_ABYSS_SNAKE_DAMAGE = 14;        // 双蛇の闇弾
-    const BOSS_ABYSS_RING_DAMAGE = 28;         // 深淵の拘束リング
-    const BOSS_ABYSS_SHADOW_DAMAGE = 8;        // 呪詛の影波
+    const BOSS_SPIRAL_DAMAGE = 15;               // 渦巻き弾幕
+    const BOSS_HOMING_DAMAGE = 12;               // 追尾ミサイル
+    const BOSS_DRAGON_FIRE_DAMAGE = 20;          // ドラゴン火炎弾
+    const BOSS_DRAGON_CLAW_DAMAGE = 20;          // クロス竜爪斬撃
+    const BOSS_DRAGON_METEOR_DAMAGE = 26;        // 煉獄メテオピラー
+    const BOSS_DRAGON_MAGMA_DURATION_MS = 2400;  // 灼熱マグマ床持続時間
+    const BOSS_DRAGON_ROar_PULSE_DAMAGE = 4;     // 覇竜の咆哮リング1パルスダメージ
+    const BOSS_DRAGON_ROar_PULSE_COUNT = 4;      // 多段パルス回数（合計16）
+    const BOSS_DRAGON_ROar_PULSE_INTERVAL_MS = 160;
+    const BOSS_ABYSS_SIGIL_DAMAGE = 24;          // 闇の刻印陣
+    const BOSS_ABYSS_SNAKE_DAMAGE = 14;          // 双蛇の闇弾
+    const BOSS_ABYSS_RING_DAMAGE = 28;           // 深淵の拘束リング
+    const BOSS_ABYSS_SHADOW_DAMAGE = 8;          // 呪詛の影波
+    const BOSS_PHANTOM_HOMING_DAMAGE = 8;        // 幻影追尾球（状態異常なし）
+    const BOSS_PHANTOM_AMBUSH_DAMAGE = 20;       // 潜伏奇襲着弾（減速2000ms+ノックバック）
+    const BOSS_PHANTOM_CURSE_DAMAGE = 10;        // 呪詛のランダム状態異常弾
+    const BOSS_PHANTOM_FEINT_P1_DAMAGE = 6;      // 牽制弾幕 P1
+    const BOSS_PHANTOM_FEINT_P2_DAMAGE = 8;      // 牽制弾幕 P2
 
     function resolvePredictedDirection(pl) {
         if (!pl) return { dx: 0, dy: 1 };
@@ -461,6 +466,14 @@
             case 'right': return { dx: 1, dy: 0 };
             default: return { dx: 0, dy: 1 };
         }
+    }
+
+    function clampArenaPoint(x, y, margin) {
+        const m = Math.max(40, Number(margin) || 95);
+        return {
+            x: Math.max(m, Math.min(ARENA_WIDTH - m, x)),
+            y: Math.max(ARENA_TOP + m, Math.min(ARENA_HEIGHT - m, y))
+        };
     }
 
     const BOSS_CATALOG = {
@@ -891,8 +904,8 @@
             radius: 46,
             spawnX: ARENA_CENTER_X,
             spawnY: 160,
-            maxHp: 900,
-            hpByPlayers: { 1: 1000, 2: 1300, 3: 1600, 4: 1900 },
+            maxHp: 1100,
+            hpByPlayers: { 1: 1100, 2: 2100, 3: 3000, 4: 3800 },
             speed: 3.0,
             moveSpeed: {
                 p1: 3.0,
@@ -903,8 +916,8 @@
                 multiP2: 3.8
             },
             attackIntervalMs: {
-                p1: 2150,
-                p2: 1850
+                p1: 1950,
+                p2: 1450
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -915,7 +928,7 @@
             magmaConfig: Object.freeze({
                 durationMs: BOSS_DRAGON_MAGMA_DURATION_MS,
                 tickIntervalMs: 600,
-                tickDamage: 6   
+                tickDamage: 6
             }),
             attackProjectiles: ['fireball'],
             projectileDamage: {
@@ -935,14 +948,13 @@
                     applyPulseDamageToPlayer, spawnMagmaZones
                 } = ctx;
                 const patternIdx = count % 4;
-                const isP2 = boss.phase === 2; 
+                const isP2 = boss.phase === 2;
 
                 if (patternIdx === 0) {
-                    // パターン0：灼熱ドラゴンブレス（基礎ダメ20、P2で角度をずらした2連射）
                     const countShots = (isP2 ? 7 : 5) + Math.min(2, Math.max(0, alivePlayers.length - 1));
                     const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
-                    const totalSpread = isP2 ? 1.25 : 0.95; 
-                    const speed = isP2 ? 4.8 : 4.2; 
+                    const totalSpread = isP2 ? 1.25 : 0.95;
+                    const speed = isP2 ? 4.8 : 4.2;
 
                     room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { fireball: Date.now() });
                     io.to(roomId).emit('bossAttackEvent', {
@@ -980,7 +992,6 @@
                         }, 340);
                     }
                 } else if (patternIdx === 1) {
-                    // パターン1：クロス竜爪斬撃（基礎ダメ40、6本斬撃ライン、予兆680ms/P2 560ms、多重被弾防止）
                     const startX = boss.x;
                     const startY = boss.y;
                     const centerAng = Math.atan2(targetCy - startY, targetCx - startX);
@@ -995,38 +1006,12 @@
                     const rightOriginY = startY + perpY * clawOffset;
 
                     const lines = [
-                        // 左基点から右前方へ交差する3本
-                        {
-                            x1: leftOriginX, y1: leftOriginY,
-                            x2: leftOriginX + Math.cos(centerAng + 0.08) * length,
-                            y2: leftOriginY + Math.sin(centerAng + 0.08) * length
-                        },
-                        {
-                            x1: leftOriginX, y1: leftOriginY,
-                            x2: leftOriginX + Math.cos(centerAng + 0.28) * length,
-                            y2: leftOriginY + Math.sin(centerAng + 0.28) * length
-                        },
-                        {
-                            x1: leftOriginX, y1: leftOriginY,
-                            x2: leftOriginX + Math.cos(centerAng + 0.48) * length,
-                            y2: leftOriginY + Math.sin(centerAng + 0.48) * length
-                        },
-                        // 右基点から左前方へ交差する3本
-                        {
-                            x1: rightOriginX, y1: rightOriginY,
-                            x2: rightOriginX + Math.cos(centerAng - 0.08) * length,
-                            y2: rightOriginY + Math.sin(centerAng - 0.08) * length
-                        },
-                        {
-                            x1: rightOriginX, y1: rightOriginY,
-                            x2: rightOriginX + Math.cos(centerAng - 0.28) * length,
-                            y2: rightOriginY + Math.sin(centerAng - 0.28) * length
-                        },
-                        {
-                            x1: rightOriginX, y1: rightOriginY,
-                            x2: rightOriginX + Math.cos(centerAng - 0.48) * length,
-                            y2: rightOriginY + Math.sin(centerAng - 0.48) * length
-                        }
+                        { x1: leftOriginX, y1: leftOriginY, x2: leftOriginX + Math.cos(centerAng + 0.08) * length, y2: leftOriginY + Math.sin(centerAng + 0.08) * length },
+                        { x1: leftOriginX, y1: leftOriginY, x2: leftOriginX + Math.cos(centerAng + 0.28) * length, y2: leftOriginY + Math.sin(centerAng + 0.28) * length },
+                        { x1: leftOriginX, y1: leftOriginY, x2: leftOriginX + Math.cos(centerAng + 0.48) * length, y2: leftOriginY + Math.sin(centerAng + 0.48) * length },
+                        { x1: rightOriginX, y1: rightOriginY, x2: rightOriginX + Math.cos(centerAng - 0.08) * length, y2: rightOriginY + Math.sin(centerAng - 0.08) * length },
+                        { x1: rightOriginX, y1: rightOriginY, x2: rightOriginX + Math.cos(centerAng - 0.28) * length, y2: rightOriginY + Math.sin(centerAng - 0.28) * length },
+                        { x1: rightOriginX, y1: rightOriginY, x2: rightOriginX + Math.cos(centerAng - 0.48) * length, y2: rightOriginY + Math.sin(centerAng - 0.48) * length }
                     ];
                     const warnDuration = isP2 ? 560 : 680;
 
@@ -1050,7 +1035,6 @@
                             damage: BOSS_DRAGON_CLAW_DAMAGE
                         });
 
-                        // 同一攻撃内の多重被弾防止
                         const hitPlayerIds = new Set();
                         for (const id in cur.players) {
                             if (hitPlayerIds.has(id)) continue;
@@ -1066,13 +1050,12 @@
                         }
                     }, warnDuration);
                 } else if (patternIdx === 2) {
-                    // パターン2：煉獄メテオピラー（着弾ダメ26＋2400msマグマ床、P2予測進路先追加3点）
                     const zones = [];
                     const radius = isP2 ? 96 : 84;
                     const warnDuration = isP2 ? 780 : 900;
                     const candidates = alivePlayers.length > 0
                         ? alivePlayers
-                        : [{ x: targetCx - 24, y: targetCy - 24, facing: 'down', vx: 0, vy: 0 }];  
+                        : [{ x: targetCx - 24, y: targetCy - 24, facing: 'down', vx: 0, vy: 0 }];
 
                     for (let i = 0; i < candidates.length; i++) {
                         const pl = candidates[i];
@@ -1138,10 +1121,9 @@
                         }
                     }, warnDuration);
                 } else {
-                    // パターン3：覇竜の咆哮リング（予兆中引き寄せ＋4ダメ×4回多段パルス＋カーブ全周火炎弾20）
                     const ringRadius = isP2 ? 250 : 215;
-                    const warnDuration = isP2 ? 680 : 780;
-                    const pullStrength = isP2 ? 1.15 : 0.85;
+                    const warnDuration = isP2 ? 680 : 780;      
+                    const pullStrength = isP2 ? 1.15 : 0.85;    
                     const ox = boss.x;
                     const oy = boss.y;
 
@@ -1379,7 +1361,6 @@
                 const patternIdx = count % 4;
 
                 if (patternIdx === 0) {
-                    // パターン0：闇の刻印陣（着弾ダメ24＋減速0.75x / 1800ms）
                     const isP2 = boss.phase === 2;
                     const radius = isP2 ? 100 : 88;
                     const warnDuration = isP2 ? 700 : 820;
@@ -1454,7 +1435,6 @@
                         }
                     }, warnDuration);
                 } else if (patternIdx === 1) {
-                    // パターン1：双蛇の闇弾（サイン波蛇行の双対闇弾）
                     const isP2 = boss.phase === 2;
                     const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
                     const angleOffsets = isP2 ? [-0.28, 0, 0.28] : [0];
@@ -1488,7 +1468,6 @@
                         damage: BOSS_ABYSS_SNAKE_DAMAGE
                     });
                 } else if (patternIdx === 2) {
-                    // パターン2：深淵の拘束リング（P2で内側安全⇔外周安全の連続二段階反転リング）
                     const isP2 = boss.phase === 2;
                     const warnDuration = isP2 ? 740 : 850;
                     const ox = boss.x;
@@ -1532,7 +1511,6 @@
                         }
 
                         if (isP2) {
-                            // 第2波：内側が危険・外周が安全へ反転する連続展開
                             const secondWarnDuration = 700;
                             const innerRadius2 = 0;
                             const outerRadius2 = 128;
@@ -1575,7 +1553,6 @@
                         }
                     }, warnDuration);
                 } else {
-                    // パターン3：呪詛の影波（16発放射、P2は角度を半ピッチずらした2連続計32発）
                     const isP2 = boss.phase === 2;
                     const bulletCount = 16;
                     const wave1Angle = (count * 0.37) % (Math.PI * 2);
@@ -1627,7 +1604,6 @@
 
                 ctx.save();
 
-                // 深淵オーラ
                 const auraR = boss.radius + 22 + Math.sin(now / 150) * 5;
                 const aura = ctx.createRadialGradient(bx, by, boss.radius * 0.3, bx, by, auraR);
                 aura.addColorStop(0, isRage ? 'rgba(217, 70, 239, 0.35)' : 'rgba(139, 92, 246, 0.28)');
@@ -1637,7 +1613,6 @@
                 ctx.arc(bx, by, auraR, 0, Math.PI * 2);
                 ctx.fill();
 
-                // 回転する糸・魔法陣リング
                 ctx.save();
                 ctx.translate(bx, by);
                 ctx.rotate(rot);
@@ -1658,7 +1633,6 @@
                 ctx.setLineDash([]);
                 ctx.restore();
 
-                // 本体コア
                 const bodyGrad = ctx.createRadialGradient(bx, by - 6, 8, bx, by, boss.radius);
                 bodyGrad.addColorStop(0, isRage ? '#701a75' : '#3b0764');
                 bodyGrad.addColorStop(0.65, '#1e1b4b');
@@ -1672,7 +1646,6 @@
                 ctx.strokeStyle = isRage ? '#f472b6' : '#c084fc';
                 ctx.stroke();
 
-                // 複眼（3対6眼）
                 ctx.fillStyle = isRage ? '#fb7185' : '#e879f9';
                 const eyePairs = [
                     { dx: 14, dy: -6, r: 4.2 },
@@ -1685,6 +1658,328 @@
                     ctx.arc(bx + ep.dx, by + ep.dy, ep.r, 0, Math.PI * 2);
                     ctx.fill();
                 }
+
+                ctx.restore();
+            }
+        },
+
+        phantom_mirage: {
+            id: 'phantom_mirage',
+            stageNumber: 5,
+            stageId: 'stage_5',
+            name: 'PHANTOM MIRAGE',
+            tag: '🎭 幻惑・無属性策略型',
+            element: 'neutral',
+            summary: '幻影分身・潜伏2択魔法陣奇襲・ランダム状態異常で翻弄する無属性の策士',
+            radius: 42,
+            spawnX: ARENA_CENTER_X,
+            spawnY: 165,
+            maxHp: 900,
+            hpByPlayers: { 1: 900, 2: 1400, 3: 2000, 4: 2600 },
+            speed: 3.2,
+            moveSpeed: {
+                p1: 3.2,
+                p2: 4.8,
+                soloP1: 3.2,
+                multiP1: 3.2,
+                soloP2: 4.8,
+                multiP2: 4.8
+            },
+            attackIntervalMs: {
+                p1: 2000,
+                p2: 1250
+            },
+            randomActionSelection: true,
+            attackProjectiles: ['phantom_homing', 'curse_bolt', 'feint_orb'],
+            projectileDamage: {
+                phantom_homing: BOSS_PHANTOM_HOMING_DAMAGE,
+                curse_bolt: BOSS_PHANTOM_CURSE_DAMAGE,
+                feint_orb: BOSS_PHANTOM_FEINT_P2_DAMAGE
+            },
+            attackPatterns: [
+                { id: 'phantom_clone', name: '幻影分身＆追尾球', damage: BOSS_PHANTOM_HOMING_DAMAGE },
+                { id: 'stealth_ambush', name: '潜伏〜2択魔法陣の奇襲', damage: BOSS_PHANTOM_AMBUSH_DAMAGE },
+                { id: 'random_curse', name: '呪詛のランダム状態異常', damage: BOSS_PHANTOM_CURSE_DAMAGE },
+                { id: 'feint_barrage', name: '策謀の牽制弾幕', damage: BOSS_PHANTOM_FEINT_P1_DAMAGE }
+            ],
+            patternCount: 4,
+            executeAttack(ctx) {
+                const {
+                    room, roomId, matchId, boss, alivePlayers, targetCx, targetCy,
+                    io, registerTimeout, applyDamageToPlayer, applySlowToPlayer, knockbackPlayerFromPoint
+                } = ctx;
+
+                // 潜伏無敵中は他の攻撃を重ねない
+                if (boss.isStealthed) return;
+
+                // 完全ランダム抽選（0〜3）
+                const patternIdx = Math.floor(Math.random() * 4);
+                const isP2 = boss.phase === 2;
+
+                if (patternIdx === 0) {
+                    // パターン0：幻影分身（破壊不可・4200ms残存）＆追尾球（P1 2発 / P2 4発・威力8・状態異常なし）
+                    const cloneDurationMs = 4200;
+                    const offsetAngle = Math.random() * Math.PI * 2;
+                    const clonePos = clampArenaPoint(
+                        boss.x + Math.cos(offsetAngle) * 190,
+                        boss.y + Math.sin(offsetAngle) * 150,
+                        95
+                    );
+                    const cloneId = `clone_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+                    if (!Array.isArray(boss.clones)) boss.clones = [];
+                    boss.clones.push({ id: cloneId, x: clonePos.x, y: clonePos.y, expiresAt: Date.now() + cloneDurationMs });
+
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'phantom_clone_spawn',
+                        cloneId,
+                        x: clonePos.x,
+                        y: clonePos.y,
+                        durationMs: cloneDurationMs
+                    });
+
+                    // 本体と分身から追尾型の球（計 P1 2発 / P2 4発、状態異常なし）
+                    const totalOrbs = isP2 ? 4 : 2;
+                    const origins = [
+                        { x: boss.x, y: boss.y },
+                        { x: clonePos.x, y: clonePos.y }
+                    ];
+                    const orbs = [];
+                    for (let i = 0; i < totalOrbs; i++) {
+                        const origin = origins[i % origins.length];
+                        const spread = ((Math.floor(i / origins.length)) - 0.5) * 0.42;
+                        const ang = Math.atan2(targetCy - origin.y, targetCx - origin.x) + spread;
+                        const spd = isP2 ? 3.9 : 3.4;
+                        orbs.push({
+                            x: origin.x,
+                            y: origin.y,
+                            vx: Math.cos(ang) * spd,
+                            vy: Math.sin(ang) * spd,
+                            speed: spd,
+                            turnRate: isP2 ? 0.055 : 0.045,
+                            damage: BOSS_PHANTOM_HOMING_DAMAGE
+                        });
+                    }
+
+                    room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { phantom_homing: Date.now() });
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'phantom_homing',
+                        orbs,
+                        damage: BOSS_PHANTOM_HOMING_DAMAGE
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.matchId !== matchId || !cur.boss) return;
+                        if (Array.isArray(cur.boss.clones)) {
+                            cur.boss.clones = cur.boss.clones.filter((c) => c.id !== cloneId);
+                        }
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'phantom_clone_despawn',
+                            cloneId
+                        });
+                    }, cloneDurationMs);
+                } else if (patternIdx === 1) {
+                    // パターン1：潜伏〜2択魔法陣の奇襲（合計3600ms無敵：2600ms潜伏移動＋1000ms 2択予兆→出現着弾）
+                    const stealthMoveMs = 2600;
+                    const warnDuration = 1000;
+                    const ambushRadius = 100;
+
+                    boss.isStealthed = true;
+                    io.to(roomId).emit('bossStateUpdated', boss);
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'phantom_stealth_start',
+                        x: boss.x,
+                        y: boss.y,
+                        durationMs: stealthMoveMs + warnDuration
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+                        const liveList = Object.values(cur.players).filter((pl) => pl && !pl.isDead && !pl.isEliminated);
+                        const anchor = liveList.length > 0
+                            ? liveList[Math.floor(Math.random() * liveList.length)]
+                            : { x: targetCx - 24, y: targetCy - 24 };
+
+                        const realPos = clampArenaPoint(anchor.x + 24, anchor.y + 24, ambushRadius + 10);
+                        const fakeAngle = Math.random() * Math.PI * 2;
+                        const fakePos = clampArenaPoint(
+                            realPos.x + Math.cos(fakeAngle) * 260,
+                            realPos.y + Math.sin(fakeAngle) * 220,
+                            ambushRadius + 10
+                        );
+
+                        // サーバー秘密保持（クライアントには視覚的に区別のつかない2円のみ送信）
+                        const realFirst = Math.random() < 0.5;
+                        const circles = realFirst
+                            ? [{ x: realPos.x, y: realPos.y, radius: ambushRadius }, { x: fakePos.x, y: fakePos.y, radius: ambushRadius }]
+                            : [{ x: fakePos.x, y: fakePos.y, radius: ambushRadius }, { x: realPos.x, y: realPos.y, radius: ambushRadius }];
+
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'phantom_ambush_warn',
+                            circles,
+                            warnDuration
+                        });
+
+                        registerTimeout(cur, () => {
+                            const cur2 = ctx.getRoom();
+                            if (!cur2 || cur2.state !== 'playing' || cur2.matchId !== matchId || !cur2.boss) return;
+
+                            cur2.boss.x = realPos.x;
+                            cur2.boss.y = realPos.y;
+                            cur2.boss.isStealthed = false;
+                            io.to(roomId).emit('bossStateUpdated', cur2.boss);
+
+                            io.to(roomId).emit('bossAttackEvent', {
+                                bossId: cur2.boss.id,
+                                element: cur2.boss.element,
+                                type: 'phantom_ambush_fire',
+                                realX: realPos.x,
+                                realY: realPos.y,
+                                fakeX: fakePos.x,
+                                fakeY: fakePos.y,
+                                radius: ambushRadius,
+                                damage: BOSS_PHANTOM_AMBUSH_DAMAGE
+                            });
+
+                            for (const id in cur2.players) {
+                                const p = cur2.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                const pcx = p.x + 24;
+                                const pcy = p.y + 24;
+                                if (Math.hypot(pcx - realPos.x, pcy - realPos.y) <= ambushRadius) {
+                                    const applied = applyDamageToPlayer(
+                                        roomId,
+                                        p,
+                                        BOSS_PHANTOM_AMBUSH_DAMAGE,
+                                        'phantom_ambush',
+                                        matchId,
+                                        cur2.boss.element
+                                    );
+                                    if (applied !== false) {
+                                        if (typeof applySlowToPlayer === 'function') {
+                                            applySlowToPlayer(roomId, p, 0.75, 2000, matchId);
+                                        }
+                                        if (typeof knockbackPlayerFromPoint === 'function') {
+                                            knockbackPlayerFromPoint(roomId, p, realPos.x, realPos.y, ambushRadius + 36, matchId, 'phantom_ambush');
+                                        }
+                                    }
+                                }
+                            }
+                        }, warnDuration);
+                    }, stealthMoveMs);
+                } else if (patternIdx === 2) {
+                    // パターン2：呪詛のランダム状態異常（専用状態異常パターン：命中時に4択抽選）
+                    const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
+                    const countShots = isP2 ? 5 : 3;
+                    const spread = isP2 ? 0.92 : 0.62;
+                    const speed = isP2 ? 4.7 : 4.1;
+
+                    room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { curse_bolt: Date.now() });
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'curse_bolt_fire',
+                        x: boss.x,
+                        y: boss.y,
+                        baseAngle,
+                        spread,
+                        count: countShots,
+                        speed,
+                        damage: BOSS_PHANTOM_CURSE_DAMAGE
+                    });
+                } else {
+                    // パターン3：策謀の牽制弾幕（P1 10発 威力6 / P2 18発 威力8・状態異常なし）
+                    const countShots = isP2 ? 18 : 10;
+                    const speed = isP2 ? 4.5 : 3.8;
+                    const damage = isP2 ? BOSS_PHANTOM_FEINT_P2_DAMAGE : BOSS_PHANTOM_FEINT_P1_DAMAGE;
+                    const baseAngle = Math.random() * Math.PI * 2;
+
+                    room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { feint_orb: Date.now() });
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'feint_barrage',
+                        x: boss.x,
+                        y: boss.y,
+                        count: countShots,
+                        baseAngle,
+                        speed,
+                        damage
+                    });
+                }
+            },
+            drawEntity(ctx, boss, now) {
+                if (boss.isStealthed) return;
+                const isRage = boss.phase === 2;
+                const bx = boss.x;
+                const by = boss.y;
+                const rot = now / (isRage ? 240 : 420);
+
+                ctx.save();
+
+                // 蜃気楼の揺らぎオーラ
+                const auraR = boss.radius + 20 + Math.sin(now / 140) * 5;
+                const aura = ctx.createRadialGradient(bx, by, boss.radius * 0.25, bx, by, auraR);
+                aura.addColorStop(0, isRage ? 'rgba(244, 63, 94, 0.34)' : 'rgba(226, 232, 240, 0.3)');
+                aura.addColorStop(1, 'rgba(15, 23, 42, 0)');
+                ctx.fillStyle = aura;
+                ctx.beginPath();
+                ctx.arc(bx, by, auraR, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 回転する幾何学リング（無属性・幻惑プリズム）
+                ctx.save();
+                ctx.translate(bx, by);
+                ctx.rotate(rot);
+                ctx.strokeStyle = isRage ? '#fb7185' : '#e2e8f0';
+                ctx.lineWidth = 2.2;
+                ctx.strokeRect(-(boss.radius + 4), -(boss.radius + 4), (boss.radius + 4) * 2, (boss.radius + 4) * 2);
+                ctx.rotate(Math.PI / 4);
+                ctx.strokeStyle = isRage ? '#f43f5e' : '#94a3b8';
+                ctx.strokeRect(-(boss.radius + 2), -(boss.radius + 2), (boss.radius + 2) * 2, (boss.radius + 2) * 2);
+                ctx.restore();
+
+                // 本体コア（仮面・ミラージュ）
+                const grad = ctx.createRadialGradient(bx, by - 6, 6, bx, by, boss.radius);
+                grad.addColorStop(0, isRage ? '#fff1f2' : '#f8fafc');
+                grad.addColorStop(0.55, isRage ? '#9f1239' : '#475569');
+                grad.addColorStop(1, '#0f172a');
+
+                ctx.beginPath();
+                ctx.arc(bx, by, boss.radius - 3, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = isRage ? '#fda4af' : '#f1f5f9';
+                ctx.stroke();
+
+                // 仮面スリット眼
+                ctx.fillStyle = isRage ? '#ff2a00' : '#0f172a';
+                ctx.beginPath();
+                ctx.moveTo(bx - 20, by - 8);
+                ctx.lineTo(bx - 6, by - 2);
+                ctx.lineTo(bx - 16, by + 5);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(bx + 20, by - 8);
+                ctx.lineTo(bx + 6, by - 2);
+                ctx.lineTo(bx + 16, by + 5);
+                ctx.closePath();
+                ctx.fill();
 
                 ctx.restore();
             }
@@ -1723,6 +2018,14 @@
             bossId: 'abyss_weaver',
             unlockedByDefault: false,
             clearRewardPt: 2000
+        }),
+        Object.freeze({
+            stageNumber: 5,
+            stageId: 'stage_5',
+            title: '幻惑の蜃気楼',
+            bossId: 'phantom_mirage',
+            unlockedByDefault: false,
+            clearRewardPt: 2500
         })
     ]);
 
@@ -1786,6 +2089,8 @@
             barrierActive: false,
             scaleAuraActive: false,
             scaleAuraUntil: 0,
+            isStealthed: false,
+            clones: [],
             initialPlayerCount: count
         };
     }
@@ -1848,6 +2153,127 @@
                     turnRate: m.turnRate || 0.045,
                     damage: m.damage || BOSS_HOMING_DAMAGE,
                     life: 120
+                });
+            }
+        } else if (ev.type === 'phantom_clone_spawn') {
+            callSeSafe(state, 'shield');
+            const frames = Math.max(40, Math.round((ev.durationMs || 4200) / 16.67));
+            state.bossEffects.push({
+                type: 'phantom_clone',
+                cloneId: ev.cloneId,
+                x: ev.x,
+                y: ev.y,
+                timer: frames,
+                maxTimer: frames
+            });
+        } else if (ev.type === 'phantom_clone_despawn') {
+            for (let i = state.bossEffects.length - 1; i >= 0; i--) {
+                if (state.bossEffects[i].type === 'phantom_clone' && state.bossEffects[i].cloneId === ev.cloneId) {
+                    state.bossEffects.splice(i, 1);
+                }
+            }
+        } else if (ev.type === 'phantom_homing') {
+            callSeSafe(state, 'shot');
+            for (const o of (ev.orbs || [])) {
+                state.bossProjectiles.push({
+                    kind: 'phantom_homing',
+                    element: ev.element || def.element,
+                    x: o.x,
+                    y: o.y,
+                    vx: o.vx,
+                    vy: o.vy,
+                    speed: o.speed || 3.4,
+                    turnRate: o.turnRate || 0.045,
+                    damage: o.damage || BOSS_PHANTOM_HOMING_DAMAGE,
+                    life: 135
+                });
+            }
+        } else if (ev.type === 'phantom_stealth_start') {
+            callSeSafe(state, 'shield');
+            if (state.bossState) {
+                state.bossState.isStealthed = true;
+                if (typeof state.addFloatingText === 'function') {
+                    state.addFloatingText(ev.x, ev.y - 42, 'VANISHED...', '#cbd5e1');
+                }
+            }
+            state.bossEffects.push({
+                type: 'stealth_smoke',
+                x: ev.x,
+                y: ev.y,
+                timer: 24,
+                maxTimer: 24
+            });
+        } else if (ev.type === 'phantom_ambush_warn') {
+            callSeSafe(state, 'zoneHit');
+            state.bossEffects.push({
+                type: 'ambush_warn',
+                circles: ev.circles || [],
+                timer: Math.max(20, Math.round((ev.warnDuration || 1000) / 16))
+            });
+        } else if (ev.type === 'phantom_ambush_fire') {
+            callSeSafe(state, 'bossPulse');
+            if (typeof state.onShake === 'function') state.onShake(12, 7);
+            if (state.bossState) {
+                state.bossState.x = ev.realX;
+                state.bossState.y = ev.realY;
+                state.bossState.isStealthed = false;
+            }
+            for (let i = state.bossEffects.length - 1; i >= 0; i--) {
+                if (state.bossEffects[i].type === 'ambush_warn') {
+                    state.bossEffects.splice(i, 1);
+                }
+            }
+            state.bossEffects.push({
+                type: 'ambush_fire',
+                x: ev.realX,
+                y: ev.realY,
+                radius: ev.radius || 100,
+                timer: 24,
+                maxTimer: 24
+            });
+            state.bossEffects.push({
+                type: 'ambush_fake_fade',
+                x: ev.fakeX,
+                y: ev.fakeY,
+                radius: ev.radius || 100,
+                timer: 18,
+                maxTimer: 18
+            });
+        } else if (ev.type === 'curse_bolt_fire') {
+            callSeSafe(state, 'shot');
+            const total = Math.max(1, ev.count || 3);
+            const spread = ev.spread || 0.62;
+            const speed = ev.speed || 4.1;
+            for (let i = 0; i < total; i++) {
+                const offset = total === 1 ? 0 : ((i / (total - 1)) - 0.5) * spread;
+                const ang = ev.baseAngle + offset;
+                state.bossProjectiles.push({
+                    kind: 'curse_bolt',
+                    element: ev.element || def.element,
+                    x: ev.x,
+                    y: ev.y,
+                    vx: Math.cos(ang) * speed,
+                    vy: Math.sin(ang) * speed,
+                    damage: ev.damage || BOSS_PHANTOM_CURSE_DAMAGE,
+                    life: 145
+                });
+            }
+        } else if (ev.type === 'feint_barrage') {
+            callSeSafe(state, 'shot');
+            const total = Math.max(1, ev.count || 10);
+            const baseAngle = ev.baseAngle || 0;
+            const speed = ev.speed || 3.8;
+            for (let i = 0; i < total; i++) {
+                const ang = baseAngle + (Math.PI * 2 / total) * i;
+                state.bossProjectiles.push({
+                    kind: 'feint_orb',
+                    element: ev.element || def.element,
+                    x: ev.x,
+                    y: ev.y,
+                    vx: Math.cos(ang) * speed,
+                    vy: Math.sin(ang) * speed,
+                    damage: ev.damage || BOSS_PHANTOM_FEINT_P1_DAMAGE,
+                    life: 150
                 });
             }
         } else if (ev.type === 'twin_serpent') {
@@ -2100,7 +2526,7 @@
         for (let i = bossProjectiles.length - 1; i >= 0; i--) {
             const bp = bossProjectiles[i];
 
-            if (bp.kind === 'homing' && !player.isDead && !player.isEliminated) {
+            if ((bp.kind === 'homing' || bp.kind === 'phantom_homing') && !player.isDead && !player.isEliminated) {
                 const desiredAngle = Math.atan2(pcy - bp.y, pcx - bp.x);
                 const curAngle = Math.atan2(bp.vy, bp.vx);
                 let diff = desiredAngle - curAngle;
@@ -2155,7 +2581,7 @@
             if (!player.isDead && !player.isEliminated && now > player.invincibleUntil) {
                 const hitRadius = bp.kind === 'homing'
                     ? 24
-                    : (bp.kind === 'fireball' ? 23 : (bp.kind === 'shadow_orb' ? 18 : 22));
+                    : (bp.kind === 'fireball' ? 23 : (bp.kind === 'shadow_orb' || bp.kind === 'feint_orb' ? 18 : 20));
                 if (Math.hypot(bp.x - pcx, bp.y - pcy) < hitRadius) {
                     onHitPlayer(bp);
                     bossProjectiles.splice(i, 1);
@@ -2179,7 +2605,83 @@
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
         for (const ef of bossEffects) {
             gameCtx.save();
-            if (ef.type === 'magma_floor') {
+            if (ef.type === 'phantom_clone') {
+                const flicker = 0.45 + 0.2 * Math.sin(now / 90);
+                gameCtx.globalAlpha = Math.min(flicker, ef.timer / 20);
+                const r = 38;
+                gameCtx.save();
+                gameCtx.translate(ef.x, ef.y);
+                gameCtx.rotate(now / 260);
+                gameCtx.strokeStyle = '#cbd5e1';
+                gameCtx.lineWidth = 2;
+                gameCtx.setLineDash([6, 4]);
+                gameCtx.strokeRect(-r, -r, r * 2, r * 2);
+                gameCtx.setLineDash([]);
+                gameCtx.restore();
+
+                const cGrad = gameCtx.createRadialGradient(ef.x, ef.y, 4, ef.x, ef.y, r);
+                cGrad.addColorStop(0, 'rgba(241, 245, 249, 0.75)');
+                cGrad.addColorStop(1, 'rgba(51, 65, 85, 0.25)');
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, r - 4, 0, Math.PI * 2);
+                gameCtx.fillStyle = cGrad;
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#94a3b8';
+                gameCtx.lineWidth = 2;
+                gameCtx.stroke();
+
+                gameCtx.font = 'bold 10px sans-serif';
+                gameCtx.textAlign = 'center';
+                gameCtx.fillStyle = '#e2e8f0';
+                gameCtx.fillText('MIRAGE', ef.x, ef.y - r - 6);
+            } else if (ef.type === 'stealth_smoke') {
+                const progress = 1 - (ef.timer / (ef.maxTimer || 24));
+                gameCtx.globalAlpha = Math.max(0, 1 - progress);
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, 35 + progress * 55, 0, Math.PI * 2);
+                gameCtx.strokeStyle = '#e2e8f0';
+                gameCtx.lineWidth = 5;
+                gameCtx.stroke();
+            } else if (ef.type === 'ambush_warn') {
+                for (const c of (ef.circles || [])) {
+                    gameCtx.beginPath();
+                    gameCtx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+                    gameCtx.fillStyle = 'rgba(203, 213, 225, 0.16)';
+                    gameCtx.fill();
+                    gameCtx.strokeStyle = '#f8fafc';
+                    gameCtx.lineWidth = 2.5;
+                    gameCtx.setLineDash([8, 5]);
+                    gameCtx.stroke();
+                    gameCtx.setLineDash([]);
+
+                    // 2択魔法陣の内側回転紋様（両円完全同一表示）
+                    gameCtx.save();
+                    gameCtx.translate(c.x, c.y);
+                    gameCtx.rotate(now / 260);
+                    gameCtx.strokeStyle = 'rgba(168, 85, 247, 0.72)';
+                    gameCtx.lineWidth = 2;
+                    gameCtx.strokeRect(-c.radius * 0.45, -c.radius * 0.45, c.radius * 0.9, c.radius * 0.9);
+                    gameCtx.restore();
+                }
+            } else if (ef.type === 'ambush_fire') {
+                const progress = 1 - (ef.timer / (ef.maxTimer || 24));
+                gameCtx.globalAlpha = Math.max(0, 1 - progress);
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(241, 245, 249, 0.5)';
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#f43f5e';
+                gameCtx.lineWidth = 6;
+                gameCtx.stroke();
+            } else if (ef.type === 'ambush_fake_fade') {
+                const progress = 1 - (ef.timer / (ef.maxTimer || 18));
+                gameCtx.globalAlpha = Math.max(0, (1 - progress) * 0.45);
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius * (1 - progress * 0.2), 0, Math.PI * 2);
+                gameCtx.strokeStyle = '#94a3b8';
+                gameCtx.lineWidth = 2;
+                gameCtx.stroke();
+            } else if (ef.type === 'magma_floor') {
                 const fade = ef.maxTimer ? Math.min(1, ef.timer / 24) : 1;
                 gameCtx.globalAlpha = fade;
                 const pulse = Math.sin(now / 130) * 0.12 + 0.34;
@@ -2420,6 +2922,30 @@
                 gameCtx.closePath();
                 gameCtx.fill();
                 gameCtx.strokeStyle = '#fff';
+                gameCtx.lineWidth = 1.5;
+                gameCtx.stroke();
+            } else if (bp.kind === 'phantom_homing') {
+                gameCtx.fillStyle = '#e2e8f0';
+                gameCtx.beginPath();
+                gameCtx.arc(bp.x, bp.y, 7, 0, Math.PI * 2);
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#38bdf8';
+                gameCtx.lineWidth = 2;
+                gameCtx.stroke();
+            } else if (bp.kind === 'curse_bolt') {
+                gameCtx.fillStyle = '#581c87';
+                gameCtx.beginPath();
+                gameCtx.arc(bp.x, bp.y, 8, 0, Math.PI * 2);
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#f43f5e';
+                gameCtx.lineWidth = 2.5;
+                gameCtx.stroke();
+            } else if (bp.kind === 'feint_orb') {
+                gameCtx.fillStyle = '#94a3b8';
+                gameCtx.beginPath();
+                gameCtx.arc(bp.x, bp.y, 5.5, 0, Math.PI * 2);
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#f8fafc';
                 gameCtx.lineWidth = 1.5;
                 gameCtx.stroke();
             } else if (bp.kind === 'snake_dark') {
