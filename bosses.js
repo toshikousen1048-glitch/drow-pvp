@@ -875,8 +875,8 @@
             radius: 46,
             spawnX: ARENA_CENTER_X,
             spawnY: 160,
-            maxHp: 760,
-            hpByPlayers: { 1: 760, 2: 1480, 3: 2100, 4: 2680 },
+            maxHp: 1000,
+            hpByPlayers: { 1: 1000, 2: 1600, 3: 2200, 4: 3000 },
             speed: 2.6,
             moveSpeed: {
                 soloP1: 2.6,
