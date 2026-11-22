@@ -1185,7 +1185,7 @@
             title: 'STAGE 1 : 渦潮の嵐域',
             bossId: 'void_typhoon',
             unlockedByDefault: true,
-            clearRewardPt: 300
+            clearRewardPt: 500
         }),
         Object.freeze({
             stageNumber: 2,
@@ -1193,7 +1193,7 @@
             title: 'STAGE 2 : 古代要塞中枢',
             bossId: 'omega_core',
             unlockedByDefault: false,
-            clearRewardPt: 500
+            clearRewardPt: 1000
         }),
         Object.freeze({
             stageNumber: 3,
@@ -1201,7 +1201,7 @@
             title: 'STAGE 3 : 紅蓮竜の巣窟',
             bossId: 'inferno_dragon',
             unlockedByDefault: false,
-            clearRewardPt: 800
+            clearRewardPt: 1500
         })
     ]);
 
