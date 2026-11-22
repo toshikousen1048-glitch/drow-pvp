@@ -666,9 +666,9 @@
             barrierDamageMultiplier: 0.45,
             moveSpeed: {
                 soloP1: 2.2,
-                multiP1: 3.0,
-                soloP2: 4.0,
-                multiP2: 6.0,
+                multiP1: 3.2,
+                soloP2: 3.2,
+                multiP2: 4.0,
             },
             attackIntervalMs: {
                 p1: 2050,   // フェーズ1攻撃間隔
