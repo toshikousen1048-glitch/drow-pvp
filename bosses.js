@@ -891,8 +891,8 @@
             radius: 46,
             spawnX: ARENA_CENTER_X,
             spawnY: 160,
-            maxHp: 1100,
-            hpByPlayers: { 1: 1100, 2: 2100, 3: 3000, 4: 3800 },
+            maxHp: 900,
+            hpByPlayers: { 1: 1000, 2: 1300, 3: 1600, 4: 1900 },
             speed: 3.0,
             moveSpeed: {
                 p1: 3.0,
@@ -903,8 +903,8 @@
                 multiP2: 3.8
             },
             attackIntervalMs: {
-                p1: 1950,
-                p2: 1450
+                p1: 2150,
+                p2: 1850
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -915,7 +915,7 @@
             magmaConfig: Object.freeze({
                 durationMs: BOSS_DRAGON_MAGMA_DURATION_MS,
                 tickIntervalMs: 600,
-                tickDamage: 6
+                tickDamage: 6   
             }),
             attackProjectiles: ['fireball'],
             projectileDamage: {
@@ -935,14 +935,14 @@
                     applyPulseDamageToPlayer, spawnMagmaZones
                 } = ctx;
                 const patternIdx = count % 4;
-                const isP2 = boss.phase === 2;
+                const isP2 = boss.phase === 2; 
 
                 if (patternIdx === 0) {
                     // パターン0：灼熱ドラゴンブレス（基礎ダメ20、P2で角度をずらした2連射）
                     const countShots = (isP2 ? 7 : 5) + Math.min(2, Math.max(0, alivePlayers.length - 1));
                     const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
-                    const totalSpread = isP2 ? 1.25 : 0.95;
-                    const speed = isP2 ? 4.8 : 4.2;
+                    const totalSpread = isP2 ? 1.25 : 0.95; 
+                    const speed = isP2 ? 4.8 : 4.2; 
 
                     room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { fireball: Date.now() });
                     io.to(roomId).emit('bossAttackEvent', {
@@ -1072,7 +1072,7 @@
                     const warnDuration = isP2 ? 780 : 900;
                     const candidates = alivePlayers.length > 0
                         ? alivePlayers
-                        : [{ x: targetCx - 24, y: targetCy - 24, facing: 'down', vx: 0, vy: 0 }];
+                        : [{ x: targetCx - 24, y: targetCy - 24, facing: 'down', vx: 0, vy: 0 }];  
 
                     for (let i = 0; i < candidates.length; i++) {
                         const pl = candidates[i];
