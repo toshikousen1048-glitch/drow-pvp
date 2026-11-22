@@ -785,7 +785,7 @@
             const s = jEl('judgeScreen'); if (s) s.classList.remove('active');
         }
         function enterJudgmentRoom() {
-            initAudio(); leaveJudgmentRoom(); startBgm('drawing', 1.0);
+            initAudio(); leaveJudgmentRoom(); startBgm('judge', 1.0);
             const result = finalizeCharacterJudgment(gridData, charNameInput.value);
             judgeState.result = result;
             const tok = judgeState.token; currentUiStep = 'judge';
@@ -1416,7 +1416,8 @@
             if (roomState === 'countdown') return { track: 'none', rate: 1.0 };
             if (roomState === 'playing') {
                 if (currentRoomMode === 'boss') return { track: 'boss', rate: (bossState && bossState.phase === 2) ? 1.12 : 1.0 };
-                const low = !player.isDead && !player.isEliminated && player.maxHp > 0 && (player.hp / player.maxHp <= 0.30);
+                if (currentUiStep === 1) return { track: 'drawing', rate: 1.0 };     
+                if (currentUiStep === 'judge') return { track: 'judge', rate: 1.0 }; 
                 return { track: 'pvp', rate: low ? 1.12 : 1.0 };
             }
             if (roomState === 'result') return { track: 'menu', rate: 1.0 };

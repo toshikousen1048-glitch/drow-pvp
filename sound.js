@@ -9,6 +9,7 @@
     const BGM_SOURCE_MAP = {
         menu: 'menu BGM.mp3',
         drawing: 'drawing BGM.mp3',
+        judge: 'judge BGM.mp3',
         pvp: 'PVP BGM.mp3',
         boss: 'Boss BGM.mp3'
     };
