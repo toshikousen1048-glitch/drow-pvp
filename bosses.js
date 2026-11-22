@@ -916,8 +916,8 @@
                 multiP2: 3.8
             },
             attackIntervalMs: {
-                p1: 1950,
-                p2: 1450
+                p1: 2950,
+                p2: 2150
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
