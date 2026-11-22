@@ -1416,12 +1416,12 @@
             if (roomState === 'countdown') return { track: 'none', rate: 1.0 };
             if (roomState === 'playing') {
                 if (currentRoomMode === 'boss') return { track: 'boss', rate: (bossState && bossState.phase === 2) ? 1.12 : 1.0 };
-                if (currentUiStep === 1) return { track: 'drawing', rate: 1.0 };     
-                if (currentUiStep === 'judge') return { track: 'judge', rate: 1.0 }; 
+                const low = !player.isDead && !player.isEliminated && player.maxHp > 0 && (player.hp / player.maxHp <= 0.30);
                 return { track: 'pvp', rate: low ? 1.12 : 1.0 };
             }
             if (roomState === 'result') return { track: 'menu', rate: 1.0 };
-            if (currentUiStep === 1 || currentUiStep === 'judge') return { track: 'drawing', rate: 1.0 };
+            if (currentUiStep === 1) return { track: 'drawing', rate: 1.0 };
+            if (currentUiStep === 'judge') return { track: 'judge', rate: 1.0 };
             return { track: 'menu', rate: 1.0 };
         }
 
@@ -1474,6 +1474,7 @@
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
                     player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
                     player.speedBoostUntil = 0; player.powerBoostUntil = 0;
+                    player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
                     player.ultraState = me.ultraState || null; player.ultraStateUntil = me.ultraStateUntil || 0;
@@ -1546,6 +1547,7 @@
                 bossProjectiles = []; bossEffects = []; bossVortexUntil = 0; confettiParticles = [];
                 player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
                 player.speedBoostUntil = 0; player.powerBoostUntil = 0;
+                player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                 player.ultraCooldownUntil = 0; player.ultraState = null; player.ultraStateUntil = 0;
                 for (const k in keys) keys[k] = false;
                 stopBgm(); updateUltraHudButton(); updateLobbyUI();

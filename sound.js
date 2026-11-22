@@ -5,7 +5,7 @@
     const DEFAULT_BGM_VOLUME = 0.35;
     const DEFAULT_SE_VOLUME = 1.0;
 
-    // シーン別BGMトラック定義（4ファイル対応）
+    // シーン別BGMトラック定義（5ファイル対応）
     const BGM_SOURCE_MAP = {
         menu: 'menu BGM.mp3',
         drawing: 'drawing BGM.mp3',
@@ -29,9 +29,6 @@
 
     const BGM_AUDIO_MAP = {};
 
-    // =========================================================================
-    // 設定の読み込み・保存（安全ガード付き）
-    // =========================================================================
     function clamp(val, min, max, fallback) {
         const num = Number(val);
         if (!Number.isFinite(num)) return fallback;
@@ -48,9 +45,7 @@
             if (typeof parsed.seEnabled === 'boolean') seEnabled = parsed.seEnabled;
             if (parsed.bgmVolume !== undefined) bgmVolume = clamp(parsed.bgmVolume, 0, 1, DEFAULT_BGM_VOLUME);
             if (parsed.seVolume !== undefined) seVolume = clamp(parsed.seVolume, 0, 1, DEFAULT_SE_VOLUME);
-        } catch (e) {
-            // ストレージ利用不可環境でも動作継続
-        }
+        } catch (e) {}
     }
 
     function saveSettings() {
@@ -62,14 +57,9 @@
                 bgmVolume,
                 seVolume
             }));
-        } catch (e) {
-            // 無視
-        }
+        } catch (e) {}
     }
 
-    // =========================================================================
-    // Audio初期化 & BGMオーディオプール生成
-    // =========================================================================
     function getOrCreateBgmAudio(track) {
         if (typeof Audio === 'undefined') return null;
         const safeTrack = Object.prototype.hasOwnProperty.call(BGM_SOURCE_MAP, track) ? track : 'menu';
@@ -80,7 +70,7 @@
                 audio.volume = bgmEnabled ? bgmVolume : 0;
                 audio.preload = 'auto';
                 audio.addEventListener('error', () => {
-                    // 音声ファイル欠損時も例外を投げず安全に継続
+                    console.warn('[SoundSystem] BGMファイルが見つかりません:', BGM_SOURCE_MAP[safeTrack]);
                 });
                 BGM_AUDIO_MAP[safeTrack] = audio;
             } catch (e) {
@@ -101,7 +91,6 @@
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {});
             }
-            // 自動再生ブロック解除後、待機中のBGMがあれば再生を再試行
             if (bgmEnabled && pendingBgmTrack !== 'none') {
                 const targetAudio = activeBgmAudio || getOrCreateBgmAudio(pendingBgmTrack);
                 if (targetAudio && targetAudio.paused) {
@@ -112,14 +101,9 @@
                     targetAudio.play().catch(() => {});
                 }
             }
-        } catch (e) {
-            // フォールバック：音声無効環境でもエラーにしない
-        }
+        } catch (e) {}
     }
 
-    // =========================================================================
-    // BGM制御（再生・停止・切替・テンポ変更・音量・ミュート）
-    // =========================================================================
     function startBgm(track, rate) {
         const safeRate = clamp(rate === undefined ? 1.0 : rate, 0.5, 2.0, 1.0);
         currentBgmRate = safeRate;
@@ -142,7 +126,6 @@
         const nextAudio = getOrCreateBgmAudio(safeTrack);
         if (!nextAudio) return;
 
-        // 同じトラックが選択中なら頭出しせずテンポ・音量のみ同期
         if (currentBgmTrack === safeTrack && activeBgmAudio === nextAudio) {
             try {
                 nextAudio.volume = bgmVolume;
@@ -241,9 +224,6 @@
         return next;
     }
 
-    // =========================================================================
-    // SE合成エンジン（Web Audio API・未初期化時完全安全）
-    // =========================================================================
     function playTone(freq, type, duration, vol, endFreq) {
         if (!seEnabled || !audioCtx || seVolume <= 0) return;
         try {
@@ -268,9 +248,7 @@
             gain.connect(audioCtx.destination);
             osc.start(now);
             osc.stop(now + dur);
-        } catch (e) {
-            // 安全フォールバック
-        }
+        } catch (e) {}
     }
 
     function playNoise(duration, vol) {
@@ -299,13 +277,10 @@
             noise.connect(gain);
             gain.connect(audioCtx.destination);
             noise.start(now);
-        } catch (e) {
-            // 安全フォールバック
-        }
+        } catch (e) {}
     }
 
     const RAW_SE = {
-        // エディタ・UI操作
         draw: () => {
             const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
             if (now - lastDrawSoundTime < 55) return;
@@ -321,8 +296,6 @@
         bucket: () => playTone(330, 'sine', 0.12, 0.08, 660),
         undo: () => playTone(440, 'triangle', 0.1, 0.07, 220),
         click: () => playTone(660, 'square', 0.06, 0.05),
-
-        // 通常バトルアクション（Z / X / C）
         shot: () => playTone(880, 'square', 0.12, 0.06, 220),
         melee: () => {
             playNoise(0.12, 0.09);
@@ -335,8 +308,6 @@
             playNoise(0.22, 0.12);
             playTone(140, 'square', 0.2, 0.09, 45);
         },
-
-        // アイテム取得
         itemSpeed: () => {
             playTone(523, 'square', 0.08, 0.07);
             setTimeout(() => playTone(659, 'square', 0.08, 0.07), 70);
@@ -351,8 +322,6 @@
             setTimeout(() => playTone(330, 'sawtooth', 0.1, 0.09), 80);
             setTimeout(() => playTone(440, 'sawtooth', 0.22, 0.1), 160);
         },
-
-        // 必殺技（Space：発動・溜め/構え/予兆・着弾・カウンター）
         ultra: () => {
             playTone(280, 'triangle', 0.26, 0.09, 980);
             setTimeout(() => playTone(560, 'sine', 0.22, 0.07, 1120), 60);
@@ -373,8 +342,6 @@
                 playTone(620, 'sawtooth', 0.24, 0.1, 180);
             }, 65);
         },
-
-        // BOSS攻撃・撃破
         bossSlash: () => {
             playNoise(0.25, 0.13);
             playTone(720, 'sawtooth', 0.22, 0.09, 110);
@@ -390,8 +357,6 @@
             const fanfare = [523, 659, 784, 1046];
             fanfare.forEach((n, idx) => setTimeout(() => playTone(n, 'square', 0.28, 0.08), 260 + idx * 110));
         },
-
-        // ガチャ・判定の間・勝敗
         gachaSpin: () => playTone(320 + Math.random() * 420, 'triangle', 0.06, 0.06),
         gachaOpen: () => {
             playTone(523, 'triangle', 0.12, 0.08, 1046);
@@ -433,7 +398,6 @@
         }
     };
 
-    // 未定義キーが呼ばれても例外を投げず安全にフォールバックするProxy
     const SE = new Proxy(RAW_SE, {
         get(target, prop) {
             if (typeof prop === 'string' && typeof target[prop] === 'function') {
@@ -456,9 +420,6 @@
         }
     }
 
-    // =========================================================================
-    // 初期化 & 自動再生ブロック解除リスナー
-    // =========================================================================
     loadSettings();
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {

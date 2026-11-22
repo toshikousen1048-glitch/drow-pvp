@@ -223,14 +223,6 @@
         return ELEMENT_META[sanitizeElementId(elementId)] || ELEMENT_META.neutral;
     }
 
-    /**
-     * 32x32ピクセル配列（1次元または2次元）から基礎属性（element）を算出する。
-     * 設計書 3章・4.2章と完全一致：
-     * 1. 特別インク3種合計 >= 20ドットなら光（GOLD+RAINBOW）vs 闇（VENOM）で判定（同数は light 優先）
-     * 2. 20ドット未満は白（#ffffff）・黒（#000000）を除く最多使用色から通常5属性を決定
-     *    （同数タイブレーク：fire > water > grass > thunder > rock）
-     * 3. 通常5属性が0ドットで紫系闇色がある場合は dark、白黒のみの場合は単色主体で light / dark、無色・未登録色のみは neutral（1.0倍）
-     */
     function determineElementFromPixels(pixels) {
         if (!Array.isArray(pixels)) return 'neutral';
 
@@ -307,9 +299,6 @@
         return 'neutral';
     }
 
-    /**
-     * (攻撃属性, 防御属性) の最終ダメージ倍率を返す。
-     */
     function getElementMultiplier(attackerElement, defenderElement) {
         const atk = sanitizeElementId(attackerElement);
         const def = sanitizeElementId(defenderElement);
@@ -456,25 +445,25 @@
             tag: '🌀 渦潮・吸引型',
             element: 'water',
             summary: '渦巻き弾幕とブラックホール吸引で翻弄する嵐の化身',
-            radius: 44, // ボスの当たり判定半径（px）
-            spawnX: ARENA_CENTER_X, // ステージ1のボスは中央に出現する
-            spawnY: 175,        // ステージ1のボスは上方に出現する
-            maxHp: 800, // 1人時の基準HP（0より大きい値）
-            hpByPlayers: { 1: 800, 2: 1600, 3: 2400, 4: 3200 }, // 参加人数(1〜4人)ごとのHP
-            speed: 2.8,     // フェーズ1移動速度（1人プレイ時）
+            radius: 44,
+            spawnX: ARENA_CENTER_X,
+            spawnY: 175,
+            maxHp: 800,
+            hpByPlayers: { 1: 800, 2: 1600, 3: 2400, 4: 3200 },
+            speed: 2.8,
             moveSpeed: {
-                soloP1: 2.8,    // フェーズ1移動速度（1人プレイ時）
-                multiP1: 2.4,   // フェーズ1移動速度（2〜4人プレイ時）
-                soloP2: 4.0,    // フェーズ2移動速度（1人プレイ時）
-                multiP2: 6.0    // フェーズ2移動速度（2〜4人プレイ時）
+                soloP1: 2.8,
+                multiP1: 2.4,
+                soloP2: 4.0,
+                multiP2: 6.0
             },
             attackIntervalMs: {
-                p1: 2450,   // フェーズ1攻撃間隔
-                p2: 1750    // フェーズ2攻撃間隔
+                p1: 2450,
+                p2: 1750
             },
-            attackProjectiles: ['spiral'],  // フェーズ1攻撃パターンの弾種（spiral, slash, vortex, pulse）
-            projectileDamage: {         // フェーズ1攻撃パターンの弾種ごとのダメージ
-                spiral: BOSS_SPIRAL_DAMAGE 
+            attackProjectiles: ['spiral'],
+            projectileDamage: {
+                spiral: BOSS_SPIRAL_DAMAGE
             },
             attackPatterns: [
                 { id: 'spiral', name: '渦巻き弾幕', damage: BOSS_SPIRAL_DAMAGE },
@@ -482,8 +471,8 @@
                 { id: 'vortex', name: 'ブラックホール吸引', damage: 2 },
                 { id: 'pulse', name: '重力パルス爆発', damage: 26 }
             ],
-            patternCount: 4, // 攻撃パターンの種類数（0〜3の4パターンを順番に繰り返す）
-            executeAttack(ctx) {// 攻撃パターンの実行（サーバー側で呼び出される）
+            patternCount: 4,
+            executeAttack(ctx) {
                 const {
                     room, roomId, matchId, boss, allPlayerCount, targetCx, targetCy,
                     count, io, registerTimeout, pointToSegmentDistance, applyDamageToPlayer
@@ -508,16 +497,16 @@
                         speed: boss.phase === 2 ? 4.6 : 3.9,
                         damage: BOSS_SPIRAL_DAMAGE
                     });
-                } else if (patternIdx === 1) {  // 斬撃レーザー
+                } else if (patternIdx === 1) {
                     const startX = boss.x;
                     const startY = boss.y;
                     const angle = Math.atan2(targetCy - startY, targetCx - startX);
-                    const length = 480; // 斬撃レーザーの長さ（px）
+                    const length = 480;
                     const endX = startX + Math.cos(angle) * length;
                     const endY = startY + Math.sin(angle) * length;
                     const warnDuration = boss.phase === 2 ? 680 : 750;
 
-                    io.to(roomId).emit('bossAttackEvent', {// 斬撃レーザーの予告表示
+                    io.to(roomId).emit('bossAttackEvent', {
                         bossId: boss.id,
                         element: boss.element,
                         type: 'slash_warn',
@@ -533,7 +522,7 @@
                             element: cur.boss.element,
                             type: 'slash_fire',
                             x1: startX, y1: startY, x2: endX, y2: endY,
-                            damage: 40  // 斬撃レーザーのダメージ
+                            damage: 40
                         });
                         for (const id in cur.players) {
                             const p = cur.players[id];
@@ -661,18 +650,18 @@
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
             maxHp: 500,
-            hpByPlayers: { 1: 500, 2: 800, 3: 1200, 4: 2000 },
+            hpByPlayers: { 1: 500, 2: 1000, 3: 2000, 4: 3000 },
             speed: 2.2,
             barrierDamageMultiplier: 0.45,
             moveSpeed: {
                 soloP1: 2.2,
                 multiP1: 3.2,
                 soloP2: 3.2,
-                multiP2: 4.0,
+                multiP2: 4.0
             },
             attackIntervalMs: {
-                p1: 2050,   // フェーズ1攻撃間隔
-                p2: 1050    // フェーズ2攻撃間隔
+                p1: 2050,
+                p2: 1050
             },
             attackProjectiles: ['homing'],
             projectileDamage: {
@@ -776,12 +765,12 @@
                                 }
                             }
                             if (hitLaser) {
-                                applyDamageToPlayer(roomId, p, 22, 'laser', matchId, cur.boss.element);
+                                applyDamageToPlayer(roomId, p, 40, 'laser', matchId, cur.boss.element);
                             }
                         }
                     }, warnDuration);
                 } else {
-                    const duration = boss.phase === 2 ? 5200 : 4800;    // バリア展開時間
+                    const duration = boss.phase === 2 ? 5200 : 4800;
                     boss.barrierActive = true;
                     io.to(roomId).emit('bossStateUpdated', boss);
                     io.to(roomId).emit('bossAttackEvent', {
@@ -875,8 +864,8 @@
             radius: 46,
             spawnX: ARENA_CENTER_X,
             spawnY: 160,
-            maxHp: 1000,
-            hpByPlayers: { 1: 1000, 2: 1600, 3: 2200, 4: 3000 },
+            maxHp: 760,
+            hpByPlayers: { 1: 760, 2: 1480, 3: 2100, 4: 2680 },
             speed: 2.6,
             moveSpeed: {
                 soloP1: 2.6,
@@ -907,7 +896,6 @@
                 const patternIdx = count % 4;
 
                 if (patternIdx === 0) {
-                    // 灼熱ブレス：扇状に炎弾を連射
                     const countShots = (boss.phase === 2 ? 7 : 5) + Math.min(2, Math.max(0, alivePlayers.length - 1));
                     const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
                     const totalSpread = boss.phase === 2 ? 1.25 : 0.95;
@@ -927,7 +915,6 @@
                         damage: BOSS_DRAGON_FIRE_DAMAGE
                     });
                 } else if (patternIdx === 1) {
-                    // クロス竜爪斬撃：ターゲット方向を中心に2本の交差ラインを予兆後斬り裂く
                     const startX = boss.x;
                     const startY = boss.y;
                     const centerAng = Math.atan2(targetCy - startY, targetCx - startX);
@@ -981,7 +968,6 @@
                         }
                     }, warnDuration);
                 } else if (patternIdx === 2) {
-                    // 煉獄メテオピラー：生存プレイヤーの現在地付近へ落下予兆
                     const zones = [];
                     const radius = boss.phase === 2 ? 96 : 84;
                     const candidates = alivePlayers.length > 0 ? alivePlayers : [{ x: targetCx - 24, y: targetCy - 24 }];
@@ -1034,7 +1020,6 @@
                         }
                     }, warnDuration);
                 } else {
-                    // 覇竜の咆哮リング：全方位火球＋衝撃波
                     const ringRadius = boss.phase === 2 ? 235 : 200;
                     const warnDuration = boss.phase === 2 ? 750 : 850;
                     const ox = boss.x;
@@ -1090,7 +1075,6 @@
 
                 ctx.save();
 
-                // 炎オーラ
                 if (isRage) {
                     const auraR = boss.radius + 18 + Math.sin(now / 110) * 5;
                     const aura = ctx.createRadialGradient(bx, by, boss.radius * 0.4, bx, by, auraR);
@@ -1102,12 +1086,10 @@
                     ctx.fill();
                 }
 
-                // 左右の翼
                 ctx.fillStyle = isRage ? '#7a0b0b' : '#58111a';
                 ctx.strokeStyle = isRage ? '#ff9f1c' : '#ff4d4d';
                 ctx.lineWidth = 2.5;
 
-                // 左翼
                 ctx.beginPath();
                 ctx.moveTo(bx - 16, by - 6);
                 ctx.lineTo(bx - 68, by - 36 + flap);
@@ -1117,7 +1099,6 @@
                 ctx.fill();
                 ctx.stroke();
 
-                // 右翼
                 ctx.beginPath();
                 ctx.moveTo(bx + 16, by - 6);
                 ctx.lineTo(bx + 68, by - 36 + flap);
@@ -1127,7 +1108,6 @@
                 ctx.fill();
                 ctx.stroke();
 
-                // 竜角
                 ctx.fillStyle = '#ffd166';
                 ctx.beginPath();
                 ctx.moveTo(bx - 18, by - 28);
@@ -1143,7 +1123,6 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // 胴体・頭部コア
                 const bodyGrad = ctx.createRadialGradient(bx, by - 6, 8, bx, by, boss.radius);
                 bodyGrad.addColorStop(0, isRage ? '#ff7b00' : '#d62828');
                 bodyGrad.addColorStop(0.65, '#6a040f');
@@ -1157,7 +1136,6 @@
                 ctx.strokeStyle = isRage ? '#ffbe0b' : '#ff595e';
                 ctx.stroke();
 
-                // 鋭い竜眼
                 ctx.fillStyle = isRage ? '#fff3b0' : '#ffbe0b';
                 ctx.beginPath();
                 ctx.moveTo(bx - 22, by - 10);
@@ -1680,7 +1658,6 @@
         const errors = [];
         const warnings = [];
 
-        // 共通ルール定数チェック
         if (GAME_RULES.MAX_PLAYERS !== 4) {
             errors.push(`GAME_RULES.MAX_PLAYERS must be 4 (got ${GAME_RULES.MAX_PLAYERS})`);
         }
@@ -1697,7 +1674,6 @@
             errors.push(`Ultra skill max stock must be 3 (got ${GAME_RULES.GACHA.ULTRA_MAX_STOCK})`);
         }
 
-        // 必殺技定義チェック
         const seenSkillIds = new Set();
         for (const skillId of ULTRA_SKILL_ORDER) {
             const skill = ULTRA_SKILLS[skillId];
@@ -1721,7 +1697,6 @@
             }
         }
 
-        // ステージ＆BOSS定義チェック
         if (!Array.isArray(STAGES) || STAGES.length === 0) {
             errors.push('STAGES must be a non-empty array');
         } else {
@@ -1752,7 +1727,6 @@
                     return;
                 }
 
-                // 必須項目検証: stageId, name, element, maxHp, speed, 攻撃パターン定義
                 if (boss.stageId !== stage.stageId) {
                     errors.push(`Boss ${boss.id} stageId mismatch: expected ${stage.stageId}, got ${boss.stageId}`);
                 }
@@ -1789,7 +1763,6 @@
             });
         }
 
-        // BOSS_CATALOG 内の孤立定義チェック
         for (const bossId of Object.keys(BOSS_CATALOG)) {
             const linked = STAGES.some((s) => s.bossId === bossId);
             if (!linked) {
@@ -1809,19 +1782,15 @@
         return result;
     }
 
-    // 起動時自動検証（致命的な定義ミスを即時検知）
     validateDefinitions({ throwOnError: true });
 
     return {
-        // 基本定数・一元化ルール
         ARENA_WIDTH,
         ARENA_TOP,
         ARENA_HEIGHT,
         ARENA_CENTER_X,
         GAME_RULES,
         STATIC_OBSTACLES,
-
-        // 属性システム
         SPECIAL_INKS,
         SPECIAL_INK_IDS,
         ELEMENT_META,
@@ -1830,15 +1799,11 @@
         getElementMultiplier,
         getElementInfo,
         sanitizeElementId,
-
-        // 必殺技（ウルトラガチャ）
         ULTRA_SKILLS,
         ULTRA_SKILL_ORDER,
         sanitizeUltraSkillId,
         getUltraSkillDef,
         getAllUltraSkills,
-
-        // ステージ＆BOSS
         STAGES,
         STAGE_ORDER,
         DEFAULT_STAGE_NUMBER,
@@ -1852,11 +1817,7 @@
         sanitizeBossId,
         getBossDef,
         createBossInstance,
-
-        // バリデーション
         validateDefinitions,
-
-        // クライアント描画＆攻撃更新
         handleClientBossAttack,
         updateBossProjectilesClient,
         drawBossEntity,
