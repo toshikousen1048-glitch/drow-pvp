@@ -661,7 +661,7 @@
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
             maxHp: 500,
-            hpByPlayers: { 1: 500, 2: 1000, 3: 2000, 4: 3000 },
+            hpByPlayers: { 1: 500, 2: 800, 3: 1200, 4: 2000 },
             speed: 2.2,
             barrierDamageMultiplier: 0.45,
             moveSpeed: {
@@ -1324,7 +1324,7 @@
                     speed: m.speed || 3.4,
                     turnRate: m.turnRate || 0.045,
                     damage: m.damage || BOSS_HOMING_DAMAGE,
-                    life: 175
+                    life: 120
                 });
             }
         } else if (ev.type === 'slash_warn') {
