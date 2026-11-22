@@ -432,13 +432,36 @@
     // =========================================================================
     // 4. BOSS・ステージ定義（データ駆動・STAGE 1〜4）
     // =========================================================================
-    const BOSS_SPIRAL_DAMAGE = 15;      // 渦巻き弾幕
-    const BOSS_HOMING_DAMAGE = 12;      // 追尾ミサイル
-    const BOSS_DRAGON_FIRE_DAMAGE = 20; // ドラゴン火炎弾
-    const BOSS_ABYSS_SIGIL_DAMAGE = 24; // 闇の刻印陣
-    const BOSS_ABYSS_SNAKE_DAMAGE = 14; // 双蛇の闇弾
-    const BOSS_ABYSS_RING_DAMAGE = 28;  // 深淵の拘束リング
-    const BOSS_ABYSS_SHADOW_DAMAGE = 8; // 呪詛の影波
+    const BOSS_SPIRAL_DAMAGE = 15;             // 渦巻き弾幕
+    const BOSS_HOMING_DAMAGE = 12;             // 追尾ミサイル
+    const BOSS_DRAGON_FIRE_DAMAGE = 20;        // ドラゴン火炎弾
+    const BOSS_DRAGON_CLAW_DAMAGE = 40;        // クロス竜爪斬撃
+    const BOSS_DRAGON_METEOR_DAMAGE = 26;      // 煉獄メテオピラー
+    const BOSS_DRAGON_MAGMA_DURATION_MS = 2400;// 灼熱マグマ床持続時間
+    const BOSS_DRAGON_ROAR_PULSE_DAMAGE = 4;   // 覇竜の咆哮リング1パルスダメージ
+    const BOSS_DRAGON_ROAR_PULSE_COUNT = 4;    // 多段パルス回数（合計16）
+    const BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS = 160;
+    const BOSS_ABYSS_SIGIL_DAMAGE = 24;        // 闇の刻印陣
+    const BOSS_ABYSS_SNAKE_DAMAGE = 14;        // 双蛇の闇弾
+    const BOSS_ABYSS_RING_DAMAGE = 28;         // 深淵の拘束リング
+    const BOSS_ABYSS_SHADOW_DAMAGE = 8;        // 呪詛の影波
+
+    function resolvePredictedDirection(pl) {
+        if (!pl) return { dx: 0, dy: 1 };
+        const vx = Number(pl.vx) || 0;
+        const vy = Number(pl.vy) || 0;
+        const len = Math.hypot(vx, vy);
+        if (len > 0.05) {
+            return { dx: vx / len, dy: vy / len };
+        }
+        switch (pl.facing) {
+            case 'up': return { dx: 0, dy: -1 };
+            case 'down': return { dx: 0, dy: 1 };
+            case 'left': return { dx: -1, dy: 0 };
+            case 'right': return { dx: 1, dy: 0 };
+            default: return { dx: 0, dy: 1 };
+        }
+    }
 
     const BOSS_CATALOG = {
         void_typhoon: {
@@ -864,46 +887,62 @@
             name: 'INFERNO DRAGON',
             tag: '🐉 紅蓮竜・覇王型',
             element: 'fire',
-            summary: '灼熱ブレス・クロス竜爪斬撃・流星火柱で焼き払う終末のドラゴン',
+            summary: '2連灼熱ブレス・6連クロス竜爪・灼熱マグマ床・旋回火炎弾の咆哮を放つ紅蓮の覇竜',
             radius: 46,
             spawnX: ARENA_CENTER_X,
             spawnY: 160,
-            maxHp: 760,
-            hpByPlayers: { 1: 760, 2: 1480, 3: 2100, 4: 2680 },
-            speed: 2.6,
+            maxHp: 1100,
+            hpByPlayers: { 1: 1100, 2: 2100, 3: 3000, 4: 3800 },
+            speed: 3.0,
             moveSpeed: {
-                soloP1: 2.6,
-                multiP1: 2.3,
-                soloP2: 3.6,
-                multiP2: 3.2
+                p1: 3.0,
+                p2: 4.2,
+                soloP1: 3.0,
+                multiP1: 2.7,
+                soloP2: 4.2,
+                multiP2: 3.8
             },
             attackIntervalMs: {
-                p1: 2300,
-                p2: 1850
+                p1: 1950,
+                p2: 1450
             },
+            phase2Awaken: Object.freeze({
+                knockbackRadius: 240,
+                knockbackDistance: 120,
+                scaleAuraDurationMs: 3000,
+                scaleDamageMultiplier: 0.75
+            }),
+            magmaConfig: Object.freeze({
+                durationMs: BOSS_DRAGON_MAGMA_DURATION_MS,
+                tickIntervalMs: 600,
+                tickDamage: 6
+            }),
             attackProjectiles: ['fireball'],
             projectileDamage: {
                 fireball: BOSS_DRAGON_FIRE_DAMAGE
             },
             attackPatterns: [
                 { id: 'breath', name: '灼熱ドラゴンブレス', damage: BOSS_DRAGON_FIRE_DAMAGE },
-                { id: 'claw', name: 'クロス竜爪斬撃', damage: 24 },
-                { id: 'meteor', name: '煉獄メテオピラー', damage: 26 },
-                { id: 'roar', name: '覇竜の咆哮リング', damage: 22 }
+                { id: 'claw', name: 'クロス竜爪斬撃', damage: BOSS_DRAGON_CLAW_DAMAGE },
+                { id: 'meteor', name: '煉獄メテオピラー', damage: BOSS_DRAGON_METEOR_DAMAGE },
+                { id: 'roar', name: '覇竜の咆哮リング', damage: BOSS_DRAGON_ROAR_PULSE_DAMAGE * BOSS_DRAGON_ROAR_PULSE_COUNT }
             ],
             patternCount: 4,
             executeAttack(ctx) {
                 const {
                     room, roomId, matchId, boss, alivePlayers, targetCx, targetCy,
-                    count, io, registerTimeout, pointToSegmentDistance, applyDamageToPlayer
+                    count, io, registerTimeout, pointToSegmentDistance, applyDamageToPlayer,
+                    applyPulseDamageToPlayer, spawnMagmaZones
                 } = ctx;
                 const patternIdx = count % 4;
+                const isP2 = boss.phase === 2;
 
                 if (patternIdx === 0) {
-                    const countShots = (boss.phase === 2 ? 7 : 5) + Math.min(2, Math.max(0, alivePlayers.length - 1));
+                    // パターン0：灼熱ドラゴンブレス（基礎ダメ20、P2で角度をずらした2連射）
+                    const countShots = (isP2 ? 7 : 5) + Math.min(2, Math.max(0, alivePlayers.length - 1));
                     const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
-                    const totalSpread = boss.phase === 2 ? 1.25 : 0.95;
-                    const speed = boss.phase === 2 ? 4.8 : 4.2;
+                    const totalSpread = isP2 ? 1.25 : 0.95;
+                    const speed = isP2 ? 4.8 : 4.2;
 
                     room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { fireball: Date.now() });
                     io.to(roomId).emit('bossAttackEvent', {
@@ -918,27 +957,78 @@
                         speed,
                         damage: BOSS_DRAGON_FIRE_DAMAGE
                     });
+
+                    if (isP2) {
+                        const angleShift = (count % 2 === 0 ? 0.18 : -0.18);
+                        registerTimeout(room, () => {
+                            const cur = ctx.getRoom();
+                            if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+                            cur.lastBossAttackAt = Object.assign({}, cur.lastBossAttackAt, { fireball: Date.now() });
+                            io.to(roomId).emit('bossAttackEvent', {
+                                bossId: cur.boss.id,
+                                element: cur.boss.element,
+                                type: 'breath',
+                                x: cur.boss.x,
+                                y: cur.boss.y,
+                                baseAngle: baseAngle + angleShift,
+                                spread: totalSpread,
+                                count: countShots,
+                                speed: speed + 0.25,
+                                damage: BOSS_DRAGON_FIRE_DAMAGE
+                            });
+                        }, 340);
+                    }
                 } else if (patternIdx === 1) {
+                    // パターン1：クロス竜爪斬撃（基礎ダメ40、6本斬撃ライン、予兆680ms/P2 560ms、多重被弾防止）
                     const startX = boss.x;
                     const startY = boss.y;
                     const centerAng = Math.atan2(targetCy - startY, targetCx - startX);
-                    const length = 500;
-                    const offsetAngle = 0.24;
+                    const perpX = -Math.sin(centerAng);
+                    const perpY = Math.cos(centerAng);
+                    const length = 520;
+                    const clawOffset = 34;
+
+                    const leftOriginX = startX - perpX * clawOffset;
+                    const leftOriginY = startY - perpY * clawOffset;
+                    const rightOriginX = startX + perpX * clawOffset;
+                    const rightOriginY = startY + perpY * clawOffset;
+
                     const lines = [
+                        // 左基点から右前方へ交差する3本
                         {
-                            x1: startX,
-                            y1: startY,
-                            x2: startX + Math.cos(centerAng - offsetAngle) * length,
-                            y2: startY + Math.sin(centerAng - offsetAngle) * length
+                            x1: leftOriginX, y1: leftOriginY,
+                            x2: leftOriginX + Math.cos(centerAng + 0.08) * length,
+                            y2: leftOriginY + Math.sin(centerAng + 0.08) * length
                         },
                         {
-                            x1: startX,
-                            y1: startY,
-                            x2: startX + Math.cos(centerAng + offsetAngle) * length,
-                            y2: startY + Math.sin(centerAng + offsetAngle) * length
+                            x1: leftOriginX, y1: leftOriginY,
+                            x2: leftOriginX + Math.cos(centerAng + 0.28) * length,
+                            y2: leftOriginY + Math.sin(centerAng + 0.28) * length
+                        },
+                        {
+                            x1: leftOriginX, y1: leftOriginY,
+                            x2: leftOriginX + Math.cos(centerAng + 0.48) * length,
+                            y2: leftOriginY + Math.sin(centerAng + 0.48) * length
+                        },
+                        // 右基点から左前方へ交差する3本
+                        {
+                            x1: rightOriginX, y1: rightOriginY,
+                            x2: rightOriginX + Math.cos(centerAng - 0.08) * length,
+                            y2: rightOriginY + Math.sin(centerAng - 0.08) * length
+                        },
+                        {
+                            x1: rightOriginX, y1: rightOriginY,
+                            x2: rightOriginX + Math.cos(centerAng - 0.28) * length,
+                            y2: rightOriginY + Math.sin(centerAng - 0.28) * length
+                        },
+                        {
+                            x1: rightOriginX, y1: rightOriginY,
+                            x2: rightOriginX + Math.cos(centerAng - 0.48) * length,
+                            y2: rightOriginY + Math.sin(centerAng - 0.48) * length
                         }
                     ];
-                    const warnDuration = boss.phase === 2 ? 650 : 760;
+                    const warnDuration = isP2 ? 560 : 680;
 
                     io.to(roomId).emit('bossAttackEvent', {
                         bossId: boss.id,
@@ -957,40 +1047,59 @@
                             element: cur.boss.element,
                             type: 'claw_fire',
                             lines,
-                            damage: 24
+                            damage: BOSS_DRAGON_CLAW_DAMAGE
                         });
 
+                        // 同一攻撃内の多重被弾防止
+                        const hitPlayerIds = new Set();
                         for (const id in cur.players) {
+                            if (hitPlayerIds.has(id)) continue;
                             const p = cur.players[id];
-                            if (p.isDead || p.isEliminated) continue;
+                            if (!p || p.isDead || p.isEliminated) continue;
                             const px = p.x + 24;
                             const py = p.y + 24;
-                            const hit = lines.some((ln) => pointToSegmentDistance(px, py, ln.x1, ln.y1, ln.x2, ln.y2) < 28);
+                            const hit = lines.some((ln) => pointToSegmentDistance(px, py, ln.x1, ln.y1, ln.x2, ln.y2) < 26);
                             if (hit) {
-                                applyDamageToPlayer(roomId, p, 24, 'claw', matchId, cur.boss.element);
+                                hitPlayerIds.add(id);
+                                applyDamageToPlayer(roomId, p, BOSS_DRAGON_CLAW_DAMAGE, 'claw', matchId, cur.boss.element);
                             }
                         }
                     }, warnDuration);
                 } else if (patternIdx === 2) {
+                    // パターン2：煉獄メテオピラー（着弾ダメ26＋2400msマグマ床、P2予測進路先追加3点）
                     const zones = [];
-                    const radius = boss.phase === 2 ? 96 : 84;
-                    const candidates = alivePlayers.length > 0 ? alivePlayers : [{ x: targetCx - 24, y: targetCy - 24 }];
+                    const radius = isP2 ? 96 : 84;
+                    const warnDuration = isP2 ? 780 : 900;
+                    const candidates = alivePlayers.length > 0
+                        ? alivePlayers
+                        : [{ x: targetCx - 24, y: targetCy - 24, facing: 'down', vx: 0, vy: 0 }];
+
                     for (let i = 0; i < candidates.length; i++) {
                         const pl = candidates[i];
                         zones.push({
-                            x: Math.max(80, Math.min(ARENA_WIDTH - 80, pl.x + 24)),
-                            y: Math.max(ARENA_TOP + 80, Math.min(ARENA_HEIGHT - 80, pl.y + 24)),
+                            x: Math.max(radius, Math.min(ARENA_WIDTH - radius, pl.x + 24)),
+                            y: Math.max(ARENA_TOP + radius, Math.min(ARENA_HEIGHT - radius, pl.y + 24)),
                             radius
                         });
                     }
-                    if (boss.phase === 2) {
-                        zones.push({
-                            x: Math.max(90, Math.min(ARENA_WIDTH - 90, boss.x + (Math.random() * 240 - 120))),
-                            y: Math.max(ARENA_TOP + 90, Math.min(ARENA_HEIGHT - 90, boss.y + 150)),
-                            radius
-                        });
+
+                    if (isP2) {
+                        const leadAngles = [-0.36, 0, 0.36];
+                        for (let k = 0; k < 3; k++) {
+                            const src = candidates[k % candidates.length];
+                            const dir = resolvePredictedDirection(src);
+                            const baseAng = Math.atan2(dir.dy, dir.dx);
+                            const ang = baseAng + (candidates.length === 1 ? leadAngles[k] : 0);
+                            const dist = 120 + Math.floor(k / candidates.length) * 90;
+                            const px = (src.x + 24) + Math.cos(ang) * dist;
+                            const py = (src.y + 24) + Math.sin(ang) * dist;
+                            zones.push({
+                                x: Math.max(radius, Math.min(ARENA_WIDTH - radius, px)),
+                                y: Math.max(ARENA_TOP + radius, Math.min(ARENA_HEIGHT - radius, py)),
+                                radius
+                            });
+                        }
                     }
-                    const warnDuration = boss.phase === 2 ? 780 : 900;
 
                     io.to(roomId).emit('bossAttackEvent', {
                         bossId: boss.id,
@@ -1009,7 +1118,8 @@
                             element: cur.boss.element,
                             type: 'meteor_fire',
                             zones,
-                            damage: 26
+                            damage: BOSS_DRAGON_METEOR_DAMAGE,
+                            magmaDurationMs: BOSS_DRAGON_MAGMA_DURATION_MS
                         });
 
                         for (const id in cur.players) {
@@ -1019,16 +1129,23 @@
                             const py = p.y + 24;
                             const hit = zones.some((z) => Math.hypot(px - z.x, py - z.y) <= z.radius);
                             if (hit) {
-                                applyDamageToPlayer(roomId, p, 26, 'meteor', matchId, cur.boss.element);
+                                applyDamageToPlayer(roomId, p, BOSS_DRAGON_METEOR_DAMAGE, 'meteor', matchId, cur.boss.element);
                             }
+                        }
+
+                        if (typeof spawnMagmaZones === 'function') {
+                            spawnMagmaZones(roomId, zones, BOSS_DRAGON_MAGMA_DURATION_MS, matchId, cur.boss.element);
                         }
                     }, warnDuration);
                 } else {
-                    const ringRadius = boss.phase === 2 ? 235 : 200;
-                    const warnDuration = boss.phase === 2 ? 750 : 850;
+                    // パターン3：覇竜の咆哮リング（予兆中引き寄せ＋4ダメ×4回多段パルス＋カーブ全周火炎弾20）
+                    const ringRadius = isP2 ? 250 : 215;
+                    const warnDuration = isP2 ? 680 : 780;
+                    const pullStrength = isP2 ? 1.15 : 0.85;
                     const ox = boss.x;
                     const oy = boss.y;
 
+                    boss.pulseCharging = true;
                     io.to(roomId).emit('bossAttackEvent', {
                         bossId: boss.id,
                         element: boss.element,
@@ -1036,17 +1153,25 @@
                         x: ox,
                         y: oy,
                         radius: ringRadius,
-                        warnDuration
+                        warnDuration,
+                        pullStrength
                     });
 
                     registerTimeout(room, () => {
                         const cur = ctx.getRoom();
                         if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                        cur.boss.pulseCharging = false;
 
-                        const fx = cur.boss.x;
-                        const fy = cur.boss.y;
-                        const fireCount = cur.boss.phase === 2 ? 12 : 8;
-                        room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { fireball: Date.now() });
+                        const fx = ox;
+                        const fy = oy;
+                        const fireCount = cur.boss.phase === 2 ? 16 : 10;
+                        const fireSpeed = cur.boss.phase === 2 ? 4.3 : 3.7;
+                        const curveRate = cur.boss.phase === 2 ? 0.022 : 0.016;
+                        const pulseDmg = BOSS_DRAGON_ROAR_PULSE_DAMAGE;
+                        const pulseCount = BOSS_DRAGON_ROAR_PULSE_COUNT;
+                        const pulseInterval = BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS;
+
+                        cur.lastBossAttackAt = Object.assign({}, cur.lastBossAttackAt, { fireball: Date.now() });
 
                         io.to(roomId).emit('bossAttackEvent', {
                             bossId: cur.boss.id,
@@ -1056,28 +1181,77 @@
                             y: fy,
                             radius: ringRadius,
                             fireCount,
-                            fireSpeed: cur.boss.phase === 2 ? 4.3 : 3.6,
+                            fireSpeed,
+                            curveRate,
                             fireDamage: BOSS_DRAGON_FIRE_DAMAGE,
-                            damage: 22
+                            damage: pulseDmg,
+                            pulseCount,
+                            pulseIntervalMs: pulseInterval
                         });
 
-                        for (const id in cur.players) {
-                            const p = cur.players[id];
-                            if (p.isDead || p.isEliminated) continue;
-                            if (Math.hypot((p.x + 24) - fx, (p.y + 24) - fy) <= ringRadius) {
-                                applyDamageToPlayer(roomId, p, 22, 'roar', matchId, cur.boss.element);
+                        const dealPulseTick = (tickIdx) => {
+                            const curRoom = ctx.getRoom();
+                            if (!curRoom || curRoom.state !== 'playing' || curRoom.matchId !== matchId || !curRoom.boss) return;
+
+                            if (tickIdx > 0) {
+                                io.to(roomId).emit('bossAttackEvent', {
+                                    bossId: curRoom.boss.id,
+                                    element: curRoom.boss.element,
+                                    type: 'roar_pulse',
+                                    x: fx,
+                                    y: fy,
+                                    radius: ringRadius,
+                                    damage: pulseDmg,
+                                    pulseIndex: tickIdx
+                                });
                             }
+
+                            for (const id in curRoom.players) {
+                                const p = curRoom.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                if (Math.hypot((p.x + 24) - fx, (p.y + 24) - fy) <= ringRadius) {
+                                    if (typeof applyPulseDamageToPlayer === 'function') {
+                                        applyPulseDamageToPlayer(roomId, p, pulseDmg, 'roar_pulse', matchId, curRoom.boss.element);
+                                    } else {
+                                        applyDamageToPlayer(roomId, p, pulseDmg, 'roar', matchId, curRoom.boss.element);
+                                    }
+                                }
+                            }
+                        };
+
+                        dealPulseTick(0);
+                        for (let tickIdx = 1; tickIdx < pulseCount; tickIdx++) {
+                            registerTimeout(cur, () => dealPulseTick(tickIdx), tickIdx * pulseInterval);
                         }
                     }, warnDuration);
                 }
             },
             drawEntity(ctx, boss, now) {
                 const isRage = boss.phase === 2;
+                const hasScaleAura = Boolean(boss.scaleAuraActive) || (now < (boss.scaleAuraUntil || 0));
                 const bx = boss.x;
                 const by = boss.y;
                 const flap = Math.sin(now / (isRage ? 130 : 210)) * 12;
 
                 ctx.save();
+
+                if (hasScaleAura) {
+                    const scaleR = boss.radius + 26 + Math.sin(now / 90) * 4;
+                    ctx.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const a = (Math.PI / 3) * i + now / 450;
+                        const px = bx + Math.cos(a) * scaleR;
+                        const py = by + Math.sin(a) * scaleR;
+                        if (i === 0) ctx.moveTo(px, py);
+                        else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(255, 190, 11, 0.16)';
+                    ctx.fill();
+                    ctx.lineWidth = 3.5;
+                    ctx.strokeStyle = '#ffbe0b';
+                    ctx.stroke();
+                }
 
                 if (isRage) {
                     const auraR = boss.radius + 18 + Math.sin(now / 110) * 5;
@@ -1175,11 +1349,11 @@
             speed: 3.0,
             moveSpeed: {
                 p1: 3.0,
-                p2: 4.2,
+                p2: 5.2,
                 soloP1: 3.0,
                 multiP1: 3.0,
-                soloP2: 4.2,
-                multiP2: 4.2
+                soloP2: 5.2,
+                multiP2: 5.2
             },
             attackIntervalMs: {
                 p1: 2100,
@@ -1610,6 +1784,8 @@
             vortexActive: false,
             pulseCharging: false,
             barrierActive: false,
+            scaleAuraActive: false,
+            scaleAuraUntil: 0,
             initialPlayerCount: count
         };
     }
@@ -1748,6 +1924,24 @@
                 outerRadius: ev.outerRadius || 220,
                 timer: 22
             });
+        } else if (ev.type === 'p2_awaken') {
+            callSeSafe(state, 'bossPulse');
+            if (typeof state.onShake === 'function') state.onShake(16, 9);
+            if (state.bossState) {
+                state.bossState.scaleAuraActive = true;
+                state.bossState.scaleAuraUntil = performance.now() + (ev.scaleAuraDurationMs || 3000);
+                if (typeof state.addFloatingText === 'function') {
+                    state.addFloatingText(state.bossState.x, state.bossState.y - 60, 'DRAGON SCALE AURA!!', '#ffbe0b');
+                }
+            }
+            state.bossEffects.push({
+                type: 'awaken_shockwave',
+                x: ev.x,
+                y: ev.y,
+                radius: ev.knockbackRadius || 240,
+                timer: 24,
+                maxTimer: 24
+            });
         } else if (ev.type === 'slash_warn') {
             state.bossEffects.push({
                 type: 'slash_warn',
@@ -1766,7 +1960,7 @@
             state.bossEffects.push({
                 type: 'claw_warn',
                 lines: ev.lines || [],
-                timer: Math.max(20, Math.round((ev.warnDuration || 750) / 16))
+                timer: Math.max(20, Math.round((ev.warnDuration || 680) / 16))
             });
         } else if (ev.type === 'claw_fire') {
             callSeSafe(state, 'bossSlash');
@@ -1796,21 +1990,36 @@
             state.bossEffects.push({
                 type: 'meteor_warn',
                 zones: ev.zones || [],
-                timer: Math.max(20, Math.round((ev.warnDuration || 850) / 16))
+                timer: Math.max(20, Math.round((ev.warnDuration || 900) / 16))
             });
         } else if (ev.type === 'meteor_fire') {
             callSeSafe(state, 'bossPulse');
             if (typeof state.onShake === 'function') state.onShake(13, 8);
+            const zones = ev.zones || [];
             state.bossEffects.push({
                 type: 'meteor_fire',
-                zones: ev.zones || [],
+                zones,
                 timer: 24
             });
+            const magmaDurationMs = ev.magmaDurationMs || BOSS_DRAGON_MAGMA_DURATION_MS;
+            if (magmaDurationMs > 0 && zones.length > 0) {
+                const magmaFrames = Math.max(60, Math.round(magmaDurationMs / 16.67));
+                state.bossEffects.push({
+                    type: 'magma_floor',
+                    zones,
+                    timer: magmaFrames,
+                    maxTimer: magmaFrames
+                });
+            }
         } else if (ev.type === 'roar_warn') {
+            const warnMs = ev.warnDuration || 780;
+            if (ev.pullStrength && typeof state.setVortex === 'function') {
+                state.setVortex(performance.now() + warnMs, ev.pullStrength);
+            }
             state.bossEffects.push({
                 type: 'roar_warn',
                 x: ev.x, y: ev.y, radius: ev.radius,
-                timer: Math.max(20, Math.round((ev.warnDuration || 800) / 16))
+                timer: Math.max(20, Math.round(warnMs / 16))
             });
         } else if (ev.type === 'roar_fire') {
             callSeSafe(state, 'bossPulse');
@@ -1818,10 +2027,11 @@
             state.bossEffects.push({
                 type: 'roar_fire',
                 x: ev.x, y: ev.y, radius: ev.radius,
-                timer: 24
+                timer: 18
             });
-            const fireCount = ev.fireCount || 8;
-            const fireSpeed = ev.fireSpeed || 3.8;
+            const fireCount = ev.fireCount || 10;
+            const fireSpeed = ev.fireSpeed || 3.7;
+            const curveRate = ev.curveRate || 0;
             for (let i = 0; i < fireCount; i++) {
                 const ang = (Math.PI * 2 / fireCount) * i;
                 state.bossProjectiles.push({
@@ -1831,10 +2041,20 @@
                     y: ev.y,
                     vx: Math.cos(ang) * fireSpeed,
                     vy: Math.sin(ang) * fireSpeed,
+                    curveRate,
                     damage: ev.fireDamage || BOSS_DRAGON_FIRE_DAMAGE,
-                    life: 140
+                    life: 145
                 });
             }
+        } else if (ev.type === 'roar_pulse') {
+            callSeSafe(state, 'zoneHit');
+            if (typeof state.onShake === 'function') state.onShake(6, 4);
+            state.bossEffects.push({
+                type: 'roar_pulse',
+                x: ev.x, y: ev.y, radius: ev.radius,
+                timer: 12,
+                maxTimer: 12
+            });
         } else if (ev.type === 'vortex') {
             if (typeof state.setVortex === 'function') {
                 state.setVortex(performance.now() + (ev.duration || 3800), ev.pullStrength || 1.55);
@@ -1906,6 +2126,14 @@
                 bp.vx = bp.x - prevX;
                 bp.vy = bp.y - prevY;
             } else {
+                if (bp.kind === 'fireball' && bp.curveRate) {
+                    const cosA = Math.cos(bp.curveRate);
+                    const sinA = Math.sin(bp.curveRate);
+                    const nvx = bp.vx * cosA - bp.vy * sinA;
+                    const nvy = bp.vx * sinA + bp.vy * cosA;
+                    bp.vx = nvx;
+                    bp.vy = nvy;
+                }
                 bp.x += bp.vx;
                 bp.y += bp.vy;
             }
@@ -1948,9 +2176,37 @@
     }
 
     function drawBossEffectsAndProjectiles(gameCtx, bossEffects, bossProjectiles) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
         for (const ef of bossEffects) {
             gameCtx.save();
-            if (ef.type === 'abyss_sigil_warn') {
+            if (ef.type === 'magma_floor') {
+                const fade = ef.maxTimer ? Math.min(1, ef.timer / 24) : 1;
+                gameCtx.globalAlpha = fade;
+                const pulse = Math.sin(now / 130) * 0.12 + 0.34;
+                for (const z of (ef.zones || [])) {
+                    gameCtx.beginPath();
+                    gameCtx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
+                    gameCtx.fillStyle = `rgba(220, 38, 38, ${pulse.toFixed(2)})`;
+                    gameCtx.fill();
+                    gameCtx.strokeStyle = '#ff9f1c';
+                    gameCtx.lineWidth = 2.5;
+                    gameCtx.stroke();
+
+                    gameCtx.beginPath();
+                    gameCtx.arc(z.x, z.y, z.radius * 0.55, 0, Math.PI * 2);
+                    gameCtx.strokeStyle = 'rgba(253, 224, 71, 0.45)';
+                    gameCtx.lineWidth = 1.5;
+                    gameCtx.stroke();
+                }
+            } else if (ef.type === 'awaken_shockwave') {
+                const progress = 1 - (ef.timer / (ef.maxTimer || 24));
+                gameCtx.globalAlpha = Math.max(0, 1 - progress);
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, (ef.radius || 240) * (0.25 + progress * 0.85), 0, Math.PI * 2);
+                gameCtx.strokeStyle = '#ffbe0b';
+                gameCtx.lineWidth = 8;
+                gameCtx.stroke();
+            } else if (ef.type === 'abyss_sigil_warn') {
                 for (const z of (ef.zones || [])) {
                     gameCtx.beginPath();
                     gameCtx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
@@ -2134,6 +2390,16 @@
                 gameCtx.fill();
                 gameCtx.strokeStyle = ef.type === 'roar_fire' ? '#ffd166' : '#00ffff';
                 gameCtx.lineWidth = 6;
+                gameCtx.stroke();
+            } else if (ef.type === 'roar_pulse') {
+                const progress = 1 - (ef.timer / (ef.maxTimer || 12));
+                gameCtx.globalAlpha = Math.max(0.15, 1 - progress * 0.85);
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius * (0.4 + progress * 0.6), 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(255, 130, 20, 0.24)';
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#fff3b0';
+                gameCtx.lineWidth = 4;
                 gameCtx.stroke();
             }
             gameCtx.restore();

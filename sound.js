@@ -401,7 +401,54 @@
         },
         zoneHit: () => {
             if (!canPlaySe('zoneHit', 100)) return;
-            playTone(110, 'sawtooth', 0.18, 0.08, 75);
+            playTone(110, 'sawtooth', 0.14, 0.07, 72);
+        },
+        // STAGE 3 (INFERNO DRAGON) 専用強化ギミック・P2覚醒SE
+        dragonAwaken: () => {
+            if (!canPlaySe('dragonAwaken', 500)) return;
+            playNoise(0.35, 0.13);
+            playTone(140, 'sawtooth', 0.32, 0.1, 520);
+            setTimeout(() => playTone(587, 'square', 0.28, 0.07, 880), 110);
+        },
+        dragonBreath: () => {
+            if (!canPlaySe('dragonBreath', 120)) return;
+            playNoise(0.18, 0.09);
+            playTone(420, 'sawtooth', 0.18, 0.07, 150);
+        },
+        dragonClawWarn: () => {
+            if (!canPlaySe('dragonClawWarn', 120)) return;
+            playTone(540, 'triangle', 0.14, 0.05, 820);
+        },
+        dragonClawFire: () => {
+            if (!canPlaySe('dragonClawFire', 100)) return;
+            playNoise(0.22, 0.12);
+            playTone(860, 'sawtooth', 0.2, 0.09, 130);
+        },
+        dragonMeteorWarn: () => {
+            if (!canPlaySe('dragonMeteorWarn', 150)) return;
+            playTone(280, 'sine', 0.24, 0.05, 420);
+        },
+        dragonMeteorFire: () => {
+            if (!canPlaySe('dragonMeteorFire', 140)) return;
+            playNoise(0.32, 0.13);
+            playTone(190, 'sawtooth', 0.3, 0.11, 44);
+        },
+        magmaSlip: () => {
+            if (!canPlaySe('magmaSlip', 200)) return;
+            playTone(95, 'sawtooth', 0.12, 0.06, 65);
+        },
+        dragonRoarWarn: () => {
+            if (!canPlaySe('dragonRoarWarn', 150)) return;
+            playTone(170, 'triangle', 0.28, 0.06, 360);
+        },
+        dragonRoarFire: () => {
+            if (!canPlaySe('dragonRoarFire', 140)) return;
+            playNoise(0.28, 0.12);
+            playTone(260, 'sawtooth', 0.26, 0.1, 80);
+        },
+        dragonRoarPulse: () => {
+            if (!canPlaySe('dragonRoarPulse', 100)) return;
+            playTone(145, 'sawtooth', 0.11, 0.06, 78);
         },
         // STAGE 4 (ABYSS WEAVER) 専用ギミック・状態異常・フェーズ遷移SE
         abyssSigilWarn: () => {
@@ -495,6 +542,16 @@
     };
 
     const SE_ALIASES = {
+        p2_awaken: 'dragonAwaken',
+        breath: 'dragonBreath',
+        claw_warn: 'dragonClawWarn',
+        claw_fire: 'dragonClawFire',
+        meteor_warn: 'dragonMeteorWarn',
+        meteor_fire: 'dragonMeteorFire',
+        magma: 'magmaSlip',
+        roar_warn: 'dragonRoarWarn',
+        roar_fire: 'dragonRoarFire',
+        roar_pulse: 'dragonRoarPulse',
         abyss_sigil_warn: 'abyssSigilWarn',
         abyss_sigil_fire: 'abyssSigilFire',
         twin_serpent: 'abyssSerpent',

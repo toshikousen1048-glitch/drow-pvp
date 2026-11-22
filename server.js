@@ -73,7 +73,7 @@ const VALID_FACING = ['up', 'down', 'left', 'right'];
 const CREDIT_TTL_MS = { shot: 4000, melee: 1500 };
 
 // サーバー側ティックで直接当たり判定を行うBOSS弾種（二重ダメージ防止用）
-const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb']);
+const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb', 'curved_fireball']);
 
 // =========================================================================
 // 永続プロファイル管理（ポイント・ステージ解放・インク・必殺技ストック）
@@ -222,7 +222,12 @@ function createPlayerGuards() {
         credits: { shot: [], melee: [] },
         nextShieldAt: 0,
         lastMoveAt: 0,
-        lastServerProjHitAt: 0
+        lastMoveVectorAt: 0,
+        vx: 0,
+        vy: 0,
+        lastServerProjHitAt: 0,
+        lastMagmaHitAt: 0,
+        lastPulseHitAt: 0
     };
 }
 
@@ -233,7 +238,12 @@ function resetPlayerCombatStatuses(p) {
     p.powerBoostUntil = 0;
     p.slowUntil = 0;
     p.slowMultiplier = 1.0;
+    p.vx = 0;
+    p.vy = 0;
+    p.lastMoveVectorAt = 0;
     p.lastServerProjHitAt = 0;
+    p.lastMagmaHitAt = 0;
+    p.lastPulseHitAt = 0;
     clearPlayerUltraStateAndTimers(p);
 }
 
@@ -367,6 +377,29 @@ function findSafePosition(room, size) {
     return { x: 64, y: 64 };
 }
 
+function pushPlayerSafely(p, angle, distance) {
+    if (!p || distance <= 0) return;
+    const steps = 10;
+    const stepDist = distance / steps;
+    const maxX = ARENA_WIDTH - CHAR_SIZE;
+    const maxY = ARENA_HEIGHT - CHAR_SIZE;
+    let curX = p.x;
+    let curY = p.y;
+
+    for (let s = 1; s <= steps; s++) {
+        const candX = Math.max(0, Math.min(maxX, curX + Math.cos(angle) * stepDist));
+        const candY = Math.max(ARENA_TOP, Math.min(maxY, curY + Math.sin(angle) * stepDist));
+        if (overlapsStaticObstacle(candX, candY, CHAR_SIZE, 12)) {
+            break;
+        }
+        curX = candX;
+        curY = candY;
+    }
+
+    p.x = curX;
+    p.y = curY;
+}
+
 // =========================================================================
 // タイマー管理・必殺技タイマー完全破棄
 // =========================================================================
@@ -431,6 +464,16 @@ function stopGimmickLoop(roomId) {
         room.bossPendingTimeouts = [];
     }
     room.bossProjectiles = [];
+    room.bossMagmaZones = [];
+    room.bossRoarPullUntil = 0;
+    room.bossRoarPullStrength = 0;
+    if (room.boss) {
+        room.boss.scaleAuraActive = false;
+        room.boss.scaleAuraUntil = 0;
+        room.boss.pulseCharging = false;
+        room.boss.vortexActive = false;
+        room.boss.barrierActive = false;
+    }
     for (const id in room.players) {
         clearPlayerUltraStateAndTimers(room.players[id]);
     }
@@ -536,7 +579,7 @@ function syncPlayerEquippedUltraFromProfile(p) {
 }
 
 // =========================================================================
-// サーバー側BOSS弾道登録＆ティック更新（STAGE 4 蛇行闇弾・影波等）
+// サーバー側BOSS弾道＆マグマ床登録＆ティック更新（STAGE 3・4）
 // =========================================================================
 function registerServerBossProjectilesFromEvent(roomId, matchId, ev) {
     const room = rooms[roomId];
@@ -586,6 +629,81 @@ function registerServerBossProjectilesFromEvent(roomId, matchId, ev) {
                 life: 150
             });
         }
+    } else if (ev.type === 'roar_fire') {
+        const fireCount = Math.max(1, ev.fireCount || 10);
+        const fireSpeed = ev.fireSpeed || 3.7;
+        const curveRate = Number(ev.curveRate) || 0;
+        const fireDamage = ev.fireDamage || 20;
+        for (let i = 0; i < fireCount; i++) {
+            const ang = (Math.PI * 2 / fireCount) * i;
+            room.bossProjectiles.push({
+                kind: 'curved_fireball',
+                element: bossElem,
+                x: ev.x,
+                y: ev.y,
+                vx: Math.cos(ang) * fireSpeed,
+                vy: Math.sin(ang) * fireSpeed,
+                curveRate,
+                damage: fireDamage,
+                hitRadius: 23,
+                life: 145
+            });
+        }
+    } else if (ev.type === 'roar_warn' && ev.pullStrength) {
+        room.bossRoarPullUntil = Date.now() + (Number(ev.warnDuration) || 780);
+        room.bossRoarPullStrength = Number(ev.pullStrength) || 0.85;
+    }
+}
+
+function spawnMagmaZones(roomId, zones, durationMs, matchId, bossElement) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !Array.isArray(zones)) return;
+    if (!Array.isArray(room.bossMagmaZones)) {
+        room.bossMagmaZones = [];
+    }
+    const expiresAt = Date.now() + (Number(durationMs) || 2400);
+    const elem = bossElement || (room.boss ? room.boss.element : 'fire');
+    for (const z of zones) {
+        room.bossMagmaZones.push({
+            x: z.x,
+            y: z.y,
+            radius: z.radius || 84,
+            expiresAt,
+            element: elem
+        });
+    }
+}
+
+function stepServerMagmaZones(roomId, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !room.boss) return;
+    if (!Array.isArray(room.bossMagmaZones) || room.bossMagmaZones.length === 0) return;
+
+    const now = Date.now();
+    for (let i = room.bossMagmaZones.length - 1; i >= 0; i--) {
+        if (now >= room.bossMagmaZones[i].expiresAt) {
+            room.bossMagmaZones.splice(i, 1);
+        }
+    }
+    if (room.bossMagmaZones.length === 0) return;
+
+    const def = getBossDef(room.boss.id);
+    const magmaCfg = def.magmaConfig || { tickIntervalMs: 600, tickDamage: 6 };
+    const tickInterval = magmaCfg.tickIntervalMs || 600;
+    const tickDmg = magmaCfg.tickDamage || 6;
+
+    for (const pid in room.players) {
+        const p = room.players[pid];
+        if (!p || p.isDead || p.isEliminated) continue;
+        if (now < (p.lastMagmaHitAt || 0) + tickInterval) continue;
+
+        const pcx = p.x + CHAR_SIZE / 2;
+        const pcy = p.y + CHAR_SIZE / 2;
+        const touching = room.bossMagmaZones.find((z) => Math.hypot(pcx - z.x, pcy - z.y) <= z.radius);
+        if (touching) {
+            p.lastMagmaHitAt = now;
+            applyPulseDamageToPlayer(roomId, p, tickDmg, 'magma', matchId, touching.element);
+        }
     }
 }
 
@@ -610,6 +728,15 @@ function stepServerBossProjectiles(roomId, matchId, dtMs) {
             bp.x = bp.baseX + perpX * offset;
             bp.y = bp.baseY + perpY * offset;
         } else {
+            if (bp.curveRate) {
+                const angleStep = bp.curveRate * stepFrames;
+                const cosA = Math.cos(angleStep);
+                const sinA = Math.sin(angleStep);
+                const nvx = bp.vx * cosA - bp.vy * sinA;
+                const nvy = bp.vx * sinA + bp.vy * cosA;
+                bp.vx = nvx;
+                bp.vy = nvy;
+            }
             bp.x += (bp.vx || 0) * stepFrames;
             bp.y += (bp.vy || 0) * stepFrames;
         }
@@ -727,6 +854,11 @@ function startBossAILoop(roomId, matchId) {
         const curDef = getBossDef(boss.id);
         tick++;
 
+        if (boss.scaleAuraActive && Date.now() >= (boss.scaleAuraUntil || 0)) {
+            boss.scaleAuraActive = false;
+            boss.scaleAuraUntil = 0;
+        }
+
         const activePlayerCount = Object.keys(r.players).length;
         const isSolo = activePlayerCount <= 1;
 
@@ -785,6 +917,7 @@ function startBossAILoop(roomId, matchId) {
         const dtMs = Math.min(80, Math.max(16, now - lastProjTickAt));
         lastProjTickAt = now;
         stepServerBossProjectiles(roomId, matchId, dtMs);
+        stepServerMagmaZones(roomId, matchId);
     }, 32);
 
     let attackCount = 0;
@@ -813,15 +946,24 @@ function executeBossAttack(roomId, count, matchId) {
     const boss = room.boss;
     const def = getBossDef(boss.id);
 
+    const now = Date.now();
     const allPlayerCount = Math.min(MAX_PLAYERS_PER_ROOM, Math.max(1, Object.keys(room.players).length));
-    const alivePlayers = Object.values(room.players).filter((p) => !p.isDead && !p.isEliminated);
+    const alivePlayers = Object.values(room.players)
+        .filter((p) => !p.isDead && !p.isEliminated)
+        .map((p) => {
+            if (now - (p.lastMoveVectorAt || 0) > 250) {
+                p.vx = 0;
+                p.vy = 0;
+            }
+            return p;
+        });
     if (alivePlayers.length === 0) return;
 
     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
     const targetCx = target.x + 24;
     const targetCy = target.y + 24;
 
-    // bosses.js の攻撃イベント配信をフックし、サーバー弾道が必要な技を自動登録する
+    // bosses.js の攻撃イベント配信をフックし、サーバー弾道・引き寄せが必要な技を自動登録する
     const wrappedIo = {
         to: (targetRoomId) => ({
             emit: (eventName, eventPayload) => {
@@ -849,13 +991,76 @@ function executeBossAttack(roomId, count, matchId) {
         registerTimeout: registerBossTimeout,
         pointToSegmentDistance,
         applyDamageToPlayer: applyBossDamageToPlayer,
-        applySlowToPlayer
+        applyPulseDamageToPlayer,
+        applySlowToPlayer,
+        spawnMagmaZones
     });
 }
 
 // =========================================================================
-// 状態異常・ダメージ適用・完全反撃・絶対防壁・KO・勝敗判定
+// 状態異常・P2覚醒・ダメージ適用・完全反撃・絶対防壁・KO・勝敗判定
 // =========================================================================
+function triggerBossPhase2Awaken(roomId, room, def, matchId) {
+    if (!room || !room.boss || !def || !def.phase2Awaken) return;
+    const boss = room.boss;
+    const cfg = def.phase2Awaken;
+    const now = Date.now();
+    const auraDuration = Number(cfg.scaleAuraDurationMs) || 3000;
+    const kbRadius = Number(cfg.knockbackRadius) || 240;
+    const kbDist = Number(cfg.knockbackDistance) || 120;
+
+    boss.scaleAuraActive = true;
+    boss.scaleAuraUntil = now + auraDuration;
+
+    // 周囲ノックバック衝撃波（ダメージなし）
+    for (const id in room.players) {
+        const p = room.players[id];
+        if (!p || p.isDead || p.isEliminated) continue;
+        const pcx = p.x + CHAR_SIZE / 2;
+        const pcy = p.y + CHAR_SIZE / 2;
+        const dist = Math.hypot(pcx - boss.x, pcy - boss.y);
+        if (dist <= kbRadius) {
+            const ang = dist > 0.1 ? Math.atan2(pcy - boss.y, pcx - boss.x) : Math.PI / 2;
+            let mult = 1.0;
+            if (now < (p.absoluteWallUntil || 0)) mult = 0.15;
+            else if (now < (p.shieldUntil || 0)) mult = 0.25;
+            pushPlayerSafely(p, ang, kbDist * mult);
+            io.to(roomId).emit('playerKnockback', {
+                id: p.id,
+                x: p.x,
+                y: p.y,
+                facing: p.facing,
+                source: 'p2_awaken'
+            });
+            io.to(roomId).emit('playerMoved', {
+                id: p.id,
+                x: p.x,
+                y: p.y,
+                facing: p.facing
+            });
+        }
+    }
+
+    io.to(roomId).emit('bossAttackEvent', {
+        bossId: boss.id,
+        element: boss.element,
+        type: 'p2_awaken',
+        x: boss.x,
+        y: boss.y,
+        knockbackRadius: kbRadius,
+        scaleAuraDurationMs: auraDuration
+    });
+    io.to(roomId).emit('bossStateUpdated', boss);
+
+    registerBossTimeout(room, () => {
+        const cur = rooms[roomId];
+        if (!cur || cur.matchId !== matchId || !cur.boss) return;
+        cur.boss.scaleAuraActive = false;
+        cur.boss.scaleAuraUntil = 0;
+        io.to(roomId).emit('bossStateUpdated', cur.boss);
+    }, auraDuration);
+}
+
 function applySlowToPlayer(roomId, target, multiplier, durationMs, matchId) {
     const room = rooms[roomId];
     if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
@@ -882,16 +1087,30 @@ function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitT
     if (!room || room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return;
     if (!attacker || room.boss.hp <= 0) return;
 
+    const now = Date.now();
     const def = getBossDef(room.boss.id);
     const elemMult = getElementMultiplier(attacker.element, room.boss.element);
     const barrierMult = (room.boss.barrierActive && def.barrierDamageMultiplier) ? def.barrierDamageMultiplier : 1.0;
-    const finalDamage = Math.max(1, Math.round(rawDamage * elemMult * barrierMult));
+
+    if (room.boss.scaleAuraActive && now >= (room.boss.scaleAuraUntil || 0)) {
+        room.boss.scaleAuraActive = false;
+        room.boss.scaleAuraUntil = 0;
+    }
+    const scaleAuraMult = (room.boss.scaleAuraActive && def.phase2Awaken)
+        ? (def.phase2Awaken.scaleDamageMultiplier || 0.75)
+        : 1.0;
+
+    const finalDamage = Math.max(1, Math.round(rawDamage * elemMult * barrierMult * scaleAuraMult));
 
     room.boss.hp = Math.max(0, room.boss.hp - finalDamage);
     attacker.bossDamageDealt = (attacker.bossDamageDealt || 0) + finalDamage;
 
-    if (room.boss.phase === 1 && room.boss.hp <= room.boss.maxHp * 0.5) {
+    let triggeredAwaken = false;
+    if (room.boss.phase === 1 && room.boss.hp > 0 && room.boss.hp <= room.boss.maxHp * 0.5) {
         room.boss.phase = 2;
+        if (def.phase2Awaken) {
+            triggeredAwaken = true;
+        }
     }
 
     io.to(roomId).emit('bossDamaged', {
@@ -901,23 +1120,29 @@ function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitT
         maxHp: room.boss.maxHp,
         phase: room.boss.phase,
         blockedByBarrier: Boolean(room.boss.barrierActive),
+        reducedByScaleAura: scaleAuraMult < 1.0,
         elementMultiplier: elemMult,
         attackerElement: attacker.element,
         defenderElement: room.boss.element,
         attackType: hitTypeLabel || attackKind
     });
 
+    if (triggeredAwaken) {
+        triggerBossPhase2Awaken(roomId, room, def, room.matchId);
+    }
+
     if (room.boss.hp <= 0) {
         checkMatchWinner(roomId);
     }
 }
 
-function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockDir, hitType, matchId, attackerElement) {
+function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockDir, hitType, matchId, attackerElement, opts) {
     const room = rooms[roomId];
     if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
     if (!target || target.isDead || target.isEliminated) return false;
 
     const now = Date.now();
+    const options = opts || {};
 
     // 1. 完全反撃（構え中）チェック
     if (now < target.counterStanceUntil) {
@@ -954,7 +1179,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
         type: hitType,
         elementMultiplier: elemMult,
         attackerElement: atkElem,
-        defenderElement: target.element
+        defenderElement: target.element,
+        skipInvincible: Boolean(options.skipInvincible),
+        noKnockback: Boolean(options.noKnockback)
     });
 
     if (target.hp <= 0) {
@@ -968,6 +1195,16 @@ function applyBossDamageToPlayer(roomId, target, damage, attackType, matchId, bo
     if (!room || !room.boss) return false;
     const elem = bossElement || room.boss.element || 'neutral';
     return applyDamageToPlayerInternal(roomId, target, 'BOSS', damage, 'down', attackType, matchId, elem);
+}
+
+function applyPulseDamageToPlayer(roomId, target, damage, attackType, matchId, bossElement) {
+    const room = rooms[roomId];
+    if (!room || !room.boss) return false;
+    const elem = bossElement || room.boss.element || 'neutral';
+    return applyDamageToPlayerInternal(roomId, target, 'BOSS', damage, 'down', attackType, matchId, elem, {
+        skipInvincible: true,
+        noKnockback: true
+    });
 }
 
 function triggerPerfectCounter(roomId, counterPlayer, attacker, matchId) {
@@ -1132,6 +1369,9 @@ function beginMatchCountdown(roomId) {
     room.items = [];
     room.lastBossAttackAt = {};
     room.bossProjectiles = [];
+    room.bossMagmaZones = [];
+    room.bossRoarPullUntil = 0;
+    room.bossRoarPullStrength = 0;
 
     const stage = getStageByNumber(room.stageNumber);
     room.stageNumber = stage.stageNumber;
@@ -1710,6 +1950,9 @@ io.on('connection', (socket) => {
                 items: [],
                 boss: null,
                 bossProjectiles: [],
+                bossMagmaZones: [],
+                bossRoarPullUntil: 0,
+                bossRoarPullStrength: 0,
                 lastBossAttackAt: {},
                 countdownTimer: null,
                 wallTimer: null,
@@ -1912,6 +2155,9 @@ io.on('connection', (socket) => {
         room.items = [];
         room.boss = null;
         room.bossProjectiles = [];
+        room.bossMagmaZones = [];
+        room.bossRoarPullUntil = 0;
+        room.bossRoarPullStrength = 0;
         room.lastBossAttackAt = {};
 
         // 直前がBOSS撃破クリアだった場合、次ステージが解放済みなら自動選択状態にする
@@ -1984,6 +2230,14 @@ io.on('connection', (socket) => {
             if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12)) {
                 nx = p.x;
                 ny = p.y;
+            }
+
+            const moveDx = nx - p.x;
+            const moveDy = ny - p.y;
+            if (Math.hypot(moveDx, moveDy) > 0.2) {
+                p.vx = moveDx;
+                p.vy = moveDy;
+                p.lastMoveVectorAt = now;
             }
 
             p.lastMoveAt = now;
@@ -2477,8 +2731,8 @@ io.on('connection', (socket) => {
             : def.attackProjectiles[0];
         if (!kind) return;
 
-        // サーバーティックで直接判定する弾種は二重ダメージ防止のため無視
-        if (SERVER_AUTHORITATIVE_PROJECTILES.has(kind)) return;
+        // サーバーティックで直接判定する弾種・カーブ軌道火炎弾は二重ダメージ防止のため無視
+        if (SERVER_AUTHORITATIVE_PROJECTILES.has(kind) || (data && data.curveRate)) return;
 
         const lastAt = room.lastBossAttackAt && room.lastBossAttackAt[kind];
         if (!lastAt || Date.now() - lastAt > 8500) return;
