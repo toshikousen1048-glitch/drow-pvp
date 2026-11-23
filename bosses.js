@@ -111,7 +111,7 @@
         SPECIAL_VENOM: Object.freeze({ id: 'SPECIAL_VENOM', name: 'ヴェノムインク', group: 'dark', isAnimatedInk: true })
     });
     const SPECIAL_INK_IDS = Object.freeze(Object.keys(SPECIAL_INKS));
-    const SPECIAL_INK_ELEMENT_THRESHOLD = 20;
+    const SPECIAL_INK_ELEMENT_THRESHOLD = 80;
 
     const GAME_RULES = Object.freeze({
         MAX_PLAYERS,
@@ -715,7 +715,7 @@
             },
             attackIntervalMs: {
                 p1: 1850,
-                p2: 950
+                p2: 1150
             },
             attackProjectiles: ['homing'],
             projectileDamage: {
@@ -933,8 +933,8 @@
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 2350,
-                p2: 2050
+                p1: 2450,
+                p2: 1850
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -1345,18 +1345,18 @@
             spawnY: 165,
             maxHp: 950,
             hpByPlayers: { 1: 950, 2: 1900, 3: 2850, 4: 3800 },
-            speed: 3.0,
+            speed: 3.2,
             moveSpeed5: {
-                p1: 3.0,
-                p2: 3.2,
-                soloP1: 3.0,
-                multiP1: 4.0,
-                soloP2: 3.2,
-                multiP2: 4.2
+                p1: 3.2,
+                p2: 3.6,
+                soloP1: 3.2,
+                multiP1: 3.6,
+                soloP2: 4.2,
+                multiP2: 4.6
             },
             attackIntervalMs: {
-                p1: 2400,
-                p2: 1950
+                p1: 2300,
+                p2: 1900
             },
             attackProjectiles: ['snake_dark', 'shadow_orb'],
             projectileDamage: {
@@ -1703,7 +1703,7 @@
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 1900,
+                p1: 1200,
                 p2: 950
             },
             randomActionSelection: true,
@@ -1772,7 +1772,7 @@
                             vx: Math.cos(ang) * spd,
                             vy: Math.sin(ang) * spd,
                             speed: spd,
-                            turnRate: isP2 ? 0.055 : 0.045,
+                            turnRate: isP2 ? 0.095 : 0.075,
                             damage: BOSS_PHANTOM_HOMING_DAMAGE
                         });
                     }
@@ -1827,7 +1827,7 @@
                         const realPos = clampArenaPoint(anchor.x + 24, anchor.y + 24, ambushRadius + 10);
                         const fakeAngle = Math.random() * Math.PI * 2;
                         const fakePos = clampArenaPoint(
-                            realPos.x + Math.cos(fakeAngle) * 260,
+                            realPos.x + Math.cos(fakeAngle) * 260,  
                             realPos.y + Math.sin(fakeAngle) * 220,
                             ambushRadius + 10
                         );
@@ -1882,7 +1882,7 @@
                                     );
                                     if (applied !== false) {
                                         if (typeof applySlowToPlayer === 'function') {
-                                            applySlowToPlayer(roomId, p, 0.75, 2000, matchId);
+                                            applySlowToPlayer(roomId, p, 0.75, 4000, matchId);
                                         }
                                         if (typeof knockbackPlayerFromPoint === 'function') {
                                             knockbackPlayerFromPoint(roomId, p, realPos.x, realPos.y, ambushRadius + 36, matchId, 'phantom_ambush');
@@ -1912,7 +1912,7 @@
                         damage: BOSS_PHANTOM_CURSE_DAMAGE
                     });
                 } else {
-                    const countShots = isP2 ? 18 : 10;
+                    const countShots = isP2 ? 24 : 12;  
                     const speed = isP2 ? 4.5 : 3.8;
                     const damage = isP2 ? BOSS_PHANTOM_FEINT_P2_DAMAGE : BOSS_PHANTOM_FEINT_P1_DAMAGE;
                     const baseAngle = Math.random() * Math.PI * 2;
