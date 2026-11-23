@@ -1508,7 +1508,17 @@
                 arenaWalls = data.walls || []; arenaItems = data.items || [];
                 if (Array.isArray(data.staticObstacles)) staticObstacles = data.staticObstacles;
                 bossState = syncBossAuraFromServer(data.boss || null);
-
+            socket.on('playerJoined', (data) => {
+                if (!data || !data.player || !data.player.id || data.player.id === socket.id) return;
+                const np = { ...data.player };
+                syncSlowFromServerEpoch(np, np.slowUntil, np.slowMultiplier, np.attackDebuffUntil, np.attackDebuffMultiplier, np.dotUntil);
+                otherPlayers[np.id] = np;
+                if (data.boss) {
+                    bossState = syncBossAuraFromServer(data.boss);
+                }
+                addFloatingText(np.x + 24, np.y - 16, `${np.name || 'Player'} 参戦!`, '#2ecc71');
+                if (roomState === 'waiting') updateLobbyUI();
+            });
                 const players = data.players || {};
                 if (players[socket.id]) {
                     const me = players[socket.id];

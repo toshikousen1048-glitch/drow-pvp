@@ -232,6 +232,8 @@ function createPlayerGuards() {
         lastMoveVectorAt: 0,
         vx: 0,
         vy: 0,
+        invincibleUntil: 0,
+        lastBossHitReportAt: 0,
         lastServerProjHitAt: 0,
         lastMagmaHitAt: 0,
         lastPulseHitAt: 0
@@ -254,6 +256,8 @@ function resetPlayerCombatStatuses(p) {
     p.vx = 0;
     p.vy = 0;
     p.lastMoveVectorAt = 0;
+    p.invincibleUntil = 0;
+    p.lastBossHitReportAt = 0;
     p.lastServerProjHitAt = 0;
     p.lastMagmaHitAt = 0;
     p.lastPulseHitAt = 0;
@@ -334,6 +338,43 @@ function pointInStaticObstacle(px, py) {
     return false;
 }
 
+function overlapsBreakableWall(room, x, y, size, pad = 6) {
+    if (!room || !Array.isArray(room.walls)) return false;
+    const left = x + pad;
+    const right = x + size - pad;
+    const top = y + pad;
+    const bottom = y + size - pad;
+    for (const w of room.walls) {
+        if (left < w.x + w.w && right > w.x && top < w.y + w.h && bottom > w.y) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function overlapsPlayerBlocking(room, x, y, size) {
+    return overlapsStaticObstacle(x, y, size, 12) || overlapsBreakableWall(room, x, y, size, 6);
+}
+
+function ejectPlayerFromObstacles(room, p) {
+    if (!p || !overlapsPlayerBlocking(room, p.x, p.y, CHAR_SIZE)) return false;
+    const maxX = ARENA_WIDTH - CHAR_SIZE;
+    const maxY = ARENA_HEIGHT - CHAR_SIZE;
+    for (let r = 8; r <= 260; r += 8) {
+        for (let a = 0; a < 16; a++) {
+            const ang = (Math.PI * 2 / 16) * a;
+            const cx = Math.max(0, Math.min(maxX, p.x + Math.cos(ang) * r));
+            const cy = Math.max(ARENA_TOP, Math.min(maxY, p.y + Math.sin(ang) * r));
+            if (!overlapsPlayerBlocking(room, cx, cy, CHAR_SIZE)) {
+                p.x = cx;
+                p.y = cy;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function overlapsObstacleOrWall(room, x, y, size) {
     const pad = 4;
     const left = x + pad;
@@ -390,7 +431,7 @@ function findSafePosition(room, size) {
     return { x: 64, y: 64 };
 }
 
-function pushPlayerSafely(p, angle, distance) {
+function pushPlayerSafely(p, angle, distance, room) {
     if (!p || distance <= 0) return;
     const steps = 10;
     const stepDist = distance / steps;
@@ -402,7 +443,7 @@ function pushPlayerSafely(p, angle, distance) {
     for (let s = 1; s <= steps; s++) {
         const candX = Math.max(0, Math.min(maxX, curX + Math.cos(angle) * stepDist));
         const candY = Math.max(ARENA_TOP, Math.min(maxY, curY + Math.sin(angle) * stepDist));
-        if (overlapsStaticObstacle(candX, candY, CHAR_SIZE, 12)) {
+        if (overlapsPlayerBlocking(room, candX, candY, CHAR_SIZE)) {
             break;
         }
         curX = candX;
@@ -554,10 +595,8 @@ function getHostMaxUnlockedStage(room) {
     return prof ? prof.maxUnlockedStage : 1;
 }
 
-function emitRoomStateSync(roomId) {
-    const room = rooms[roomId];
-    if (!room) return;
-    io.to(roomId).emit('roomStateSync', {
+function buildRoomStatePayload(room) {
+    return {
         state: room.state,
         mode: room.mode,
         stageNumber: room.stageNumber,
@@ -571,7 +610,13 @@ function emitRoomStateSync(roomId) {
         items: room.items,
         staticObstacles: STATIC_OBSTACLES,
         boss: room.boss
-    });
+    };
+}
+
+function emitRoomStateSync(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    io.to(roomId).emit('roomStateSync', buildRoomStatePayload(room));
 }
 
 function syncPlayerEquippedUltraFromProfile(p) {
@@ -801,25 +846,12 @@ function stepServerPlayerDots(roomId, matchId) {
             p.nextDotAt = now + interval;
             const dotDmg = Math.max(1, Math.floor(Number(p.dotDamage) || 6));
 
-            p.hp = Math.max(0, p.hp - dotDmg);
-            io.to(roomId).emit('playerDamaged', {
-                targetId: p.id,
-                attackerId: 'BOSS',
-                damage: dotDmg,
-                hp: p.hp,
-                maxHp: p.maxHp,
-                knockbackDir: 'down',
-                type: 'curse_dot',
-                elementMultiplier: 1.0,
-                attackerElement: 'neutral',
-                defenderElement: p.element,
+            // 呪いDoT：無敵(350ms)貫通・ノックバックなし・反撃不発・絶対防壁で防ぐ
+            applyDamageToPlayerInternal(roomId, p, 'BOSS', dotDmg, 'down', 'curse_dot', matchId, 'neutral', {
                 skipInvincible: true,
-                noKnockback: true
+                noKnockback: true,
+                noCounter: true
             });
-
-            if (p.hp <= 0) {
-                handlePlayerKO(roomId, p, null, matchId);
-            }
         }
     }
 }
@@ -901,7 +933,7 @@ function stepServerBossProjectiles(roomId, matchId, dtMs) {
         for (const pid in room.players) {
             const p = room.players[pid];
             if (!p || p.isDead || p.isEliminated) continue;
-            if (now < (p.lastServerProjHitAt || 0) + 150) continue;
+            if (now < (p.invincibleUntil || 0) || now < (p.lastServerProjHitAt || 0) + 150) continue;
 
             const pcx = p.x + CHAR_SIZE / 2;
             const pcy = p.y + CHAR_SIZE / 2;
@@ -1173,7 +1205,7 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
             let mult = 1.0;
             if (now < (p.absoluteWallUntil || 0)) mult = 0.15;
             else if (now < (p.shieldUntil || 0)) mult = 0.25;
-            pushPlayerSafely(p, ang, kbDist * mult);
+            pushPlayerSafely(p, ang, kbDist * mult, room);
             io.to(roomId).emit('playerKnockback', {
                 id: p.id,
                 x: p.x,
@@ -1313,7 +1345,7 @@ function knockbackPlayerFromPoint(roomId, target, originX, originY, targetDistan
     if (now < (target.absoluteWallUntil || 0)) mult = 0.15;
     else if (now < (target.shieldUntil || 0)) mult = 0.25;
 
-    pushPlayerSafely(target, ang, desiredDist * mult);
+    pushPlayerSafely(target, ang, desiredDist * mult, room);
 
     io.to(roomId).emit('playerKnockback', {
         id: target.id,
@@ -1340,9 +1372,9 @@ function getPlayerEffectiveAttackMultiplier(p, now) {
 
 function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitTypeLabel) {
     const room = rooms[roomId];
-    if (!room || room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return;
-    if (!attacker || room.boss.hp <= 0) return;
-    if (room.boss.isStealthed) return;
+    if (!room || room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return false;
+    if (!attacker || room.boss.hp <= 0) return false;
+    if (room.boss.isStealthed) return false;
 
     const now = Date.now();
     const def = getBossDef(room.boss.id);
@@ -1391,6 +1423,7 @@ function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitT
     if (room.boss.hp <= 0) {
         checkMatchWinner(roomId);
     }
+    return true;
 }
 
 function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockDir, hitType, matchId, attackerElement, opts) {
@@ -1401,10 +1434,12 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
     const now = Date.now();
     const options = opts || {};
     const isEndOfDays = Boolean(options.isEndOfDays);
+    const skipInvincible = Boolean(options.skipInvincible);
+    const noCounter = Boolean(options.noCounter);
     const eodDef = isEndOfDays ? getUltraSkillDef('end_of_days') : null;
 
-    // 1. 完全反撃（構え中）チェック
-    if (now < target.counterStanceUntil) {
+    // 1. 完全反撃（構え中）チェック（※スリップ系 noCounter は発火しない）
+    if (!noCounter && now < target.counterStanceUntil) {
         if (isEndOfDays) {
             const counterMult = (eodDef && eodDef.counterInteraction && typeof eodDef.counterInteraction.damageMultiplier === 'number')
                 ? eodDef.counterInteraction.damageMultiplier
@@ -1417,6 +1452,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
             const damage = Math.max(1, Math.round(rawDamage * elemMult * counterMult));
 
             target.hp = Math.max(0, target.hp - damage);
+            if (!skipInvincible) {
+                target.invincibleUntil = now + 350;
+            }
             io.to(roomId).emit('playerDamaged', {
                 targetId: target.id,
                 attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
@@ -1428,7 +1466,7 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
                 elementMultiplier: elemMult,
                 attackerElement: atkElem,
                 defenderElement: target.element,
-                skipInvincible: Boolean(options.skipInvincible),
+                skipInvincible,
                 noKnockback: Boolean(options.noKnockback)
             });
 
@@ -1447,7 +1485,12 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
         return false;
     }
 
-    // 2. 絶対防壁 / 通常バリア Z チェック
+    // 2. サーバー権威 i-frame (350ms) チェック
+    if (!skipInvincible && now < (target.invincibleUntil || 0)) {
+        return false;
+    }
+
+    // 3. 絶対防壁 / 通常バリア Z チェック
     const hasAbsoluteWall = now < target.absoluteWallUntil;
     const hasShield = now < target.shieldUntil;
     if (hasAbsoluteWall || hasShield) {
@@ -1476,6 +1519,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
             const damage = Math.max(1, Math.round(rawDamage * elemMult * guardMult));
 
             target.hp = Math.max(0, target.hp - damage);
+            if (!skipInvincible) {
+                target.invincibleUntil = now + 350;
+            }
             io.to(roomId).emit('playerDamaged', {
                 targetId: target.id,
                 attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
@@ -1487,7 +1533,7 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
                 elementMultiplier: elemMult,
                 attackerElement: atkElem,
                 defenderElement: target.element,
-                skipInvincible: Boolean(options.skipInvincible),
+                skipInvincible,
                 noKnockback: Boolean(options.noKnockback),
                 byAbsoluteWall: hasAbsoluteWall,
                 byShield: !hasAbsoluteWall && hasShield
@@ -1514,6 +1560,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
     const damage = Math.max(1, Math.round(rawDamage * elemMult));
 
     target.hp = Math.max(0, target.hp - damage);
+    if (!skipInvincible) {
+        target.invincibleUntil = now + 350;
+    }
     io.to(roomId).emit('playerDamaged', {
         targetId: target.id,
         attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
@@ -1525,7 +1574,7 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
         elementMultiplier: elemMult,
         attackerElement: atkElem,
         defenderElement: target.element,
-        skipInvincible: Boolean(options.skipInvincible),
+        skipInvincible,
         noKnockback: Boolean(options.noKnockback)
     });
 
@@ -1548,7 +1597,8 @@ function applyPulseDamageToPlayer(roomId, target, damage, attackType, matchId, b
     const elem = bossElement || room.boss.element || 'neutral';
     return applyDamageToPlayerInternal(roomId, target, 'BOSS', damage, 'down', attackType, matchId, elem, {
         skipInvincible: true,
-        noKnockback: true
+        noKnockback: true,
+        noCounter: attackType === 'magma'
     });
 }
 
@@ -2251,7 +2301,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ルーム入室
+    // ルーム入室（試合中の途中参戦にも対応）
     socket.on('joinRoom', (payload) => {
         const roomId = sanitizeRoomId(payload && payload.roomId);
         if (!roomId) return;
@@ -2327,6 +2377,10 @@ io.on('connection', (socket) => {
         const equippedSkill = sanitizeUltraSkillId(prof.equippedUltra);
         const ultraStockCount = equippedSkill ? (prof.ultraStocks[equippedSkill] || 0) : 0;
 
+        const isMidGameJoin = (room.state === 'playing' || room.state === 'countdown');
+        const isResultJoin = (room.state === 'result');
+        const spawnPos = isMidGameJoin ? findSafePosition(room, CHAR_SIZE) : { x: ARENA_CENTER_X - 24, y: ARENA_CENTER_Y - 24 };
+
         room.players[socket.id] = {
             id: socket.id,
             clientKey,
@@ -2336,16 +2390,16 @@ io.on('connection', (socket) => {
             element,
             hasSpecialInk: inkMeta.hasSpecialInk,
             dominantSpecialInk: inkMeta.dominantSpecialInk,
-            x: ARENA_CENTER_X - 24,
-            y: ARENA_CENTER_Y - 24,
+            x: spawnPos.x,
+            y: spawnPos.y,
             facing: 'right',
             characterData: gridData,
             stats: cleanStats,
             hp: cleanStats.maxHp,
             maxHp: cleanStats.maxHp,
             stocks: INITIAL_STOCKS,
-            isDead: false,
-            isEliminated: false,
+            isDead: isResultJoin,
+            isEliminated: isResultJoin,
             shieldUntil: 0,
             absoluteWallUntil: 0,
             counterStanceUntil: 0,
@@ -2375,7 +2429,30 @@ io.on('connection', (socket) => {
             ...createPlayerGuards()
         };
 
-        emitRoomStateSync(roomId);
+        if (isMidGameJoin || isResultJoin) {
+            // BOSS戦の途中参戦時は、現在人数に合わせてボスHP割合を維持したまま再スケール
+            if (isMidGameJoin && room.mode === 'boss' && room.boss && room.boss.hp > 0) {
+                const def = getBossDef(room.boss.id);
+                const totalCount = Math.min(MAX_PLAYERS_PER_ROOM, Math.max(1, Object.keys(room.players).length));
+                const targetMaxHp = (def.hpByPlayers && def.hpByPlayers[totalCount]) || def.maxHp;
+                if (targetMaxHp > room.boss.maxHp) {
+                    const hpRatio = room.boss.hp / room.boss.maxHp;
+                    room.boss.maxHp = targetMaxHp;
+                    room.boss.hp = Math.max(1, Math.round(targetMaxHp * hpRatio));
+                    room.boss.initialPlayerCount = totalCount;
+                }
+            }
+
+            // 本人には全体状態、既存メンバーには新規プレイヤー＆更新後ボスのみ送信（他人の弾や演出を消さない）
+            socket.emit('roomStateSync', buildRoomStatePayload(room));
+            const serializedAll = serializeRoomPlayers(room);
+            socket.to(roomId).emit('playerJoined', {
+                player: serializedAll[socket.id],
+                boss: room.boss
+            });
+        } else {
+            emitRoomStateSync(roomId);
+        }
     });
 
     // ルームモード切替（ホストのみ・waiting中）
@@ -2513,6 +2590,10 @@ io.on('connection', (socket) => {
     socket.on('returnToLobby', () => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
+        if (room.state !== 'waiting' && room.state !== 'result') {
+            socket.emit('roomActionRejected', { message: '試合中はロビーに戻れません' });
+            return;
+        }
         room.matchId = (room.matchId || 0) + 1;
         stopGimmickLoop(currentRoom);
         room.state = 'waiting';
@@ -2592,7 +2673,8 @@ io.on('connection', (socket) => {
                 ny = p.y + (ny - p.y) * ratio;
             }
 
-            if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12)) {
+            const wasInWall = overlapsBreakableWall(room, p.x, p.y, CHAR_SIZE, 6);
+            if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12) || (!wasInWall && overlapsBreakableWall(room, nx, ny, CHAR_SIZE, 6))) {
                 nx = p.x;
                 ny = p.y;
             }
@@ -2656,6 +2738,9 @@ io.on('connection', (socket) => {
         if (itemIndex === -1) return;
 
         const item = room.items[itemIndex];
+        const pc = playerCenter(p);
+        if (Math.hypot(pc.x - item.x, pc.y - item.y) > 64) return;
+
         room.items.splice(itemIndex, 1);
 
         if (item.type === 'speed') {
@@ -3062,19 +3147,6 @@ io.on('connection', (socket) => {
                 const atkMult = getPlayerEffectiveAttackMultiplier(caster, Date.now());
                 const rawDamage = caster.stats.atk * dmgMult * atkMult;
 
-                io.to(roomId).emit('ultraSkillEvent', {
-                    playerId: caster.id,
-                    skillId: skill.id,
-                    phase: 'impact',
-                    x: centerMeteor.x,
-                    y: centerMeteor.y,
-                    radius,
-                    meteors,
-                    facing,
-                    element: caster.element,
-                    durationMs: Number(skill.durationMs) || 320
-                });
-
                 // 各隕石（130px以内）の壊せる壁を破壊
                 let wallsChanged = false;
                 for (let i = cur.walls.length - 1; i >= 0; i--) {
@@ -3090,12 +3162,18 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('gimmicksUpdated', { walls: cur.walls, items: cur.items });
                 }
 
-                // 各半径110px円ごとに独立ヒット（複数ヒット可）・バリア防御・PvPノックバックを処理
+                // 各半径110px円ごとに独立ヒット（複数ヒット可）・ヒット数集計
+                const impacts = [];
+                let totalHits = 0;
+
                 for (const m of meteors) {
+                    let hitCount = 0;
                     if (cur.mode === 'boss') {
                         if (cur.boss && cur.boss.hp > 0 && cur.state === 'playing') {
                             if (Math.hypot(cur.boss.x - m.x, cur.boss.y - m.y) <= radius + cur.boss.radius) {
-                                applyDamageToBossInternal(roomId, caster, rawDamage, 'ultra_meteor', 'ultra');
+                                if (applyDamageToBossInternal(roomId, caster, rawDamage, 'ultra_meteor', 'ultra')) {
+                                    hitCount++;
+                                }
                             }
                         }
                     } else if (cur.mode === 'pvp' && cur.state === 'playing') {
@@ -3120,27 +3198,47 @@ io.on('connection', (socket) => {
                                     caster.element,
                                     { skipInvincible: true }
                                 );
-                                if (hitApplied && !target.isDead && !target.isEliminated) {
-                                    const kbAng = dist > 0.1 ? Math.atan2(tc.y - m.y, tc.x - m.x) : baseAngle;
-                                    pushPlayerSafely(target, kbAng, 48);
-                                    io.to(roomId).emit('playerKnockback', {
-                                        id: target.id,
-                                        x: target.x,
-                                        y: target.y,
-                                        facing: target.facing,
-                                        source: 'sky_meteor'
-                                    });
-                                    io.to(roomId).emit('playerMoved', {
-                                        id: target.id,
-                                        x: target.x,
-                                        y: target.y,
-                                        facing: target.facing
-                                    });
+                                if (hitApplied) {
+                                    hitCount++;
+                                    if (!target.isDead && !target.isEliminated) {
+                                        const kbAng = dist > 0.1 ? Math.atan2(tc.y - m.y, tc.x - m.x) : baseAngle;
+                                        pushPlayerSafely(target, kbAng, 48, cur);
+                                        io.to(roomId).emit('playerKnockback', {
+                                            id: target.id,
+                                            x: target.x,
+                                            y: target.y,
+                                            facing: target.facing,
+                                            source: 'sky_meteor'
+                                        });
+                                        io.to(roomId).emit('playerMoved', {
+                                            id: target.id,
+                                            x: target.x,
+                                            y: target.y,
+                                            facing: target.facing
+                                        });
+                                    }
                                 }
                             }
                         }
                     }
+                    totalHits += hitCount;
+                    impacts.push({ index: m.index, x: m.x, y: m.y, radius: m.radius, hitCount });
                 }
+
+                io.to(roomId).emit('ultraSkillEvent', {
+                    playerId: caster.id,
+                    skillId: skill.id,
+                    phase: 'impact',
+                    x: centerMeteor.x,
+                    y: centerMeteor.y,
+                    radius,
+                    meteors,
+                    impacts,
+                    totalHits,
+                    facing,
+                    element: caster.element,
+                    durationMs: Number(skill.durationMs) || 320
+                });
             }, warnMs);
         }
     });
@@ -3172,6 +3270,10 @@ io.on('connection', (socket) => {
         const p = room.players[socket.id];
         if (!p || p.isDead || p.isEliminated) return;
 
+        const now = Date.now();
+        if (now < (p.invincibleUntil || 0)) return;
+        if (now < (p.lastBossHitReportAt || 0) + 200) return;
+
         const def = getBossDef(room.boss.id);
         const kind = data && typeof data.kind === 'string' && def.attackProjectiles.includes(data.kind)
             ? data.kind
@@ -3182,8 +3284,9 @@ io.on('connection', (socket) => {
         if (SERVER_AUTHORITATIVE_PROJECTILES.has(kind) || (data && data.curveRate)) return;
 
         const lastAt = room.lastBossAttackAt && room.lastBossAttackAt[kind];
-        if (!lastAt || Date.now() - lastAt > 8500) return;
+        if (!lastAt || now - lastAt > 8500) return;
 
+        p.lastBossHitReportAt = now;
         const dmg = def.projectileDamage[kind] || 12;
         applyBossDamageToPlayer(currentRoom, p, dmg, kind, room.matchId, room.boss.element);
     });

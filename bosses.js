@@ -826,6 +826,9 @@
                 } else {
                     const duration = boss.phase === 2 ? 5200 : 4800;
                     boss.barrierActive = true;
+                    boss.barrierToken = (boss.barrierToken || 0) + 1;
+                    const myToken = boss.barrierToken;
+
                     io.to(roomId).emit('bossStateUpdated', boss);
                     io.to(roomId).emit('bossAttackEvent', {
                         bossId: boss.id,
@@ -836,7 +839,7 @@
 
                     registerTimeout(room, () => {
                         const cur = ctx.getRoom();
-                        if (cur && cur.matchId === matchId && cur.boss) {
+                        if (cur && cur.matchId === matchId && cur.boss && cur.boss.barrierToken === myToken) {
                             cur.boss.barrierActive = false;
                             io.to(roomId).emit('bossStateUpdated', cur.boss);
                             io.to(roomId).emit('bossAttackEvent', {
@@ -930,8 +933,8 @@
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 2650,
-                p2: 2150
+                p1: 2350,
+                p2: 2050
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -1352,8 +1355,8 @@
                 multiP2: 4.2
             },
             attackIntervalMs: {
-                p1: 2600,
-                p2: 2150
+                p1: 2400,
+                p2: 1950
             },
             attackProjectiles: ['snake_dark', 'shadow_orb'],
             projectileDamage: {
