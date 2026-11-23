@@ -406,11 +406,11 @@
             tag: '扇状5連範囲・多段',
             icon: '☄️',
             color: '#ff9f43',
-            description: '自機前方エリアへ扇状に5発（各半径110px）を展開し、650msの予兆後に隕石を落下（1発2.2倍・独立複数ヒット可）',
+            description: '自機前方エリアへ扇状に5発（各半径110px）を展開し、550msの予兆後に隕石を落下（1発2.2倍・独立複数ヒット可）',
             chargeMs: 0,
             stanceMs: 0,
-            warnMs: 650,
-            durationMs: 320,
+            warnMs: 550,
+            durationMs: 300,
             cooldownMs: ACTIONS.ultra.cooldownMs,
             maxStock: GACHA.ULTRA_MAX_STOCK,
             damageMultiplier: 2.2,
@@ -454,16 +454,16 @@
     const BOSS_DRAGON_MAGMA_DURATION_MS = 2400;  // 灼熱マグマ床持続時間
     const BOSS_DRAGON_ROAR_PULSE_DAMAGE = 4;     // 覇竜の咆哮リング1パルスダメージ
     const BOSS_DRAGON_ROAR_PULSE_COUNT = 4;      // 多段パルス回数（合計16）
-    const BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS = 160;
+    const BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS = 160;// 多段パルス間隔
     const BOSS_ABYSS_SIGIL_DAMAGE = 24;          // 闇の刻印陣
     const BOSS_ABYSS_SNAKE_DAMAGE = 14;          // 双蛇の闇弾
     const BOSS_ABYSS_RING_DAMAGE = 28;           // 深淵の拘束リング
-    const BOSS_ABYSS_SHADOW_DAMAGE = 8;          // 呪詛の影波
-    const BOSS_PHANTOM_HOMING_DAMAGE = 8;        // 幻影追尾球（状態異常なし）
+    const BOSS_ABYSS_SHADOW_DAMAGE = 10;          // 呪詛の影波
+    const BOSS_PHANTOM_HOMING_DAMAGE = 10;        // 幻影追尾球（状態異常なし）
     const BOSS_PHANTOM_AMBUSH_DAMAGE = 20;       // 潜伏奇襲着弾（減速2000ms+ノックバック）
-    const BOSS_PHANTOM_CURSE_DAMAGE = 10;        // 呪詛のランダム状態異常弾
-    const BOSS_PHANTOM_FEINT_P1_DAMAGE = 6;      // 牽制弾幕 P1
-    const BOSS_PHANTOM_FEINT_P2_DAMAGE = 8;      // 牽制弾幕 P2
+    const BOSS_PHANTOM_CURSE_DAMAGE = 20;        // 呪詛のランダム状態異常弾
+    const BOSS_PHANTOM_FEINT_P1_DAMAGE = 8;      // 牽制弾幕 P1
+    const BOSS_PHANTOM_FEINT_P2_DAMAGE = 12;      // 牽制弾幕 P2
 
     function resolvePredictedDirection(pl) {
         if (!pl) return { dx: 0, dy: 1 };
@@ -703,19 +703,19 @@
             radius: 42,
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
-            maxHp: 500,
-            hpByPlayers: { 1: 500, 2: 1000, 3: 2000, 4: 3000 },
-            speed: 2.2,
+            maxHp: 800,
+            hpByPlayers: { 1: 800, 2: 1600, 3: 2400, 4: 3200 },
+            speed: 3.2,
             barrierDamageMultiplier: 0.45,
             moveSpeed: {
-                soloP1: 2.2,
-                multiP1: 3.2,
-                soloP2: 3.2,
-                multiP2: 4.0
+                soloP1: 3.2,
+                multiP1: 4.2,
+                soloP2: 4.2,
+                multiP2: 5.0
             },
             attackIntervalMs: {
-                p1: 2050,
-                p2: 1050
+                p1: 1850,
+                p2: 950
             },
             attackProjectiles: ['homing'],
             projectileDamage: {
@@ -920,18 +920,18 @@
             spawnY: 160,
             maxHp: 1100,
             hpByPlayers: { 1: 1100, 2: 2100, 3: 3000, 4: 3800 },
-            speed: 3.0,
+            speed: 3.2,
             moveSpeed: {
-                p1: 3.0,
-                p2: 4.2,
-                soloP1: 3.0,
-                multiP1: 2.7,
-                soloP2: 4.2,
-                multiP2: 3.8
+                p1: 3.2,
+                p2: 5.2,
+                soloP1: 3.2,
+                multiP1: 3.7,
+                soloP2: 5.2,
+                multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 2950,
-                p2: 2150
+                p1: 2550,
+                p2: 1950
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -1340,16 +1340,16 @@
             radius: 44,
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
-            maxHp: 850,
-            hpByPlayers: { 1: 850, 2: 1650, 3: 2400, 4: 3100 },
-            speed: 3.0,
-            moveSpeed: {
-                p1: 3.0,
-                p2: 5.2,
-                soloP1: 3.0,
-                multiP1: 3.0,
-                soloP2: 5.2,
-                multiP2: 5.2
+            maxHp: 950,
+            hpByPlayers: { 1: 950, 2: 1900, 3: 2850, 4: 3800 },
+            speed: 5.0,
+            moveSpeed5: {
+                p1: 5.0,
+                p2: 6.2,
+                soloP1: 5.0,
+                multiP1: 6.0,
+                soloP2: 6.2,
+                multiP2: 7.2
             },
             attackIntervalMs: {
                 p1: 2100,
