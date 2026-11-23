@@ -3399,6 +3399,7 @@
         ARENA_TOP,
         ARENA_HEIGHT,
         ARENA_CENTER_X,
+        ARENA_PLAY_CENTER_Y,
         GAME_RULES,
         STATIC_OBSTACLES,
         SPECIAL_INKS,
