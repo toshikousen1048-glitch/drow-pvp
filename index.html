@@ -631,7 +631,7 @@
         };
 
         // サーバーティックで直接当たり判定を行う弾種（二重ダメージ防止のためクライアントからはヒット通知を送らない）
-        const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb']);
+        const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb', 'phantom_homing', 'curse_bolt', 'feint_orb']);
 
         let currentUiStep = 1;
         let currentRoomMode = 'pvp';
@@ -1170,7 +1170,7 @@
             initAudio(); SE.click();
             if (activeRoom && socket && socket.connected) {
                 socket.emit('leaveRoom'); activeRoom = null; roomState = 'waiting'; myReady = false; otherPlayers = {}; bossState = null; bossTrail = [];
-                player.slowUntil = 0; player.slowMultiplier = 1.0;
+                player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                 roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none'; updateLobbyUI();
             }
             homeScreen.style.display = 'flex'; updatePointsDisplay(); startBgm('menu', 1.0);
@@ -1204,7 +1204,7 @@
             x: ARENA_CENTER_X - 24, y: ARENA_CENTER_Y - 24, facing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' }, hp: 100, maxHp: 100, stocks: 1,
             isDead: false, isEliminated: false, invincibleUntil: 0, shieldUntil: 0, absoluteWallUntil: 0, counterStanceUntil: 0,
-            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowMultiplier: 1.0,
+            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowMultiplier: 1.0, attackDebuffUntil: 0, attackDebuffMultiplier: 1.0, dotUntil: 0,
             lastShieldTime: -SHIELD_COOLDOWN, lastShotTime: 0, lastMeleeTime: 0,
             ultraSkillId: null, ultraRemainingUses: 0, ultraMaxUses: 0, ultraCooldownUntil: 0, ultraState: null, ultraStateUntil: 0,
             wins: 0, points: 0
@@ -1406,14 +1406,41 @@
             else { switchStep(3); resultOverlay.style.display = 'none'; }
         }
 
+        function getUltraHudSyncSnapshot() {
+            const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
+            if (!skill || player.ultraMaxUses <= 0) return null;
+            const now = Date.now();
+            const cooldownMs = skill.cooldownMs || RULES.ACTIONS.ultra.cooldownMs || 6000;
+            const cdRemain = Math.max(0, (player.ultraCooldownUntil || 0) - now);
+            const cdRatio = 1 - Math.min(1, cdRemain / cooldownMs);
+            const maxUses = Math.max(1, Math.min(3, player.ultraMaxUses || 1));
+            const uses = Math.max(0, Math.min(maxUses, player.ultraRemainingUses || 0));
+            const activeState = (player.ultraState && now < (player.ultraStateUntil || 0)) ? player.ultraState : null;
+            let stateText = 'READY (Space)';
+            let stateColor = '#00e5ff';
+            if (activeState === 'charging') { stateText = '溜め中 (0.35s)'; stateColor = '#ff4d6d'; }
+            else if (activeState === 'counter_stance') { stateText = '構え中!'; stateColor = '#ffd60a'; }
+            else if (activeState === 'active_wall') { stateText = '絶対防壁展開!'; stateColor = '#00f5d4'; }
+            else if (activeState === 'meteor_warn') { stateText = '隕石降下中!'; stateColor = '#ff9f43'; }
+            else if (uses <= 0) { stateText = '使い切り (×0)'; stateColor = '#7f8c8d'; }
+            else if (cdRemain > 0) { stateText = `CD ${(cdRemain / 1000).toFixed(1)}s`; stateColor = '#f39c12'; }
+            const canTrigger = (roomState === 'playing' && !player.isDead && !player.isEliminated && uses > 0 && cdRemain === 0 && !activeState);
+            return { skill, uses, maxUses, cdRemain, cdRatio, activeState, stateText, stateColor, canTrigger };
+        }
+
         function updateUltraHudButton() {
             const btn = document.getElementById('hudUltraBtn'); if (!btn) return;
-            const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
-            if (!skill || player.ultraMaxUses <= 0) { btn.textContent = '⚡ Space: 未装備'; btn.disabled = true; return; }
-            const now = Date.now(), cdRemain = Math.max(0, player.ultraCooldownUntil - now), uses = player.ultraRemainingUses;
-            if (uses <= 0) { btn.textContent = `⚡ ${skill.name} (×0)`; btn.disabled = true; }
-            else if (cdRemain > 0) { btn.textContent = `⚡ ${skill.name} ×${uses} (${(cdRemain / 1000).toFixed(1)}s)`; btn.disabled = true; }
-            else { btn.textContent = `⚡ Space: ${skill.name} ×${uses}`; btn.disabled = (roomState !== 'playing' || player.isDead || player.isEliminated); }
+            const snap = getUltraHudSyncSnapshot();
+            if (!snap) { btn.textContent = '⚡ Space: 未装備'; btn.disabled = true; return; }
+            const { skill, uses, cdRemain, activeState, canTrigger } = snap;
+            if (activeState === 'charging') btn.textContent = `⚡ ${skill.name} ×${uses} [溜め中]`;
+            else if (activeState === 'counter_stance') btn.textContent = `⚡ ${skill.name} ×${uses} [構え中]`;
+            else if (activeState === 'active_wall') btn.textContent = `⚡ ${skill.name} ×${uses} [展開中]`;
+            else if (activeState === 'meteor_warn') btn.textContent = `⚡ ${skill.name} ×${uses} [降下中]`;
+            else if (uses <= 0) btn.textContent = `⚡ ${skill.name} (×0)`;
+            else if (cdRemain > 0) btn.textContent = `⚡ ${skill.name} ×${uses} (${(cdRemain / 1000).toFixed(1)}s)`;
+            else btn.textContent = `⚡ Space: ${skill.name} ×${uses}`;
+            btn.disabled = !canTrigger;
         }
 
         function getDesiredBgmState() {
@@ -1430,16 +1457,28 @@
             return { track: 'menu', rate: 1.0 };
         }
 
-        function syncSlowFromServerEpoch(targetObj, serverSlowUntilEpoch, slowMult) {
+        function syncSlowFromServerEpoch(targetObj, serverSlowUntilEpoch, slowMult, serverAtkDebuffUntilEpoch, atkDebuffMult, serverDotUntilEpoch) {
             if (!targetObj) return;
-            const remain = Math.max(0, (Number(serverSlowUntilEpoch) || 0) - Date.now());
-            if (remain > 0) {
-                targetObj.slowUntil = performance.now() + remain;
+            const nowEpoch = Date.now();
+            const nowPerf = performance.now();
+            const slowRemain = Math.max(0, (Number(serverSlowUntilEpoch) || 0) - nowEpoch);
+            if (slowRemain > 0) {
+                targetObj.slowUntil = nowPerf + slowRemain;
                 targetObj.slowMultiplier = Number(slowMult) || 0.75;
             } else {
                 targetObj.slowUntil = 0;
                 targetObj.slowMultiplier = 1.0;
             }
+            const atkRemain = Math.max(0, (Number(serverAtkDebuffUntilEpoch) || 0) - nowEpoch);
+            if (atkRemain > 0) {
+                targetObj.attackDebuffUntil = nowPerf + atkRemain;
+                targetObj.attackDebuffMultiplier = Number(atkDebuffMult) || 0.75;
+            } else {
+                targetObj.attackDebuffUntil = 0;
+                targetObj.attackDebuffMultiplier = 1.0;
+            }
+            const dotRemain = Math.max(0, (Number(serverDotUntilEpoch) || 0) - nowEpoch);
+            targetObj.dotUntil = dotRemain > 0 ? (nowPerf + dotRemain) : 0;
         }
 
         function syncBossAuraFromServer(bossObj) {
@@ -1505,7 +1544,7 @@
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
                     player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
                     player.speedBoostUntil = 0; player.powerBoostUntil = 0;
-                    syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier);
+                    syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier, me.attackDebuffUntil, me.attackDebuffMultiplier, me.dotUntil);
                     player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
@@ -1514,7 +1553,7 @@
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
                 for (const oid in otherPlayers) {
-                    syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier);
+                    syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
                 }
                 projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = []; bossTrail = [];
                 bossVortexUntil = 0; confettiParticles = []; countdownBanner = '';
@@ -1536,10 +1575,14 @@
                 bossState.hp = data.hp; bossState.maxHp = data.maxHp; bossState.phase = data.phase;
                 if (prevPhase === 1 && data.phase === 2) {
                     SE.bossPulse(); shakeTime = 16; shakeIntensity = 8;
-                    const p2Msg = bossState.id === 'abyss_weaver'
-                        ? 'PHASE 2: ABYSS AWAKENED!!'
-                        : (bossState.id === 'inferno_dragon' ? 'PHASE 2: INFERNO AWAKENED!!' : 'PHASE 2: TEMPO RUSH!!');
-                    const p2Col = bossState.id === 'abyss_weaver' ? '#e879f9' : (bossState.id === 'inferno_dragon' ? '#ff9f1c' : '#ff2a00');
+                    const p2Msg = bossState.id === 'phantom_mirage'
+                        ? 'PHASE 2: PHANTOM AWAKENED!!'
+                        : (bossState.id === 'abyss_weaver'
+                            ? 'PHASE 2: ABYSS AWAKENED!!'
+                            : (bossState.id === 'inferno_dragon' ? 'PHASE 2: INFERNO AWAKENED!!' : 'PHASE 2: TEMPO RUSH!!'));
+                    const p2Col = bossState.id === 'phantom_mirage'
+                        ? '#fda4af'
+                        : (bossState.id === 'abyss_weaver' ? '#e879f9' : (bossState.id === 'inferno_dragon' ? '#ff9f1c' : '#ff2a00'));
                     addFloatingText(bossState.x, bossState.y - 52, p2Msg, p2Col);
                     if (roomState === 'playing' && currentRoomMode === 'boss') setBgmPlaybackRate(1.12);
                 }
@@ -1565,10 +1608,15 @@
                     player.y = data.y;
                     if (data.source === 'p2_awaken') {
                         addFloatingText(player.x + 24, player.y - 18, 'SHOCKWAVE!!', '#ffbe0b');
+                    } else if (data.source === 'phantom_ambush') {
+                        addFloatingText(player.x + 24, player.y - 18, 'AMBUSH!!', '#f43f5e');
                     }
                 } else if (otherPlayers[data.id]) {
                     otherPlayers[data.id].x = data.x;
                     otherPlayers[data.id].y = data.y;
+                    if (data.source === 'phantom_ambush') {
+                        addFloatingText(otherPlayers[data.id].x + 24, otherPlayers[data.id].y - 18, 'AMBUSH!!', '#f43f5e');
+                    }
                 }
             });
             socket.on('playerSlowed', (data) => {
@@ -1579,6 +1627,23 @@
                 targetObj.slowMultiplier = Number(data.multiplier) || 0.75;
                 targetObj.slowUntil = performance.now() + (Number(data.durationMs) || 1800);
                 addFloatingText(targetObj.x + 24, targetObj.y - 22, 'SLOW -25%', '#c084fc');
+            });
+            socket.on('playerAttackDebuffed', (data) => {
+                if (!data || roomState !== 'playing') return;
+                const isMe = data.id === socket.id;
+                const targetObj = isMe ? player : otherPlayers[data.id];
+                if (!targetObj) return;
+                targetObj.attackDebuffMultiplier = Number(data.multiplier) || 0.75;
+                targetObj.attackDebuffUntil = performance.now() + (Number(data.durationMs) || 3000);
+                addFloatingText(targetObj.x + 24, targetObj.y - 22, 'ATK -25%', '#fb7185');
+            });
+            socket.on('playerDotApplied', (data) => {
+                if (!data || roomState !== 'playing') return;
+                const isMe = data.id === socket.id;
+                const targetObj = isMe ? player : otherPlayers[data.id];
+                if (!targetObj) return;
+                targetObj.dotUntil = performance.now() + (Number(data.durationMs) || 3000);
+                addFloatingText(targetObj.x + 24, targetObj.y - 22, 'CURSE DOT!', '#e879f9');
             });
             socket.on('itemEffectApplied', (data) => {
                 const isMe = data.id === socket.id, targetObj = isMe ? player : otherPlayers[data.id];
@@ -1608,7 +1673,7 @@
                 arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = [];
                 bossProjectiles = []; bossEffects = []; bossTrail = []; bossVortexUntil = 0; confettiParticles = [];
                 player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
-                player.speedBoostUntil = 0; player.powerBoostUntil = 0; player.slowUntil = 0; player.slowMultiplier = 1.0;
+                player.speedBoostUntil = 0; player.powerBoostUntil = 0; player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                 player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                 player.ultraCooldownUntil = 0; player.ultraState = null; player.ultraStateUntil = 0;
                 for (const k in keys) keys[k] = false;
@@ -1631,7 +1696,7 @@
             socket.on('matchResult', (data) => {
                 roomState = 'result'; for (const k in keys) keys[k] = false;
                 player.slowUntil = 0; player.slowMultiplier = 1.0;
-                for (const oid in otherPlayers) { otherPlayers[oid].slowUntil = 0; otherPlayers[oid].slowMultiplier = 1.0; }
+                for (const oid in otherPlayers) { otherPlayers[oid].slowUntil = 0; otherPlayers[oid].slowMultiplier = 1.0; otherPlayers[oid].attackDebuffUntil = 0; otherPlayers[oid].attackDebuffMultiplier = 1.0; otherPlayers[oid].dotUntil = 0; }
                 bossTrail = [];
                 if (bossState) { bossState.scaleAuraActive = false; bossState.scaleAuraUntil = 0; }
                 startBgm('menu', 1.0); updateUltraHudButton();
@@ -1726,9 +1791,20 @@
                     const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + rx)), nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + ry));
                     if (!collidesWithWall(nextX, nextY, 48)) { player.x = nextX; player.y = nextY; socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing }); }
                 }
-                const label = data.byAbsoluteWall ? 'ABSOLUTE!' : 'BLOCK!';
-                if (data.targetId === socket.id) addFloatingText(player.x + 24, player.y - 12, label, '#00e5ff');
-                else if (otherPlayers[data.targetId]) addFloatingText(otherPlayers[data.targetId].x + 24, otherPlayers[data.targetId].y - 12, label, '#00e5ff');
+                const isAbs = Boolean(data.byAbsoluteWall);
+                const label = isAbs ? 'ABSOLUTE! (1/4)' : 'BLOCK!';
+                const labelCol = isAbs ? '#00f5d4' : '#00e5ff';
+                const defender = data.targetId === socket.id ? player : otherPlayers[data.targetId];
+                if (defender) {
+                    addFloatingText(defender.x + 24, defender.y - 14, label, labelCol);
+                    if (isAbs) {
+                        ultraEffects.push({
+                            kind: 'absolute_guard', playerId: data.targetId,
+                            x: defender.x + 24, y: defender.y + 24,
+                            startedAt: performance.now(), durationMs: 260
+                        });
+                    }
+                }
             });
             socket.on('remoteAttack', (data) => { if (data.type === 'shot') spawnProjectile(data.attackerId, data.x, data.y, data.facing, data.color, data.spd, false); });
             socket.on('slashMotionEvent', (ev) => {
@@ -1736,53 +1812,109 @@
                 spawnSlashMotion(ev.attackerId, ev.x, ev.y, ev.facing, ev.element, ev.specialInkType, ev.isPowered);
             });
             socket.on('ultraSkillEvent', (ev) => {
-                if (roomState !== 'playing') return;
+                if (!ev || roomState !== 'playing') return;
                 const isMe = ev.playerId === socket.id, targetObj = isMe ? player : otherPlayers[ev.playerId];
+                const nowPerf = performance.now(), nowEpoch = Date.now();
                 if (isMe) {
-                    if (typeof ev.remainingUses === 'number') player.ultraRemainingUses = ev.remainingUses;
-                    if (typeof ev.maxUses === 'number') player.ultraMaxUses = ev.maxUses;
+                    if (typeof ev.remainingUses === 'number') player.ultraRemainingUses = Math.max(0, Math.min(3, ev.remainingUses));
+                    if (typeof ev.maxUses === 'number') player.ultraMaxUses = Math.max(0, Math.min(3, ev.maxUses));
                     if (typeof ev.cooldownUntil === 'number') player.ultraCooldownUntil = ev.cooldownUntil;
                     updateUltraHudButton();
                 }
                 if (ev.phase === 'charge' || ev.phase === 'stance' || ev.phase === 'warn' || ev.phase === 'active') SE.ultra();
                 if (ev.skillId === 'absolute_wall' && targetObj) {
                     if (ev.phase === 'active') {
-                        targetObj.absoluteWallUntil = performance.now() + (ev.durationMs || 2600);
-                        if (isMe) { player.ultraState = 'active_wall'; player.ultraStateUntil = Date.now() + (ev.durationMs || 2600); }
-                        addFloatingText(targetObj.x + 24, targetObj.y - 18, '絶対防壁!!', '#00e5ff');
+                        const dur = ev.durationMs || 2600;
+                        targetObj.absoluteWallUntil = nowPerf + dur;
+                        if (isMe) { player.ultraState = 'active_wall'; player.ultraStateUntil = nowEpoch + dur; }
+                        addFloatingText(targetObj.x + 24, targetObj.y - 18, '絶対防壁!! (1/4軽減)', '#00e5ff');
                     } else if (ev.phase === 'end') {
                         targetObj.absoluteWallUntil = 0; if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
                     }
                 } else if (ev.skillId === 'perfect_counter' && targetObj) {
                     if (ev.phase === 'stance') {
-                        targetObj.counterStanceUntil = performance.now() + (ev.durationMs || 1800);
-                        if (isMe) { player.ultraState = 'counter_stance'; player.ultraStateUntil = Date.now() + (ev.durationMs || 1800); }
-                        addFloatingText(targetObj.x + 24, targetObj.y - 18, '完全反撃・構え!', '#ffd60a');
+                        const dur = ev.durationMs || 1800;
+                        targetObj.counterStanceUntil = nowPerf + dur;
+                        if (isMe) { player.ultraState = 'counter_stance'; player.ultraStateUntil = nowEpoch + dur; }
+                        addFloatingText(targetObj.x + 24, targetObj.y - 18, '完全反撃・構え! (半減+反撃)', '#ffd60a');
                     } else if (ev.phase === 'counter_fire') {
                         targetObj.counterStanceUntil = 0; if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
-                        SE.counter(); shakeTime = 14; shakeIntensity = 8; addFloatingText(ev.x, ev.y - 26, 'PERFECT COUNTER!!', '#ffd60a');
-                        ultraEffects.push({ kind: 'counter_fire', x: ev.x, y: ev.y, radius: ev.radius || 210, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 320 });
+                        SE.counter(); shakeTime = 14; shakeIntensity = 8;
+                        addFloatingText(ev.x, ev.y - 26, 'PERFECT COUNTER!!', '#ffd60a');
+                        ultraEffects.push({
+                            kind: 'counter_fire', x: ev.x, y: ev.y, radius: ev.radius || 210,
+                            element: ev.element, startedAt: nowPerf, durationMs: ev.durationMs || 320
+                        });
                     } else if (ev.phase === 'end') {
                         targetObj.counterStanceUntil = 0; if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
                         if (ev.whiff) addFloatingText(targetObj.x + 24, targetObj.y - 14, '構え解除', '#a4b0be');
                     }
                 } else if (ev.skillId === 'end_of_days') {
                     if (ev.phase === 'charge') {
-                        if (isMe) { player.ultraState = 'charging'; player.ultraStateUntil = Date.now() + (ev.durationMs || 550); }
-                        ultraEffects.push({ kind: 'end_charge', playerId: ev.playerId, x: ev.x, y: ev.y, facing: ev.facing, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 550 });
+                        const dur = ev.durationMs || 350;
+                        if (isMe) { player.ultraState = 'charging'; player.ultraStateUntil = nowEpoch + dur; }
+                        ultraEffects.push({
+                            kind: 'end_charge', playerId: ev.playerId,
+                            x: ev.x, y: ev.y, facing: ev.facing || (targetObj && targetObj.facing) || 'right',
+                            range: ev.range || 620, halfWidth: ev.halfWidth || 56,
+                            element: ev.element, startedAt: nowPerf, durationMs: dur
+                        });
                     } else if (ev.phase === 'fire') {
                         if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
-                        SE.bossSlash(); shakeTime = 14; shakeIntensity = 8;
-                        ultraEffects.push({ kind: 'end_fire', x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 260 });
+                        SE.bossSlash(); shakeTime = 16; shakeIntensity = 9;
+                        ultraEffects.push({
+                            kind: 'end_fire', playerId: ev.playerId,
+                            x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2,
+                            halfWidth: ev.halfWidth || 56,
+                            barrierPierced: Boolean(ev.barrierPierced),
+                            element: ev.element, startedAt: nowPerf, durationMs: ev.durationMs || 260
+                        });
                     }
                 } else if (ev.skillId === 'sky_meteor') {
                     if (ev.phase === 'warn') {
-                        if (isMe) { player.ultraState = 'meteor_warn'; player.ultraStateUntil = Date.now() + (ev.durationMs || 800); }
-                        ultraEffects.push({ kind: 'meteor_warn', x: ev.x, y: ev.y, radius: ev.radius || 100, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 800 });
+                        const dur = ev.durationMs || 650;
+                        if (isMe) { player.ultraState = 'meteor_warn'; player.ultraStateUntil = nowEpoch + dur; }
+                        const targets = Array.isArray(ev.targets) && ev.targets.length > 0
+                            ? ev.targets
+                            : [{ x: ev.x, y: ev.y, radius: ev.radius || 110, index: 0 }];
+                        targets.forEach((pt, idx) => {
+                            ultraEffects.push({
+                                kind: 'meteor_warn', playerId: ev.playerId,
+                                x: pt.x, y: pt.y, radius: pt.radius || ev.radius || 110,
+                                meteorIndex: typeof pt.index === 'number' ? pt.index : idx,
+                                totalMeteors: targets.length,
+                                element: ev.element, startedAt: nowPerf, durationMs: dur
+                            });
+                        });
                     } else if (ev.phase === 'impact') {
                         if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
-                        SE.bossPulse(); shakeTime = 16; shakeIntensity = 9;
-                        ultraEffects.push({ kind: 'meteor_impact', x: ev.x, y: ev.y, radius: ev.radius || 100, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 320 });
+                        SE.bossPulse();
+                        const impacts = Array.isArray(ev.impacts) && ev.impacts.length > 0
+                            ? ev.impacts
+                            : [{ x: ev.x, y: ev.y, radius: ev.radius || 110, hitCount: ev.hitCount || 0 }];
+                        const totalHits = typeof ev.totalHits === 'number'
+                            ? ev.totalHits
+                            : impacts.reduce((acc, it) => acc + (Number(it.hitCount) || 0), 0);
+                        shakeTime = totalHits > 1 ? 20 : 16;
+                        shakeIntensity = totalHits > 1 ? 11 : 9;
+                        impacts.forEach((imp, idx) => {
+                            const hitCount = Number(imp.hitCount) || 0;
+                            ultraEffects.push({
+                                kind: 'meteor_impact', playerId: ev.playerId,
+                                x: imp.x, y: imp.y, radius: imp.radius || ev.radius || 110,
+                                hitCount, meteorIndex: typeof imp.index === 'number' ? imp.index : idx,
+                                element: ev.element, startedAt: nowPerf, durationMs: ev.durationMs || 340
+                            });
+                            if (hitCount >= 2) {
+                                addFloatingText(imp.x, imp.y - 26, `MULTI HIT ×${hitCount}!!`, '#ffd166');
+                            } else if (hitCount === 1) {
+                                addFloatingText(imp.x, imp.y - 22, 'METEOR HIT!', '#ff9f43');
+                            }
+                        });
+                        if (totalHits >= 2 && impacts.length > 1) {
+                            const centerImp = impacts[Math.floor(impacts.length / 2)];
+                            addFloatingText(centerImp.x, centerImp.y - 46, `METEOR CHAIN ${totalHits} HITS!!`, '#fff3b0');
+                        }
                     }
                 }
             });
@@ -1817,7 +1949,7 @@
                         if (!collidesWithWall(nextX, nextY, 48)) { player.x = nextX; player.y = nextY; }
                         socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                     }
-                    addFloatingText(player.x + 24, player.y - 10, dmgLabel, data.type === 'magma' ? '#ff9f1c' : '#ff4d4d');
+                    addFloatingText(player.x + 24, player.y - 10, dmgLabel, data.type === 'magma' ? '#ff9f1c' : (data.type === 'curse_dot' ? '#e879f9' : '#ff4d4d'));
                     if (roomState === 'playing' && currentRoomMode === 'pvp' && player.hp > 0 && player.maxHp > 0 && (player.hp / player.maxHp <= 0.30)) setBgmPlaybackRate(1.12);
                 } else if (otherPlayers[data.targetId]) {
                     const target = otherPlayers[data.targetId]; target.hp = data.hp; target.maxHp = data.maxHp;
@@ -1832,25 +1964,25 @@
                     if (data.targetPoints !== undefined) player.points = data.targetPoints;
                     player.isDead = true; player.stocks = data.stocks; player.isEliminated = Boolean(data.isEliminated);
                     player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0; player.speedBoostUntil = 0; player.powerBoostUntil = 0;
-                    player.slowUntil = 0; player.slowMultiplier = 1.0;
+                    player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                     addFloatingText(player.x + 24, player.y, data.isEliminated ? 'OUT!!' : 'KO!!', '#ff0000'); updateUltraHudButton();
                 } else if (otherPlayers[data.targetId]) {
                     const op = otherPlayers[data.targetId];
                     if (data.targetPoints !== undefined) op.points = data.targetPoints;
                     op.isDead = true; op.stocks = data.stocks; op.isEliminated = Boolean(data.isEliminated);
                     op.shieldUntil = 0; op.absoluteWallUntil = 0; op.counterStanceUntil = 0; op.speedBoostUntil = 0; op.powerBoostUntil = 0;
-                    op.slowUntil = 0; op.slowMultiplier = 1.0;
+                    op.slowUntil = 0; op.slowMultiplier = 1.0; op.attackDebuffUntil = 0; op.attackDebuffMultiplier = 1.0; op.dotUntil = 0;
                     addFloatingText(op.x + 24, op.y, data.isEliminated ? 'OUT!!' : 'KO!!', '#00ffcc');
                 }
             });
             socket.on('playerRespawn', (data) => {
                 if (data.id === socket.id) {
                     player.isDead = false; player.hp = data.hp; player.x = data.x; player.y = data.y;
-                    player.slowUntil = 0; player.slowMultiplier = 1.0;
+                    player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                     player.invincibleUntil = performance.now() + 1500; updateUltraHudButton();
                 } else if (otherPlayers[data.id]) {
                     otherPlayers[data.id].isDead = false; otherPlayers[data.id].hp = data.hp; otherPlayers[data.id].x = data.x; otherPlayers[data.id].y = data.y;
-                    otherPlayers[data.id].slowUntil = 0; otherPlayers[data.id].slowMultiplier = 1.0;
+                    otherPlayers[data.id].slowUntil = 0; otherPlayers[data.id].slowMultiplier = 1.0; otherPlayers[data.id].attackDebuffUntil = 0; otherPlayers[data.id].attackDebuffMultiplier = 1.0; otherPlayers[data.id].dotUntil = 0;
                 }
             });
             socket.on('disconnectPlayer', (id) => { delete otherPlayers[id]; updateLobbyUI(); });
@@ -2117,7 +2249,7 @@
             }
 
             // BOSS P2 残像トレイル記録（P1→P2の加速表現）
-            if (currentRoomMode === 'boss' && bossState && bossState.phase === 2) {
+            if (currentRoomMode === 'boss' && bossState && bossState.phase === 2 && !bossState.isStealthed) {
                 const last = bossTrail[bossTrail.length - 1];
                 if (!last || Math.hypot(bossState.x - last.x, bossState.y - last.y) > 4) {
                     bossTrail.push({ x: bossState.x, y: bossState.y, radius: bossState.radius || 44, life: 14 });
@@ -2184,7 +2316,7 @@
                     hitWall = true; if (p.isMine && socket && socket.connected && activeRoom) socket.emit('damageWall', { wallId: w.id, type: 'shot' }); break;
                 }
                 if (hitWall) { projectiles.splice(i, 1); continue; }
-                if (currentRoomMode === 'boss' && bossState && bossState.hp > 0 && Math.hypot(p.x - bossState.x, p.y - bossState.y) <= bossState.radius + 6) {
+                if (currentRoomMode === 'boss' && bossState && !bossState.isStealthed && bossState.hp > 0 && Math.hypot(p.x - bossState.x, p.y - bossState.y) <= bossState.radius + 6) {
                     if (p.isMine && socket && socket.connected && activeRoom) socket.emit('damageBoss', { type: 'shot' });
                     projectiles.splice(i, 1); continue;
                 }
@@ -2255,25 +2387,120 @@
                 if (ef.kind === 'end_charge') {
                     const target = ef.playerId === (socket && socket.id) ? player : otherPlayers[ef.playerId];
                     const cx = target ? target.x + 24 : ef.x, cy = target ? target.y + 24 : ef.y;
-                    c.beginPath(); c.arc(cx, cy, 46 * (1 - t * 0.7), 0, Math.PI * 2); c.strokeStyle = '#ff4d6d'; c.lineWidth = 3; c.stroke();
-                    const ang = ef.facing === 'left' ? Math.PI : ef.facing === 'up' ? -Math.PI / 2 : ef.facing === 'down' ? Math.PI / 2 : 0;
-                    c.setLineDash([8, 6]); c.strokeStyle = 'rgba(255,77,109,0.6)'; c.lineWidth = 2;
-                    c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(ang) * 560, cy + Math.sin(ang) * 560); c.stroke();
+                    const facing = (target && target.facing) || ef.facing || 'right';
+                    const range = ef.range || 620, halfWidth = ef.halfWidth || 56;
+                    const ang = facing === 'left' ? Math.PI : facing === 'up' ? -Math.PI / 2 : facing === 'down' ? Math.PI / 2 : 0;
+
+                    c.save();
+                    c.translate(cx, cy);
+                    c.rotate(ang);
+                    // 350ms 溜め予測帯（射程 620px / 半幅 56px = 全幅 112px）
+                    c.fillStyle = `rgba(255, 77, 109, ${(0.10 + t * 0.14).toFixed(2)})`;
+                    c.fillRect(0, -halfWidth, range, halfWidth * 2);
+                    // 収束する内側の照準帯
+                    const innerHalf = halfWidth * (1 - t * 0.72);
+                    c.fillStyle = `rgba(255, 209, 102, ${(0.14 + t * 0.22).toFixed(2)})`;
+                    c.fillRect(0, -innerHalf, range, innerHalf * 2);
+                    // 外枠点線と先端ライン
+                    c.setLineDash([10, 6]);
+                    c.strokeStyle = 'rgba(255, 77, 109, 0.85)';
+                    c.lineWidth = 2;
+                    c.strokeRect(0, -halfWidth, range, halfWidth * 2);
+                    c.setLineDash([]);
+                    // 中心軸レーザーサイト
+                    c.beginPath();
+                    c.moveTo(0, 0);
+                    c.lineTo(range, 0);
+                    c.strokeStyle = '#ffd166';
+                    c.lineWidth = 1.5 + t * 2;
+                    c.stroke();
+                    c.restore();
+
+                    // 術者周囲の収束リング
+                    c.beginPath();
+                    c.arc(cx, cy, 52 * (1 - t * 0.65), 0, Math.PI * 2);
+                    c.strokeStyle = '#ff4d6d';
+                    c.lineWidth = 3.5;
+                    c.stroke();
                 } else if (ef.kind === 'end_fire') {
-                    c.globalAlpha = 1 - t; c.lineCap = 'round';
-                    c.beginPath(); c.moveTo(ef.x1, ef.y1); c.lineTo(ef.x2, ef.y2); c.strokeStyle = '#ff4d6d'; c.lineWidth = 44 * (1 - t * 0.4); c.stroke();
-                    c.beginPath(); c.moveTo(ef.x1, ef.y1); c.lineTo(ef.x2, ef.y2); c.strokeStyle = '#fff'; c.lineWidth = 14 * (1 - t * 0.3); c.stroke();
+                    const fade = 1 - t;
+                    const beamOuterW = (ef.halfWidth || 56) * 2 * (1 - t * 0.25);
+                    c.globalAlpha = fade;
+                    c.lineCap = 'butt';
+                    // 外周オーラ（半幅56px相当の極太ビーム）
+                    c.beginPath(); c.moveTo(ef.x1, ef.y1); c.lineTo(ef.x2, ef.y2);
+                    c.strokeStyle = 'rgba(255, 42, 95, 0.45)'; c.lineWidth = beamOuterW; c.stroke();
+                    // 中間エネルギー層
+                    c.beginPath(); c.moveTo(ef.x1, ef.y1); c.lineTo(ef.x2, ef.y2);
+                    c.strokeStyle = '#ff4d6d'; c.lineWidth = beamOuterW * 0.62; c.stroke();
+                    // 中心の白熱コア
+                    c.beginPath(); c.moveTo(ef.x1, ef.y1); c.lineTo(ef.x2, ef.y2);
+                    c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(8, beamOuterW * 0.24); c.stroke();
+                    // 発射口の衝撃リング
+                    c.beginPath(); c.arc(ef.x1, ef.y1, (ef.halfWidth || 56) * (0.6 + t * 0.6), 0, Math.PI * 2);
+                    c.strokeStyle = '#ffd166'; c.lineWidth = 4 * fade; c.stroke();
                 } else if (ef.kind === 'counter_fire') {
-                    c.globalAlpha = 1 - t; c.beginPath(); c.arc(ef.x, ef.y, ef.radius * (0.25 + t * 0.8), 0, Math.PI * 2);
-                    c.fillStyle = 'rgba(255,214,10,0.25)'; c.fill(); c.lineWidth = 7 * (1 - t) + 2; c.strokeStyle = '#ffd60a'; c.stroke();
+                    const fade = 1 - t;
+                    c.globalAlpha = fade;
+                    c.beginPath(); c.arc(ef.x, ef.y, ef.radius * (0.25 + t * 0.8), 0, Math.PI * 2);
+                    c.fillStyle = 'rgba(255, 214, 10, 0.28)'; c.fill();
+                    c.lineWidth = 7 * fade + 2; c.strokeStyle = '#ffd60a'; c.stroke();
+                    c.beginPath(); c.arc(ef.x, ef.y, ef.radius * (0.15 + t * 0.55), 0, Math.PI * 2);
+                    c.strokeStyle = '#ffffff'; c.lineWidth = 3 * fade + 1; c.stroke();
+                } else if (ef.kind === 'absolute_guard') {
+                    const fade = 1 - t;
+                    c.globalAlpha = fade;
+                    c.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const ang = (Math.PI / 3) * i;
+                        const r = 38 + t * 22;
+                        const px = ef.x + Math.cos(ang) * r, py = ef.y + Math.sin(ang) * r;
+                        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+                    }
+                    c.closePath();
+                    c.strokeStyle = '#00f5d4'; c.lineWidth = 4 * fade + 1.5; c.stroke();
                 } else if (ef.kind === 'meteor_warn') {
-                    c.beginPath(); c.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2); c.fillStyle = 'rgba(255,107,53,0.16)'; c.fill();
+                    const r = ef.radius || 110;
+                    // 着弾範囲円（半径 110px）
+                    c.beginPath(); c.arc(ef.x, ef.y, r, 0, Math.PI * 2);
+                    c.fillStyle = `rgba(255, 107, 53, ${(0.12 + t * 0.14).toFixed(2)})`; c.fill();
                     c.strokeStyle = '#ff9f43'; c.lineWidth = 2.5; c.setLineDash([8, 6]); c.stroke(); c.setLineDash([]);
-                    c.beginPath(); c.arc(ef.x, ef.y, ef.radius * t, 0, Math.PI * 2); c.strokeStyle = '#ffd166'; c.lineWidth = 2; c.stroke();
-                    c.fillStyle = '#ff5722'; c.beginPath(); c.arc(ef.x, ef.y - 240 * (1 - t), 18 + t * 14, 0, Math.PI * 2); c.fill();
+                    // 内側から広がる着弾タイミング円
+                    c.beginPath(); c.arc(ef.x, ef.y, r * t, 0, Math.PI * 2);
+                    c.strokeStyle = '#ffd166'; c.lineWidth = 2.2; c.stroke();
+                    // 落下中の隕石シルエット＆尾
+                    const dropY = ef.y - 260 * (1 - t);
+                    const grad = c.createLinearGradient(ef.x, dropY - 48, ef.x, dropY + 12);
+                    grad.addColorStop(0, 'rgba(255, 209, 102, 0)');
+                    grad.addColorStop(1, 'rgba(255, 87, 34, 0.85)');
+                    c.fillStyle = grad;
+                    c.beginPath();
+                    c.moveTo(ef.x - 16, dropY);
+                    c.lineTo(ef.x + 16, dropY);
+                    c.lineTo(ef.x, dropY - 56);
+                    c.closePath();
+                    c.fill();
+                    c.fillStyle = '#ff5722';
+                    c.beginPath(); c.arc(ef.x, dropY, 16 + t * 14, 0, Math.PI * 2); c.fill();
+                    c.fillStyle = '#fff3b0';
+                    c.beginPath(); c.arc(ef.x, dropY, 7 + t * 6, 0, Math.PI * 2); c.fill();
                 } else if (ef.kind === 'meteor_impact') {
-                    c.globalAlpha = 1 - t; c.beginPath(); c.arc(ef.x, ef.y, ef.radius * (0.85 + t * 0.25), 0, Math.PI * 2);
-                    c.fillStyle = 'rgba(255,87,34,0.45)'; c.fill(); c.lineWidth = 6; c.strokeStyle = colors.glow; c.stroke();
+                    const fade = 1 - t;
+                    const r = ef.radius || 110;
+                    const hitCount = Number(ef.hitCount) || 0;
+                    c.globalAlpha = fade;
+                    // メイン爆風（半径 110px）
+                    c.beginPath(); c.arc(ef.x, ef.y, r * (0.88 + t * 0.22), 0, Math.PI * 2);
+                    c.fillStyle = hitCount >= 2 ? 'rgba(255, 209, 102, 0.48)' : 'rgba(255, 87, 34, 0.44)';
+                    c.fill();
+                    c.lineWidth = hitCount >= 2 ? 7 : 5;
+                    c.strokeStyle = hitCount >= 2 ? '#ffd166' : colors.glow;
+                    c.stroke();
+                    // 複数ヒット時は二重衝撃波リングを描画
+                    if (hitCount >= 2) {
+                        c.beginPath(); c.arc(ef.x, ef.y, r * (0.55 + t * 0.55), 0, Math.PI * 2);
+                        c.strokeStyle = '#ffffff'; c.lineWidth = 3.5; c.stroke();
+                    }
                 }
                 c.restore();
             }
@@ -2314,7 +2541,7 @@
             }
         }
 
-        function drawEntity(c, x, y, facing, charData, hp, maxHp, stocks, isDead, isEliminated, isInvincible, isShielding, isAbsoluteWall, isCounterStance, isSpeedBoosted, isPowerBoosted, isSlowed, shieldCdRatio, name, rank, elementId, isMe) {
+        function drawEntity(c, x, y, facing, charData, hp, maxHp, stocks, isDead, isEliminated, isInvincible, isShielding, isAbsoluteWall, isCounterStance, isSpeedBoosted, isPowerBoosted, isSlowed, isAtkDebuffed, isDotActive, shieldCdRatio, name, rank, elementId, isMe) {
             if (isEliminated) return;
             const now = performance.now();
             if (isDead) { c.fillStyle = 'rgba(255,255,255,0.4)'; c.font = 'bold 12px sans-serif'; c.textAlign = 'center'; c.fillText('RESPAWNING...', x + 24, y + 28); return; }
@@ -2357,7 +2584,8 @@
             c.fill();
             const elemIcon = BOSS ? BOSS.getElementInfo(elementId).icon : '';
             c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.fillStyle = isMe ? '#2ecc71' : '#ffffff';
-            c.fillText(`${elemIcon}[${rank}] ${name}${isSlowed ? ' 🕸️' : ''}`, x + 24, y - 22);
+            const debuffIcons = (isSlowed ? ' 🐢' : '') + (isAtkDebuffed ? ' ⚔️↓' : '') + (isDotActive ? ' ☠️' : '');
+            c.fillText(`${elemIcon}[${rank}] ${name}${debuffIcons}`, x + 24, y - 22);
             c.font = '10px sans-serif'; c.fillText('❤️'.repeat(Math.max(0, stocks)), x + 24, y - 12);
             const barWidth = 44, barHeight = 5, barX = x + 2, barY = y - 8, ratio = Math.max(0, Math.min(1, hp / maxHp));
             c.fillStyle = '#333'; c.fillRect(barX, barY, barWidth, barHeight);
@@ -2407,6 +2635,19 @@
                     gameCtx.fillText(`🐉 竜鱗オーラ中 (被ダメ0.75x ${(scaleRemainMs / 1000).toFixed(1)}s)`, barX + 107.5, ARENA_TOP + 19);
                     gameCtx.restore();
                 }
+                if (bossState.isStealthed) {
+                    gameCtx.save();
+                    gameCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+                    gameCtx.strokeStyle = '#e2e8f0';
+                    gameCtx.lineWidth = 1.5;
+                    gameCtx.fillRect(barX, ARENA_TOP + 4, 210, 22);
+                    gameCtx.strokeRect(barX, ARENA_TOP + 4, 210, 22);
+                    gameCtx.font = 'bold 11px sans-serif';
+                    gameCtx.textAlign = 'center';
+                    gameCtx.fillStyle = '#f8fafc';
+                    gameCtx.fillText('🕶️ 潜伏無敵中 (INVINCIBLE)', barX + 105, ARENA_TOP + 19);
+                    gameCtx.restore();
+                }
                 return;
             }
             const participants = [{ name: player.name, stocks: player.stocks, isMe: true, isEliminated: player.isEliminated }, ...Object.values(otherPlayers).map((op) => ({ name: op.name || '相手', stocks: op.stocks ?? 1, isMe: false, isEliminated: op.isEliminated }))];
@@ -2420,59 +2661,88 @@
 
         function drawStatusDebuffHUD(nowPerf) {
             if (!activeRoom || roomState !== 'playing') return;
+            const items = [];
             const slowRemainMs = Math.max(0, (player.slowUntil || 0) - nowPerf);
-            if (slowRemainMs <= 0) return;
+            if (slowRemainMs > 0) {
+                items.push({ label: '🐢 移動速度低下 (0.75x)', remainMs: slowRemainMs, maxMs: 2000, bg: 'rgba(38, 12, 68, 0.88)', border: '#c084fc', text: '#f5d0fe', barBg: '#2e1065', barFill: '#c084fc' });
+            }
+            const atkRemainMs = Math.max(0, (player.attackDebuffUntil || 0) - nowPerf);
+            if (atkRemainMs > 0) {
+                items.push({ label: '⚔️ 攻撃威力減少 (0.75x)', remainMs: atkRemainMs, maxMs: 3000, bg: 'rgba(76, 5, 25, 0.88)', border: '#fb7185', text: '#ffe4e6', barBg: '#4c0519', barFill: '#fb7185' });
+            }
+            const dotRemainMs = Math.max(0, (player.dotUntil || 0) - nowPerf);
+            if (dotRemainMs > 0) {
+                items.push({ label: '☠️ 持続ダメージ (6/0.6s)', remainMs: dotRemainMs, maxMs: 3000, bg: 'rgba(59, 7, 100, 0.88)', border: '#e879f9', text: '#fae8ff', barBg: '#3b0764', barFill: '#e879f9' });
+            }
+            if (items.length === 0) return;
 
             const boxX = 10;
-            const boxY = (player.ultraSkillId && player.ultraMaxUses > 0) ? (ARENA_HEIGHT - 80) : (ARENA_HEIGHT - 44);
-            const ratio = Math.min(1, slowRemainMs / 1800);
+            const baseBottomY = (player.ultraSkillId && player.ultraMaxUses > 0) ? (ARENA_HEIGHT - 80) : (ARENA_HEIGHT - 44);
+            items.forEach((it, idx) => {
+                const boxY = baseBottomY - idx * 34;
+                const ratio = Math.min(1, it.remainMs / it.maxMs);
+                gameCtx.save();
+                gameCtx.fillStyle = it.bg;
+                gameCtx.strokeStyle = it.border;
+                gameCtx.lineWidth = 1.5;
+                gameCtx.fillRect(boxX, boxY, 240, 30);
+                gameCtx.strokeRect(boxX, boxY, 240, 30);
 
-            gameCtx.save();
-            gameCtx.fillStyle = 'rgba(38, 12, 68, 0.88)';
-            gameCtx.strokeStyle = '#c084fc';
-            gameCtx.lineWidth = 1.5;
-            gameCtx.fillRect(boxX, boxY, 240, 30);
-            gameCtx.strokeRect(boxX, boxY, 240, 30);
+                gameCtx.font = 'bold 11px sans-serif';
+                gameCtx.textAlign = 'left';
+                gameCtx.fillStyle = it.text;
+                gameCtx.fillText(it.label, boxX + 8, boxY + 15);
+                gameCtx.textAlign = 'right';
+                gameCtx.fillStyle = it.border;
+                gameCtx.fillText(`${(it.remainMs / 1000).toFixed(1)}s`, boxX + 232, boxY + 15);
 
-            gameCtx.font = 'bold 11px sans-serif';
-            gameCtx.textAlign = 'left';
-            gameCtx.fillStyle = '#f5d0fe';
-            gameCtx.fillText(`🕸️ 闇の刻印: 移動0.75x`, boxX + 8, boxY + 15);
-            gameCtx.textAlign = 'right';
-            gameCtx.fillStyle = '#e879f9';
-            gameCtx.fillText(`${(slowRemainMs / 1000).toFixed(1)}s`, boxX + 232, boxY + 15);
-
-            gameCtx.fillStyle = '#2e1065';
-            gameCtx.fillRect(boxX + 8, boxY + 21, 224, 4);
-            gameCtx.fillStyle = '#c084fc';
-            gameCtx.fillRect(boxX + 8, boxY + 21, 224 * ratio, 4);
-            gameCtx.restore();
+                gameCtx.fillStyle = it.barBg;
+                gameCtx.fillRect(boxX + 8, boxY + 21, 224, 4);
+                gameCtx.fillStyle = it.barFill;
+                gameCtx.fillRect(boxX + 8, boxY + 21, 224 * ratio, 4);
+                gameCtx.restore();
+            });
         }
 
         function drawUltraHUD() {
             if (!activeRoom || roomState !== 'playing') return;
-            const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
-            if (!skill || player.ultraMaxUses <= 0) return;
-            const now = Date.now(), cdRemain = Math.max(0, player.ultraCooldownUntil - now);
-            const cdRatio = 1 - Math.min(1, cdRemain / (skill.cooldownMs || 6000));
-            let stateText = cdRemain > 0 ? `CD ${(cdRemain / 1000).toFixed(1)}s` : (player.ultraRemainingUses > 0 ? 'READY (Space)' : '使用済');
-            if (player.ultraState === 'charging') stateText = '溜め中!';
-            else if (player.ultraState === 'counter_stance') stateText = '構え中!';
-            else if (player.ultraState === 'active_wall') stateText = '展開中!';
-            else if (player.ultraState === 'meteor_warn') stateText = '隕石予兆!';
+            const snap = getUltraHudSyncSnapshot();
+            if (!snap) return;
+            const { skill, uses, maxUses, cdRemain, cdRatio, activeState, stateText, stateColor } = snap;
 
             gameCtx.save();
-            gameCtx.fillStyle = 'rgba(11, 14, 29, 0.84)';
-            gameCtx.strokeStyle = player.ultraState ? '#ffd60a' : (cdRemain === 0 && player.ultraRemainingUses > 0 ? '#00e5ff' : '#415294');
+            gameCtx.fillStyle = 'rgba(11, 14, 29, 0.88)';
+            gameCtx.strokeStyle = activeState ? '#ffd60a' : (cdRemain === 0 && uses > 0 ? '#00e5ff' : '#415294');
             gameCtx.lineWidth = 1.5;
-            gameCtx.fillRect(10, ARENA_HEIGHT - 44, 240, 34);
-            gameCtx.strokeRect(10, ARENA_HEIGHT - 44, 240, 34);
-            gameCtx.font = 'bold 12px sans-serif'; gameCtx.textAlign = 'left'; gameCtx.fillStyle = '#fff';
-            gameCtx.fillText(`${skill.icon} ${skill.name} ×${player.ultraRemainingUses}`, 18, ARENA_HEIGHT - 27);
-            gameCtx.textAlign = 'right'; gameCtx.fillStyle = player.ultraState ? '#ffd60a' : '#00e5ff';
-            gameCtx.fillText(stateText, 242, ARENA_HEIGHT - 27);
-            gameCtx.fillStyle = '#1f2847'; gameCtx.fillRect(18, ARENA_HEIGHT - 17, 224, 4);
-            gameCtx.fillStyle = cdRatio >= 1 ? '#00e5ff' : '#f39c12'; gameCtx.fillRect(18, ARENA_HEIGHT - 17, 224 * cdRatio, 4);
+            gameCtx.fillRect(10, ARENA_HEIGHT - 46, 256, 36);
+            gameCtx.strokeRect(10, ARENA_HEIGHT - 46, 256, 36);
+
+            // スキル名と残り回数 (×1〜×3)
+            gameCtx.font = 'bold 12px sans-serif';
+            gameCtx.textAlign = 'left';
+            gameCtx.fillStyle = uses > 0 ? '#ffffff' : '#8a94a6';
+            gameCtx.fillText(`${skill.icon} ${skill.name} ×${uses}/${maxUses}`, 18, ARENA_HEIGHT - 29);
+
+            // 右側ステータス表示
+            gameCtx.textAlign = 'right';
+            gameCtx.fillStyle = stateColor;
+            gameCtx.fillText(stateText, 258, ARENA_HEIGHT - 29);
+
+            // ストックピップ (×1〜×3)
+            for (let i = 0; i < maxUses; i++) {
+                const pipX = 18 + i * 14;
+                const pipY = ARENA_HEIGHT - 20;
+                gameCtx.fillStyle = i < uses ? '#ffd166' : '#252d4f';
+                gameCtx.fillRect(pipX, pipY, 10, 5);
+            }
+
+            // 6000ms クールダウン進行バー
+            const barX = 18 + maxUses * 14 + 4;
+            const barW = 258 - barX;
+            gameCtx.fillStyle = '#1f2847';
+            gameCtx.fillRect(barX, ARENA_HEIGHT - 20, barW, 5);
+            gameCtx.fillStyle = activeState ? '#ffd60a' : (cdRatio >= 1 && uses > 0 ? '#00e5ff' : '#f39c12');
+            gameCtx.fillRect(barX, ARENA_HEIGHT - 20, barW * cdRatio, 5);
             gameCtx.restore();
         }
 
@@ -2515,6 +2785,7 @@
                 gameCtx, player.x, player.y, player.facing, gridData, player.hp, player.maxHp, player.stocks, player.isDead, player.isEliminated,
                 now < player.invincibleUntil, now < player.shieldUntil, now < player.absoluteWallUntil, now < player.counterStanceUntil,
                 now < player.speedBoostUntil, now < player.powerBoostUntil, now < (player.slowUntil || 0),
+                now < (player.attackDebuffUntil || 0), now < (player.dotUntil || 0),
                 myShieldCdRatio, player.name, player.rank, player.element, true
             );
             for (const id in otherPlayers) {
@@ -2523,6 +2794,7 @@
                     gameCtx, p.x, p.y, p.facing || 'right', p.characterData, p.hp || 100, p.maxHp || 100, p.stocks ?? 1, p.isDead, p.isEliminated,
                     false, now < (p.shieldUntil || 0), now < (p.absoluteWallUntil || 0), now < (p.counterStanceUntil || 0),
                     now < (p.speedBoostUntil || 0), now < (p.powerBoostUntil || 0), now < (p.slowUntil || 0),
+                    now < (p.attackDebuffUntil || 0), now < (p.dotUntil || 0),
                     null, p.name || '相手', p.rank || 'B', p.element || 'neutral', false
                 );
             }

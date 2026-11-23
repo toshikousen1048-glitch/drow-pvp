@@ -389,6 +389,40 @@
                 playTone(620, 'sawtooth', 0.24, 0.1, 180);
             }, 65);
         },
+        // 終焉の一閃 (end_of_days) 専用フェーズ・貫通/軽減SE
+        endOfDaysCharge: () => {
+            if (!canPlaySe('endOfDaysCharge', 280)) return;
+            playTone(185, 'sawtooth', 0.34, 0.08, 920);
+            setTimeout(() => playTone(370, 'triangle', 0.24, 0.06, 1280), 80);
+        },
+        endOfDaysFire: () => {
+            if (!canPlaySe('endOfDaysFire', 250)) return;
+            playNoise(0.38, 0.15);
+            playTone(220, 'sawtooth', 0.4, 0.12, 46);
+            setTimeout(() => playTone(660, 'square', 0.26, 0.08, 110), 40);
+        },
+        endOfDaysPierce: () => {
+            if (!canPlaySe('endOfDaysPierce', 100)) return;
+            playNoise(0.2, 0.13);
+            playTone(1320, 'square', 0.12, 0.09, 320);
+            setTimeout(() => playTone(210, 'sawtooth', 0.18, 0.09, 68), 40);
+        },
+        endOfDaysMitigate: () => {
+            if (!canPlaySe('endOfDaysMitigate', 100)) return;
+            playTone(740, 'triangle', 0.14, 0.09, 370);
+            setTimeout(() => playTone(490, 'sine', 0.18, 0.08, 245), 45);
+        },
+        // 天空隕石 (sky_meteor) 専用予兆・5連着弾SE
+        skyMeteorWarn: () => {
+            if (!canPlaySe('skyMeteorWarn', 220)) return;
+            playTone(680, 'sine', 0.22, 0.06, 260);
+            setTimeout(() => playTone(520, 'triangle', 0.18, 0.05, 220), 65);
+        },
+        skyMeteorImpact: () => {
+            if (!canPlaySe('skyMeteorImpact', 75)) return;
+            playNoise(0.2, 0.12);
+            playTone(175 + Math.random() * 35, 'sawtooth', 0.22, 0.1, 44);
+        },
         bossSlash: () => {
             if (!canPlaySe('bossSlash', 90)) return;
             playNoise(0.25, 0.13);
@@ -485,6 +519,51 @@
             if (!canPlaySe('slowDebuff', 250)) return;
             playTone(220, 'triangle', 0.24, 0.08, 95);
         },
+        // STAGE 5 (PHANTOM MIRAGE / 幻惑の蜃気楼) 専用ギミック・状態異常・演出SE
+        mirageStealth: () => {
+            if (!canPlaySe('mirageStealth', 220)) return;
+            playTone(760, 'sine', 0.24, 0.07, 240);
+            setTimeout(() => playTone(520, 'triangle', 0.28, 0.06, 180), 65);
+        },
+        mirageCircleWarn: () => {
+            if (!canPlaySe('mirageCircleWarn', 160)) return;
+            playTone(480, 'sine', 0.22, 0.06, 720);
+            setTimeout(() => playTone(640, 'triangle', 0.2, 0.05, 960), 60);
+        },
+        mirageAmbushFire: () => {
+            if (!canPlaySe('mirageAmbushFire', 140)) return;
+            playNoise(0.26, 0.12);
+            playTone(360, 'sawtooth', 0.24, 0.1, 88);
+            setTimeout(() => playTone(540, 'square', 0.16, 0.07, 180), 50);
+        },
+        mirageCloneDeploy: () => {
+            if (!canPlaySe('mirageCloneDeploy', 180)) return;
+            playTone(420, 'triangle', 0.18, 0.06, 840);
+            setTimeout(() => playTone(630, 'sine', 0.22, 0.06, 1050), 70);
+        },
+        mirageHomingOrb: () => {
+            if (!canPlaySe('mirageHomingOrb', 130)) return;
+            playTone(620, 'sine', 0.15, 0.05, 340);
+            setTimeout(() => playTone(780, 'triangle', 0.13, 0.04, 420), 45);
+        },
+        mirageBarrage: () => {
+            if (!canPlaySe('mirageBarrage', 140)) return;
+            playNoise(0.11, 0.07);
+            playTone(560, 'square', 0.13, 0.05, 220);
+        },
+        attackDebuff: () => {
+            if (!canPlaySe('attackDebuff', 250)) return;
+            playTone(300, 'sawtooth', 0.22, 0.07, 110);
+        },
+        dotDebuff: () => {
+            if (!canPlaySe('dotDebuff', 250)) return;
+            playTone(190, 'triangle', 0.2, 0.06, 130);
+            setTimeout(() => playTone(160, 'sine', 0.18, 0.05, 95), 75);
+        },
+        statusDebuff: () => {
+            if (!canPlaySe('statusDebuff', 220)) return;
+            playTone(250, 'triangle', 0.24, 0.07, 98);
+        },
         bossPhase2: () => {
             if (!canPlaySe('bossPhase2', 500)) return;
             playNoise(0.32, 0.13);
@@ -542,6 +621,15 @@
     };
 
     const SE_ALIASES = {
+        end_of_days_charge: 'endOfDaysCharge',
+        end_of_days_fire: 'endOfDaysFire',
+        end_of_days_pierce: 'endOfDaysPierce',
+        end_of_days_mitigate: 'endOfDaysMitigate',
+        sky_meteor_warn: 'skyMeteorWarn',
+        sky_meteor_impact: 'skyMeteorImpact',
+        sky_meteor_hit: 'skyMeteorImpact',
+        absolute_wall: 'ultraWall',
+        full_counter: 'counter',
         p2_awaken: 'dragonAwaken',
         breath: 'dragonBreath',
         claw_warn: 'dragonClawWarn',
@@ -559,6 +647,21 @@
         abyss_ring_fire: 'abyssRingFire',
         curse_wave: 'abyssShadowWave',
         slow_debuff: 'slowDebuff',
+        mirage_stealth: 'mirageStealth',
+        stealth_start: 'mirageStealth',
+        mirage_circle_warn: 'mirageCircleWarn',
+        dual_circle_warn: 'mirageCircleWarn',
+        mirage_ambush_fire: 'mirageAmbushFire',
+        ambush_impact: 'mirageAmbushFire',
+        mirage_clone_deploy: 'mirageCloneDeploy',
+        clone_deploy: 'mirageCloneDeploy',
+        mirage_homing_orb: 'mirageHomingOrb',
+        homing_orb: 'mirageHomingOrb',
+        mirage_barrage: 'mirageBarrage',
+        suppress_barrage: 'mirageBarrage',
+        attack_debuff: 'attackDebuff',
+        dot_debuff: 'dotDebuff',
+        status_debuff: 'statusDebuff',
         boss_phase2: 'bossPhase2',
         boss_defeat: 'bossDefeat'
     };
@@ -600,6 +703,18 @@
         return playSe(eventType);
     }
 
+    function syncBossBgm(bossState, isPlaying) {
+        try {
+            if (!isPlaying) return;
+            const rate = (bossState && bossState.phase === 2) ? 1.12 : 1.0;
+            if (currentBgmTrack !== 'boss') {
+                startBgm('boss', rate);
+            } else if (currentBgmRate !== rate) {
+                setPlaybackRate(rate);
+            }
+        } catch (e) {}
+    }
+
     loadSettings();
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -628,6 +743,7 @@
         getCurrentBgmRate: () => currentBgmRate,
         playSe,
         playBossEventSe,
+        syncBossBgm,
         SE
     };
 

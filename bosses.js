@@ -335,20 +335,29 @@
             name: '終焉の一閃',
             type: 'line_burst',
             rarity: 'S',
-            tag: '高火力・直線',
+            tag: '超高火力・極太貫通',
             icon: '⚔️',
             color: '#ff4d6d',
-            description: '550msの溜めの後、前方直線へ通常攻撃約2.5倍の高威力斬撃光線を放つ（バリアZで防御可）',
-            chargeMs: 550,
+            description: '350msの溜めの後、前方直線（射程620px・半幅56px）へ通常攻撃4.0倍の極太光線を放つ（通常バリアZ貫通0.5倍／絶対防壁貫通0.25倍）',
+            chargeMs: 350,
             stanceMs: 0,
             warnMs: 0,
             durationMs: 260,
             cooldownMs: ACTIONS.ultra.cooldownMs,
             maxStock: GACHA.ULTRA_MAX_STOCK,
-            damageMultiplier: 2.5,
-            range: 560,
-            halfWidth: 28,
-            guardableByBarrier: true
+            damageMultiplier: 4.0,
+            range: 620,
+            halfWidth: 56,
+            guardableByBarrier: false,
+            piercesNormalBarrier: true,
+            normalBarrierDamageMultiplier: 0.5,
+            piercesAbsoluteWall: true,
+            absoluteWallDamageMultiplier: 0.25,
+            absoluteWallFloatingText: 'ABSOLUTE!',
+            counterInteraction: Object.freeze({
+                damageMultiplier: 0.5,
+                triggersCounter: true
+            })
         }),
         absolute_wall: Object.freeze({
             id: 'absolute_wall',
@@ -358,7 +367,7 @@
             tag: '防御・立て直し',
             icon: '🛡️',
             color: '#00e5ff',
-            description: '2600msの間、あらゆる攻撃ダメージを無効化しノックバックと吸引を大幅軽減する',
+            description: '2600msの間、攻撃ダメージを無効化しノックバックと吸引を大幅軽減する（終焉の一閃は貫通0.25倍に軽減）',
             chargeMs: 0,
             stanceMs: 0,
             warnMs: 0,
@@ -378,7 +387,7 @@
             tag: 'カウンター',
             icon: '⚡',
             color: '#ffd60a',
-            description: '1800ms構え、攻撃を受けると被ダメ0で無効化し約2.8倍の強烈な反撃を放つ',
+            description: '1800ms構え、攻撃を受けると無効化し2.8倍の強烈な反撃を放つ（終焉の一閃は0.5倍被ダメ＋反撃発動）',
             chargeMs: 0,
             stanceMs: 1800,
             warnMs: 0,
@@ -394,19 +403,24 @@
             name: '天空隕石',
             type: 'aoe_meteor',
             rarity: 'A',
-            tag: '範囲・予兆',
+            tag: '扇状5連範囲・多段',
             icon: '☄️',
             color: '#ff9f43',
-            description: '自機前方エリア（半径100px）へ800msの予兆後に隕石を落下させ範囲大ダメージ',
+            description: '自機前方エリアへ扇状に5発（各半径110px）を展開し、650msの予兆後に隕石を落下（1発2.2倍・独立複数ヒット可）',
             chargeMs: 0,
             stanceMs: 0,
-            warnMs: 800,
+            warnMs: 650,
             durationMs: 320,
             cooldownMs: ACTIONS.ultra.cooldownMs,
             maxStock: GACHA.ULTRA_MAX_STOCK,
-            damageMultiplier: 2.45,
-            castDistance: 165,
-            radius: 100,
+            damageMultiplier: 2.2,
+            meteorCount: 5,
+            formation: 'fan',
+            fanSpreadRad: 1.05,
+            castDistance: 210,
+            radius: 110,
+            independentCircleHit: true,
+            multiHit: true,
             guardableByBarrier: true
         })
     });
@@ -438,9 +452,9 @@
     const BOSS_DRAGON_CLAW_DAMAGE = 20;          // クロス竜爪斬撃
     const BOSS_DRAGON_METEOR_DAMAGE = 26;        // 煉獄メテオピラー
     const BOSS_DRAGON_MAGMA_DURATION_MS = 2400;  // 灼熱マグマ床持続時間
-    const BOSS_DRAGON_ROar_PULSE_DAMAGE = 4;     // 覇竜の咆哮リング1パルスダメージ
-    const BOSS_DRAGON_ROar_PULSE_COUNT = 4;      // 多段パルス回数（合計16）
-    const BOSS_DRAGON_ROar_PULSE_INTERVAL_MS = 160;
+    const BOSS_DRAGON_ROAR_PULSE_DAMAGE = 4;     // 覇竜の咆哮リング1パルスダメージ
+    const BOSS_DRAGON_ROAR_PULSE_COUNT = 4;      // 多段パルス回数（合計16）
+    const BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS = 160;
     const BOSS_ABYSS_SIGIL_DAMAGE = 24;          // 闇の刻印陣
     const BOSS_ABYSS_SNAKE_DAMAGE = 14;          // 双蛇の闇弾
     const BOSS_ABYSS_RING_DAMAGE = 28;           // 深淵の拘束リング
@@ -1122,8 +1136,8 @@
                     }, warnDuration);
                 } else {
                     const ringRadius = isP2 ? 250 : 215;
-                    const warnDuration = isP2 ? 680 : 780;      
-                    const pullStrength = isP2 ? 1.15 : 0.85;    
+                    const warnDuration = isP2 ? 680 : 780;
+                    const pullStrength = isP2 ? 1.15 : 0.85;
                     const ox = boss.x;
                     const oy = boss.y;
 
@@ -1705,7 +1719,7 @@
             patternCount: 4,
             executeAttack(ctx) {
                 const {
-                    room, roomId, matchId, boss, alivePlayers, targetCx, targetCy,
+                    room, roomId, matchId, boss, targetCx, targetCy,
                     io, registerTimeout, applyDamageToPlayer, applySlowToPlayer, knockbackPlayerFromPoint
                 } = ctx;
 
@@ -1717,7 +1731,6 @@
                 const isP2 = boss.phase === 2;
 
                 if (patternIdx === 0) {
-                    // パターン0：幻影分身（破壊不可・4200ms残存）＆追尾球（P1 2発 / P2 4発・威力8・状態異常なし）
                     const cloneDurationMs = 4200;
                     const offsetAngle = Math.random() * Math.PI * 2;
                     const clonePos = clampArenaPoint(
@@ -1739,7 +1752,6 @@
                         durationMs: cloneDurationMs
                     });
 
-                    // 本体と分身から追尾型の球（計 P1 2発 / P2 4発、状態異常なし）
                     const totalOrbs = isP2 ? 4 : 2;
                     const origins = [
                         { x: boss.x, y: boss.y },
@@ -1785,7 +1797,6 @@
                         });
                     }, cloneDurationMs);
                 } else if (patternIdx === 1) {
-                    // パターン1：潜伏〜2択魔法陣の奇襲（合計3600ms無敵：2600ms潜伏移動＋1000ms 2択予兆→出現着弾）
                     const stealthMoveMs = 2600;
                     const warnDuration = 1000;
                     const ambushRadius = 100;
@@ -1818,7 +1829,6 @@
                             ambushRadius + 10
                         );
 
-                        // サーバー秘密保持（クライアントには視覚的に区別のつかない2円のみ送信）
                         const realFirst = Math.random() < 0.5;
                         const circles = realFirst
                             ? [{ x: realPos.x, y: realPos.y, radius: ambushRadius }, { x: fakePos.x, y: fakePos.y, radius: ambushRadius }]
@@ -1880,7 +1890,6 @@
                         }, warnDuration);
                     }, stealthMoveMs);
                 } else if (patternIdx === 2) {
-                    // パターン2：呪詛のランダム状態異常（専用状態異常パターン：命中時に4択抽選）
                     const baseAngle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
                     const countShots = isP2 ? 5 : 3;
                     const spread = isP2 ? 0.92 : 0.62;
@@ -1900,7 +1909,6 @@
                         damage: BOSS_PHANTOM_CURSE_DAMAGE
                     });
                 } else {
-                    // パターン3：策謀の牽制弾幕（P1 10発 威力6 / P2 18発 威力8・状態異常なし）
                     const countShots = isP2 ? 18 : 10;
                     const speed = isP2 ? 4.5 : 3.8;
                     const damage = isP2 ? BOSS_PHANTOM_FEINT_P2_DAMAGE : BOSS_PHANTOM_FEINT_P1_DAMAGE;
@@ -1929,7 +1937,6 @@
 
                 ctx.save();
 
-                // 蜃気楼の揺らぎオーラ
                 const auraR = boss.radius + 20 + Math.sin(now / 140) * 5;
                 const aura = ctx.createRadialGradient(bx, by, boss.radius * 0.25, bx, by, auraR);
                 aura.addColorStop(0, isRage ? 'rgba(244, 63, 94, 0.34)' : 'rgba(226, 232, 240, 0.3)');
@@ -1939,7 +1946,6 @@
                 ctx.arc(bx, by, auraR, 0, Math.PI * 2);
                 ctx.fill();
 
-                // 回転する幾何学リング（無属性・幻惑プリズム）
                 ctx.save();
                 ctx.translate(bx, by);
                 ctx.rotate(rot);
@@ -1951,7 +1957,6 @@
                 ctx.strokeRect(-(boss.radius + 2), -(boss.radius + 2), (boss.radius + 2) * 2, (boss.radius + 2) * 2);
                 ctx.restore();
 
-                // 本体コア（仮面・ミラージュ）
                 const grad = ctx.createRadialGradient(bx, by - 6, 6, bx, by, boss.radius);
                 grad.addColorStop(0, isRage ? '#fff1f2' : '#f8fafc');
                 grad.addColorStop(0.55, isRage ? '#9f1239' : '#475569');
@@ -1965,7 +1970,6 @@
                 ctx.strokeStyle = isRage ? '#fda4af' : '#f1f5f9';
                 ctx.stroke();
 
-                // 仮面スリット眼
                 ctx.fillStyle = isRage ? '#ff2a00' : '#0f172a';
                 ctx.beginPath();
                 ctx.moveTo(bx - 20, by - 8);
@@ -2654,7 +2658,6 @@
                     gameCtx.stroke();
                     gameCtx.setLineDash([]);
 
-                    // 2択魔法陣の内側回転紋様（両円完全同一表示）
                     gameCtx.save();
                     gameCtx.translate(c.x, c.y);
                     gameCtx.rotate(now / 260);
@@ -3029,14 +3032,51 @@
             }
             seenSkillIds.add(skill.id);
 
-            if (!skill.id || !skill.name || !skill.type) {
-                errors.push(`Ultra skill missing required field (id/name/type): ${skillId}`);
+            if (!skill.id || !skill.name || !skill.type || !skill.rarity) {
+                errors.push(`Ultra skill missing required field (id/name/type/rarity): ${skillId}`);
+            }
+            if (typeof skill.damageMultiplier !== 'number' || skill.damageMultiplier < 0) {
+                errors.push(`Ultra skill ${skill.id} missing valid damageMultiplier`);
+            }
+            if (typeof skill.durationMs !== 'number' || skill.durationMs <= 0) {
+                errors.push(`Ultra skill ${skill.id} missing valid durationMs`);
             }
             if (skill.cooldownMs !== 6000) {
                 errors.push(`Ultra skill ${skill.id} cooldownMs must be 6000 (got ${skill.cooldownMs})`);
             }
             if (skill.maxStock !== 3) {
                 errors.push(`Ultra skill ${skill.id} maxStock must be 3 (got ${skill.maxStock})`);
+            }
+            if (skill.id === 'end_of_days') {
+                if (skill.chargeMs !== 350 || skill.durationMs !== 260) {
+                    errors.push(`end_of_days timing mismatch (chargeMs=${skill.chargeMs}, durationMs=${skill.durationMs})`);
+                }
+                if (skill.damageMultiplier !== 4.0 || skill.range !== 620 || skill.halfWidth !== 56) {
+                    errors.push(`end_of_days stat mismatch (mult=${skill.damageMultiplier}, range=${skill.range}, halfWidth=${skill.halfWidth})`);
+                }
+                if (
+                    skill.normalBarrierDamageMultiplier !== 0.5 ||
+                    skill.absoluteWallDamageMultiplier !== 0.25 ||
+                    !skill.counterInteraction ||
+                    skill.counterInteraction.damageMultiplier !== 0.5 ||
+                    skill.counterInteraction.triggersCounter !== true
+                ) {
+                    errors.push('end_of_days barrier/counter interaction metadata mismatch');
+                }
+            }
+            if (skill.id === 'sky_meteor') {
+                if (skill.warnMs !== 650 || skill.durationMs !== 320) {
+                    errors.push(`sky_meteor timing mismatch (warnMs=${skill.warnMs}, durationMs=${skill.durationMs})`);
+                }
+                if (
+                    skill.meteorCount !== 5 ||
+                    skill.radius !== 110 ||
+                    skill.damageMultiplier !== 2.2 ||
+                    skill.formation !== 'fan' ||
+                    skill.multiHit !== true
+                ) {
+                    errors.push('sky_meteor fan/multi-hit parameter mismatch');
+                }
             }
         }
 
