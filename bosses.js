@@ -327,7 +327,7 @@
     }
 
     // =========================================================================
-    // 3. ウルトラガチャ（必殺技）データ駆動定義
+    // 3. ウルトラガチャ（必殺技）データ駆動定義（全8種構成）
     // =========================================================================
     const ULTRA_SKILLS = Object.freeze({
         end_of_days: Object.freeze({
@@ -335,6 +335,7 @@
             name: '終焉の一閃',
             type: 'line_burst',
             rarity: 'S',
+            gachaWeight: 10,
             tag: '超高火力・極太貫通',
             icon: '⚔️',
             color: '#ff4d6d',
@@ -359,11 +360,77 @@
                 triggersCounter: true
             })
         }),
+        perfect_counter: Object.freeze({
+            id: 'perfect_counter',
+            name: '完全反撃',
+            type: 'counter',
+            rarity: 'S',
+            gachaWeight: 10,
+            tag: 'カウンター',
+            icon: '⚡',
+            color: '#ffd60a',
+            description: '1800ms構え、攻撃を受けると無効化し2.8倍の強烈な反撃を放つ（終焉の一閃は0.5倍被ダメ＋反撃発動）',
+            chargeMs: 0,
+            stanceMs: 1800,
+            warnMs: 0,
+            durationMs: 1800,
+            cooldownMs: ACTIONS.ultra.cooldownMs,
+            maxStock: GACHA.ULTRA_MAX_STOCK,
+            damageMultiplier: 2.8,
+            counterRadius: 210,
+            guardableByBarrier: true
+        }),
+        ricochet_guns: Object.freeze({
+            id: 'ricochet_guns',
+            name: '全方位跳弾銃',
+            type: 'equip_guns',
+            rarity: 'S',
+            gachaWeight: 10,
+            tag: '装備覚醒・弾幕',
+            icon: '🔫',
+            color: '#ff9f43',
+            description: '5000msの間、625ms間隔（最大8ウェーブ）で8方向へ固定威力40の弾を発射し、壁に1回だけ反射する',
+            chargeMs: 0,
+            stanceMs: 0,
+            warnMs: 0,
+            durationMs: 5000,
+            cooldownMs: ACTIONS.ultra.cooldownMs,
+            maxStock: GACHA.ULTRA_MAX_STOCK,
+            damageMultiplier: 0,
+            fixedDamage: 40,
+            intervalMs: 625,
+            maxWaves: 8,
+            directions: 8,
+            bulletSpeed: 9.0,
+            maxBounces: 1,
+            bulletRadius: 6,
+            guardableByBarrier: true
+        }),
+        time_stop: Object.freeze({
+            id: 'time_stop',
+            name: '刻の静止',
+            type: 'time_stop',
+            rarity: 'S',
+            gachaWeight: 10,
+            tag: '時空制御',
+            icon: '⏳',
+            color: '#a29bfe',
+            description: '2500msの間、自分以外の敵・BOSS・弾幕の移動・行動・タイマー進行を停止し、自分の攻撃は即時反映する',
+            chargeMs: 0,
+            stanceMs: 0,
+            warnMs: 0,
+            durationMs: 2500,
+            cooldownMs: ACTIONS.ultra.cooldownMs,
+            maxStock: GACHA.ULTRA_MAX_STOCK,
+            damageMultiplier: 0,
+            guardableByBarrier: false
+        }),
         absolute_wall: Object.freeze({
             id: 'absolute_wall',
             name: '絶対防壁',
             type: 'barrier',
             rarity: 'A',
+            gachaWeight: 15,
             tag: '防御・立て直し',
             icon: '🛡️',
             color: '#00e5ff',
@@ -379,53 +446,89 @@
             knockbackMultiplier: 0.15,
             guardableByBarrier: false
         }),
-        perfect_counter: Object.freeze({
-            id: 'perfect_counter',
-            name: '完全反撃',
-            type: 'counter',
-            rarity: 'S',
-            tag: 'カウンター',
-            icon: '⚡',
-            color: '#ffd60a',
-            description: '1800ms構え、攻撃を受けると無効化し2.8倍の強烈な反撃を放つ（終焉の一閃は0.5倍被ダメ＋反撃発動）',
-            chargeMs: 0,
-            stanceMs: 1800,
-            warnMs: 0,
-            durationMs: 1800,
-            cooldownMs: ACTIONS.ultra.cooldownMs,
-            maxStock: GACHA.ULTRA_MAX_STOCK,
-            damageMultiplier: 2.8,
-            counterRadius: 210,
-            guardableByBarrier: true
-        }),
         sky_meteor: Object.freeze({
             id: 'sky_meteor',
             name: '天空隕石',
             type: 'aoe_meteor',
             rarity: 'A',
-            tag: '扇状5連範囲・多段',
+            gachaWeight: 15,
+            tag: '周囲5連・マグマ化',
             icon: '☄️',
             color: '#ff9f43',
-            description: '自機前方エリアへ扇状に5発（各半径110px）を展開し、550msの予兆後に隕石を落下（1発2.2倍・独立複数ヒット可）',
+            description: '自分を中心とする半径200pxに5発の隕石（各半径110px）が降り、着弾跡が4秒間マグマ化（1秒毎10ダメージ）',
             chargeMs: 0,
             stanceMs: 0,
             warnMs: 650,
-            durationMs: 700,
+            durationMs: 320,
             cooldownMs: ACTIONS.ultra.cooldownMs,
             maxStock: GACHA.ULTRA_MAX_STOCK,
             damageMultiplier: 2.2,
             meteorCount: 5,
-            formation: 'fan',
-            fanSpreadRad: 1.05,
-            castDistance: 210,
+            formation: 'circle_around_self',
+            castRadius: 200,
+            ringOffset: 90,
             radius: 110,
+            magmaDurationMs: 4000,
+            magmaTickIntervalMs: 1000,
+            magmaTickDamage: 10,
             independentCircleHit: true,
             multiHit: true,
             guardableByBarrier: true
+        }),
+        demon_blade: Object.freeze({
+            id: 'demon_blade',
+            name: '聖魔の覇剣',
+            type: 'equip_blade',
+            rarity: 'A',
+            gachaWeight: 15,
+            tag: '装備覚醒・近接',
+            icon: '🗡️',
+            color: '#e056fd',
+            description: '5000msの間、発動者が放つすべての斬撃攻撃に威力2.0倍・リーチ1.5倍を適用する',
+            chargeMs: 0,
+            stanceMs: 0,
+            warnMs: 0,
+            durationMs: 5000,
+            cooldownMs: ACTIONS.ultra.cooldownMs,
+            maxStock: GACHA.ULTRA_MAX_STOCK,
+            damageMultiplier: 2.0,
+            slashDamageMultiplier: 2.0,
+            slashRangeMultiplier: 1.5,
+            guardableByBarrier: true
+        }),
+        phantom_boots: Object.freeze({
+            id: 'phantom_boots',
+            name: '疾風幻影靴',
+            type: 'equip_boots',
+            rarity: 'A',
+            gachaWeight: 15,
+            tag: '装備覚醒・機動',
+            icon: '👢',
+            color: '#00d2d3',
+            description: '4000msの間、移動速度2.0倍＆壁貫通（終了時に壁内の場合は安全な空き位置へ自動押し戻し）',
+            chargeMs: 0,
+            stanceMs: 0,
+            warnMs: 0,
+            durationMs: 4000,
+            cooldownMs: ACTIONS.ultra.cooldownMs,
+            maxStock: GACHA.ULTRA_MAX_STOCK,
+            damageMultiplier: 0,
+            speedMultiplier: 2.0,
+            passWalls: true,
+            guardableByBarrier: false
         })
     });
 
-    const ULTRA_SKILL_ORDER = Object.freeze(['end_of_days', 'absolute_wall', 'perfect_counter', 'sky_meteor']);
+    const ULTRA_SKILL_ORDER = Object.freeze([
+        'end_of_days',
+        'perfect_counter',
+        'ricochet_guns',
+        'time_stop',
+        'absolute_wall',
+        'sky_meteor',
+        'demon_blade',
+        'phantom_boots'
+    ]);
 
     function sanitizeUltraSkillId(skillId) {
         if (typeof skillId === 'string' && Object.prototype.hasOwnProperty.call(ULTRA_SKILLS, skillId)) {
@@ -715,7 +818,7 @@
             },
             attackIntervalMs: {
                 p1: 1850,
-                p2: 1150
+                p2: 950
             },
             attackProjectiles: ['homing'],
             projectileDamage: {
@@ -933,8 +1036,8 @@
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 2450,
-                p2: 1850
+                p1: 2350,
+                p2: 2050
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -1345,18 +1448,18 @@
             spawnY: 165,
             maxHp: 950,
             hpByPlayers: { 1: 950, 2: 1900, 3: 2850, 4: 3800 },
-            speed: 3.2,
+            speed: 3.0,
             moveSpeed5: {
-                p1: 3.2,
-                p2: 3.6,
-                soloP1: 3.2,
-                multiP1: 3.6,
-                soloP2: 4.2,
-                multiP2: 4.6
+                p1: 3.0,
+                p2: 3.2,
+                soloP1: 3.0,
+                multiP1: 4.0,
+                soloP2: 3.2,
+                multiP2: 4.2
             },
             attackIntervalMs: {
-                p1: 2300,
-                p2: 1900
+                p1: 2400,
+                p2: 1950
             },
             attackProjectiles: ['snake_dark', 'shadow_orb'],
             projectileDamage: {
@@ -1703,7 +1806,7 @@
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 1200,
+                p1: 1900,
                 p2: 950
             },
             randomActionSelection: true,
@@ -1772,7 +1875,7 @@
                             vx: Math.cos(ang) * spd,
                             vy: Math.sin(ang) * spd,
                             speed: spd,
-                            turnRate: isP2 ? 0.095 : 0.075,
+                            turnRate: isP2 ? 0.055 : 0.045,
                             damage: BOSS_PHANTOM_HOMING_DAMAGE
                         });
                     }
@@ -1827,7 +1930,7 @@
                         const realPos = clampArenaPoint(anchor.x + 24, anchor.y + 24, ambushRadius + 10);
                         const fakeAngle = Math.random() * Math.PI * 2;
                         const fakePos = clampArenaPoint(
-                            realPos.x + Math.cos(fakeAngle) * 260,  
+                            realPos.x + Math.cos(fakeAngle) * 260,
                             realPos.y + Math.sin(fakeAngle) * 220,
                             ambushRadius + 10
                         );
@@ -1882,7 +1985,7 @@
                                     );
                                     if (applied !== false) {
                                         if (typeof applySlowToPlayer === 'function') {
-                                            applySlowToPlayer(roomId, p, 0.75, 4000, matchId);
+                                            applySlowToPlayer(roomId, p, 0.75, 2000, matchId);
                                         }
                                         if (typeof knockbackPlayerFromPoint === 'function') {
                                             knockbackPlayerFromPoint(roomId, p, realPos.x, realPos.y, ambushRadius + 36, matchId, 'phantom_ambush');
@@ -1912,7 +2015,7 @@
                         damage: BOSS_PHANTOM_CURSE_DAMAGE
                     });
                 } else {
-                    const countShots = isP2 ? 24 : 12;  
+                    const countShots = isP2 ? 18 : 10;
                     const speed = isP2 ? 4.5 : 3.8;
                     const damage = isP2 ? BOSS_PHANTOM_FEINT_P2_DAMAGE : BOSS_PHANTOM_FEINT_P1_DAMAGE;
                     const baseAngle = Math.random() * Math.PI * 2;
@@ -3024,6 +3127,7 @@
         }
 
         const seenSkillIds = new Set();
+        let totalGachaWeight = 0;
         for (const skillId of ULTRA_SKILL_ORDER) {
             const skill = ULTRA_SKILLS[skillId];
             if (!skill) {
@@ -3037,6 +3141,11 @@
 
             if (!skill.id || !skill.name || !skill.type || !skill.rarity) {
                 errors.push(`Ultra skill missing required field (id/name/type/rarity): ${skillId}`);
+            }
+            if (typeof skill.gachaWeight !== 'number' || skill.gachaWeight <= 0) {
+                errors.push(`Ultra skill ${skill.id} missing valid gachaWeight`);
+            } else {
+                totalGachaWeight += skill.gachaWeight;
             }
             if (typeof skill.damageMultiplier !== 'number' || skill.damageMultiplier < 0) {
                 errors.push(`Ultra skill ${skill.id} missing valid damageMultiplier`);
@@ -3068,19 +3177,50 @@
                 }
             }
             if (skill.id === 'sky_meteor') {
-                if (skill.warnMs !== 650 || skill.durationMs !== 700) {
+                if (skill.warnMs !== 650 || skill.durationMs !== 320) {
                     errors.push(`sky_meteor timing mismatch (warnMs=${skill.warnMs}, durationMs=${skill.durationMs})`);
                 }
                 if (
                     skill.meteorCount !== 5 ||
                     skill.radius !== 110 ||
+                    skill.castRadius !== 200 ||
+                    skill.magmaDurationMs !== 4000 ||
+                    skill.magmaTickIntervalMs !== 1000 ||
+                    skill.magmaTickDamage !== 10 ||
                     skill.damageMultiplier !== 2.2 ||
-                    skill.formation !== 'fan' ||
+                    skill.formation !== 'circle_around_self' ||
                     skill.multiHit !== true
                 ) {
-                    errors.push('sky_meteor fan/multi-hit parameter mismatch');
+                    errors.push('sky_meteor circle/magma parameter mismatch');
                 }
             }
+            if (skill.id === 'demon_blade') {
+                if (skill.durationMs !== 5000 || skill.slashDamageMultiplier !== 2.0 || skill.slashRangeMultiplier !== 1.5) {
+                    errors.push('demon_blade parameter mismatch');
+                }
+            }
+            if (skill.id === 'ricochet_guns') {
+                if (skill.durationMs !== 5000 || skill.intervalMs !== 625 || skill.maxWaves !== 8 || skill.fixedDamage !== 40 || skill.maxBounces !== 1) {
+                    errors.push('ricochet_guns parameter mismatch');
+                }
+            }
+            if (skill.id === 'phantom_boots') {
+                if (skill.durationMs !== 4000 || skill.speedMultiplier !== 2.0 || skill.passWalls !== true) {
+                    errors.push('phantom_boots parameter mismatch');
+                }
+            }
+            if (skill.id === 'time_stop') {
+                if (skill.durationMs !== 2500) {
+                    errors.push('time_stop parameter mismatch');
+                }
+            }
+        }
+
+        if (ULTRA_SKILL_ORDER.length !== 8) {
+            errors.push(`ULTRA_SKILL_ORDER must contain 8 skills (got ${ULTRA_SKILL_ORDER.length})`);
+        }
+        if (totalGachaWeight !== 100) {
+            errors.push(`Ultra skill gachaWeight sum must be 100 (got ${totalGachaWeight})`);
         }
 
         if (!Array.isArray(STAGES) || STAGES.length === 0) {
