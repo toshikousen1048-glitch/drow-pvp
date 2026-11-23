@@ -925,13 +925,13 @@
                 p1: 3.2,
                 p2: 5.2,
                 soloP1: 3.2,
-                multiP1: 3.7,
+                multiP1: 2.7,
                 soloP2: 5.2,
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 2550,
-                p2: 1950
+                p1: 2650,
+                p2: 2150
             },
             phase2Awaken: Object.freeze({
                 knockbackRadius: 240,
@@ -1352,8 +1352,8 @@
                 multiP2: 4.2
             },
             attackIntervalMs: {
-                p1: 2400,
-                p2: 1850
+                p1: 2600,
+                p2: 2150
             },
             attackProjectiles: ['snake_dark', 'shadow_orb'],
             projectileDamage: {
