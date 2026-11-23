@@ -621,6 +621,12 @@
         function toggleBgm() { initAudio(); if (SoundProxy && typeof SoundProxy.toggleBgm === 'function') SoundProxy.toggleBgm(); updateSoundButtonsUI(); }
         function toggleSe() { initAudio(); if (SoundProxy && typeof SoundProxy.toggleSe === 'function') SoundProxy.toggleSe(); updateSoundButtonsUI(); }
 
+        function escapeHtml(str) {
+            return String(str || '').replace(/[&<>"']/g, (ch) => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+            ));
+        }
+
         const BOSS = (typeof BossSystem !== 'undefined') ? BossSystem : null;
         if (!BOSS) console.error('bosses.js が読み込まれていません。');
         const RULES = BOSS ? BOSS.GAME_RULES : {
@@ -908,7 +914,7 @@
             pvpBtn.disabled = lockedByState || !amHost; bossBtn.disabled = !BOSS || lockedByState || !amHost;
             if (currentRoomMode === 'boss' && BOSS) {
                 const stage = BOSS.getStageByNumber(currentStageNumber), def = BOSS.getBossDef(stage.bossId), elem = BOSS.getElementInfo(def.element);
-                desc.innerHTML = `🌀 <b>STAGE ${stage.stageNumber}: ${def.name}</b> (${elem.icon}${elem.name}) — ${def.summary}` + (amHost ? '' : ' <span style="color:#ffd166;">[ホストが選択中]</span>');
+                desc.innerHTML = `🌀 <b>STAGE ${stage.stageNumber}: ${escapeHtml(def.name)}</b> (${elem.icon}${elem.name}) — ${escapeHtml(def.summary)}` + (amHost ? '' : ' <span style="color:#ffd166;">[ホストが選択中]</span>');
                 desc.style.color = '#f5b7ff';
             } else {
                 desc.innerHTML = '⚔️ <b>PvPサバイバル対戦！</b> 2〜4人でバトル！最後の1人まで生き残れ！';
@@ -1348,7 +1354,7 @@
             for (let i = 0; i < 4; i++) {
                 const slot = slots[i], card = document.createElement('div'); card.className = 'slot-card';
                 if (slot) {
-                    card.innerHTML = `<div class="slot-header">[${slot.rank}] ${slot.name} (${slot.stats ? slot.stats.atk : '--'}/${slot.stats ? slot.stats.spd : '--'}/${slot.stats ? slot.stats.maxHp : '--'})</div><div class="slot-btns"><button class="primary" onclick="loadCharacterSlot(${i})">読込</button><button onclick="saveCharacterSlot(${i})">上書</button></div>`;
+                    card.innerHTML = `<div class="slot-header">[${escapeHtml(slot.rank)}] ${escapeHtml(slot.name)} (${slot.stats ? slot.stats.atk : '--'}/${slot.stats ? slot.stats.spd : '--'}/${slot.stats ? slot.stats.maxHp : '--'})</div><div class="slot-btns"><button class="primary" onclick="loadCharacterSlot(${i})">読込</button><button onclick="saveCharacterSlot(${i})">上書</button></div>`;
                 } else {
                     card.innerHTML = `<div class="slot-header" style="color:#777;">空き枠 ${i + 1}</div><div class="slot-btns"><button onclick="saveCharacterSlot(${i})">💾 保存・判定</button></div>`;
                 }
@@ -1386,17 +1392,17 @@
                 let html = '';
                 if (currentRoomMode === 'boss' && lobbyBossDef) {
                     const elem = BOSS.getElementInfo(lobbyBossDef.element);
-                    html += `<div class="ready-row" style="background:rgba(155,89,182,0.18); padding:5px 8px; border-radius:6px; margin-bottom:4px;"><span style="color:#f5b7ff; font-weight:bold;">🌀 ST.${stage.stageNumber} ${lobbyBossDef.name} (${elem.icon}${elem.name})</span><span style="color:#f1c40f; font-weight:bold;">BOSS HP: ${lobbyBossDef.hpByPlayers[Math.min(4, totalMembers)]}</span></div>`;
+                    html += `<div class="ready-row" style="background:rgba(155,89,182,0.18); padding:5px 8px; border-radius:6px; margin-bottom:4px;"><span style="color:#f5b7ff; font-weight:bold;">🌀 ST.${stage.stageNumber} ${escapeHtml(lobbyBossDef.name)} (${elem.icon}${elem.name})</span><span style="color:#f1c40f; font-weight:bold;">BOSS HP: ${lobbyBossDef.hpByPlayers[Math.min(4, totalMembers)]}</span></div>`;
                 }
                 const myHostMark = socket && roomHostId === socket.id ? '👑' : '';
-                html += `<div class="ready-row"><span>${myHostMark}[${player.rank}] ${player.name}</span><span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : '準備中'}</span></div>`;
+                html += `<div class="ready-row"><span>${myHostMark}[${escapeHtml(player.rank)}] ${escapeHtml(player.name)}</span><span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : '準備中'}</span></div>`;
                 const otherIds = Object.keys(otherPlayers);
                 if (otherIds.length === 0) {
                     html += `<div class="ready-row"><span style="color:#aaa; font-size:0.8rem;">${currentRoomMode === 'boss' ? '👤 1人でも「準備OK！」で即出撃できます！' : '👥 対戦相手を待機中...（あと1人必要）'}</span></div>`;
                 } else {
                     otherIds.forEach((id) => {
                         const op = otherPlayers[id], hostMark = roomHostId === id ? '👑' : '';
-                        html += `<div class="ready-row"><span>${hostMark}[${op.rank || 'B'}] ${op.name || '相手'}</span><span class="${op.isReady ? 'badge-ok' : 'badge-wait'}">${op.isReady ? '準備OK!' : '準備中'}</span></div>`;
+                        html += `<div class="ready-row"><span>${hostMark}[${escapeHtml(op.rank || 'B')}] ${escapeHtml(op.name || '相手')}</span><span class="${op.isReady ? 'badge-ok' : 'badge-wait'}">${op.isReady ? '準備OK!' : '準備中'}</span></div>`;
                     });
                 }
                 readyList.innerHTML = html;
@@ -1467,8 +1473,7 @@
             }
             return copy;
         }
-
-        // 🌐 Socket.IO 通信
+// 🌐 Socket.IO 通信
         let socket = null;
         if (typeof io !== 'undefined') {
             socket = io();
@@ -1484,7 +1489,15 @@
                     connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f';
                 }
             });
-            socket.on('disconnect', () => { connectionStatus.textContent = '🔴 切断されました'; connectionStatus.style.color = '#e74c3c'; });
+            socket.on('disconnect', () => {
+                connectionStatus.textContent = '🔴 切断されました';
+                connectionStatus.style.color = '#e74c3c';
+                isPullingGacha = false;
+                const pullBtn = document.getElementById('pullGachaBtn');
+                const skipBtn = document.getElementById('gachaSkipBtn');
+                if (pullBtn) pullBtn.disabled = false;
+                if (skipBtn) skipBtn.style.display = 'none';
+            });
             socket.on('profileUpdated', (prof) => applyServerProfile(prof));
             socket.on('gachaError', (err) => {
                 isPullingGacha = false; document.getElementById('pullGachaBtn').disabled = false; document.getElementById('gachaSkipBtn').style.display = 'none';
@@ -1508,17 +1521,7 @@
                 arenaWalls = data.walls || []; arenaItems = data.items || [];
                 if (Array.isArray(data.staticObstacles)) staticObstacles = data.staticObstacles;
                 bossState = syncBossAuraFromServer(data.boss || null);
-            socket.on('playerJoined', (data) => {
-                if (!data || !data.player || !data.player.id || data.player.id === socket.id) return;
-                const np = { ...data.player };
-                syncSlowFromServerEpoch(np, np.slowUntil, np.slowMultiplier, np.attackDebuffUntil, np.attackDebuffMultiplier, np.dotUntil);
-                otherPlayers[np.id] = np;
-                if (data.boss) {
-                    bossState = syncBossAuraFromServer(data.boss);
-                }
-                addFloatingText(np.x + 24, np.y - 16, `${np.name || 'Player'} 参戦!`, '#2ecc71');
-                if (roomState === 'waiting') updateLobbyUI();
-            });
+
                 const players = data.players || {};
                 if (players[socket.id]) {
                     const me = players[socket.id];
@@ -1542,6 +1545,17 @@
                 bossVortexUntil = 0; confettiParticles = []; countdownBanner = '';
                 if (homeScreen.style.display === 'none') { const d = getDesiredBgmState(); startBgm(d.track, d.rate); }
                 updateUltraHudButton(); updateLobbyUI();
+            });
+            socket.on('playerJoined', (data) => {
+                if (!data || !data.player || !data.player.id || data.player.id === socket.id) return;
+                const np = { ...data.player };
+                syncSlowFromServerEpoch(np, np.slowUntil, np.slowMultiplier, np.attackDebuffUntil, np.attackDebuffMultiplier, np.dotUntil);
+                otherPlayers[np.id] = np;
+                if (data.boss) {
+                    bossState = syncBossAuraFromServer(data.boss);
+                }
+                addFloatingText(np.x + 24, np.y - 16, `${np.name || 'Player'} 参戦!`, '#2ecc71');
+                if (roomState === 'waiting') updateLobbyUI();
             });
             socket.on('gimmicksUpdated', (data) => {
                 if (data.walls && data.walls.length < arenaWalls.length && roomState === 'playing') SE.wallBreak();
@@ -1681,6 +1695,10 @@
                 player.slowUntil = 0; player.slowMultiplier = 1.0;
                 for (const oid in otherPlayers) { otherPlayers[oid].slowUntil = 0; otherPlayers[oid].slowMultiplier = 1.0; otherPlayers[oid].attackDebuffUntil = 0; otherPlayers[oid].attackDebuffMultiplier = 1.0; otherPlayers[oid].dotUntil = 0; }
                 bossTrail = [];
+                bossProjectiles = [];
+                bossEffects = [];
+                slashEffects = [];
+                ultraEffects = [];
                 if (bossState) { bossState.scaleAuraActive = false; bossState.scaleAuraUntil = 0; }
                 startBgm('menu', 1.0); updateUltraHudButton();
                 const allPlayers = data.players || {}, myServerData = allPlayers[socket.id];
@@ -1711,7 +1729,7 @@
                     document.getElementById('resultScoreList').innerHTML = sorted.map((pl) => {
                         const bd = (data.rewardsByPlayer && data.rewardsByPlayer[pl.id]) || pl.lastPointBreakdown || {};
                         const bdText = data.bossCleared ? `基本${bd.clearBonus || 0}+貢献${bd.contributionBonus || 0}${bd.mvpBonus ? `+MVP${bd.mvpBonus}` : ''}` : '獲得0Pt';
-                        return `<div class="ready-row"><span>${pl.id === data.mvpId ? '👑 ' : ''}[${pl.rank}] ${pl.name} <small style="color:#a4b0be;">(${bdText})</small></span><span style="color:#f1c40f; font-weight:bold;">与ダメ:${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span></div>`;
+                        return `<div class="ready-row"><span>${pl.id === data.mvpId ? '👑 ' : ''}[${escapeHtml(pl.rank)}] ${escapeHtml(pl.name)} <small style="color:#a4b0be;">(${bdText})</small></span><span style="color:#f1c40f; font-weight:bold;">与ダメ:${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span></div>`;
                     }).join('');
                 } else {
                     SE.win(); spawnConfetti(); retryStageBtn.style.display = 'none'; rematchBtn.textContent = '🔄 ロビーに戻る';
@@ -1729,7 +1747,7 @@
                         }
                     } else { resultTitle.textContent = '🤝 DRAW!'; resultTitle.style.color = '#bdc3c7'; winnerNameDisplay.textContent = '引き分け！'; }
                     const sorted = Object.values(allPlayers).sort((a, b) => (b.points || 0) - (a.points || 0));
-                    document.getElementById('resultScoreList').innerHTML = sorted.map((pl, idx) => `<div class="ready-row"><span>${idx + 1}位: [${pl.rank}] ${pl.name}</span><span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span></div>`).join('');
+                    document.getElementById('resultScoreList').innerHTML = sorted.map((pl, idx) => `<div class="ready-row"><span>${idx + 1}位: [${escapeHtml(pl.rank)}] ${escapeHtml(pl.name)}</span><span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span></div>`).join('');
                 }
                 updateLobbyUI();
             });
@@ -1739,14 +1757,14 @@
                     player.x = me.x; player.y = me.y; player.facing = me.facing; player.element = me.element || player.element;
                     player.hp = me.hp; player.maxHp = me.maxHp; player.stocks = me.stocks ?? 1;
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
-                    syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier);
+                    syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier, me.attackDebuffUntil, me.attackDebuffMultiplier, me.dotUntil);
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
                     player.ultraState = me.ultraState || null; player.ultraStateUntil = me.ultraStateUntil || 0;
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
                 for (const oid in otherPlayers) {
-                    syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier);
+                    syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
                 }
                 updateUltraHudButton();
             });
@@ -1816,21 +1834,62 @@
                     }
                 } else if (ev.skillId === 'end_of_days') {
                     if (ev.phase === 'charge') {
-                        if (isMe) { player.ultraState = 'charging'; player.ultraStateUntil = Date.now() + (ev.durationMs || 550); }
-                        ultraEffects.push({ kind: 'end_charge', playerId: ev.playerId, x: ev.x, y: ev.y, facing: ev.facing, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 550 });
+                        if (isMe) { player.ultraState = 'charging'; player.ultraStateUntil = Date.now() + (ev.durationMs || 350); }
+                        ultraEffects.push({ kind: 'end_charge', playerId: ev.playerId, x: ev.x, y: ev.y, facing: ev.facing, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 350 });
                     } else if (ev.phase === 'fire') {
                         if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
                         SE.bossSlash(); shakeTime = 14; shakeIntensity = 8;
                         ultraEffects.push({ kind: 'end_fire', x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 260 });
                     }
                 } else if (ev.skillId === 'sky_meteor') {
+                    const meteorList = Array.isArray(ev.meteors) && ev.meteors.length > 0
+                        ? ev.meteors
+                        : (Array.isArray(ev.targets) && ev.targets.length > 0
+                            ? ev.targets
+                            : [{ x: ev.x, y: ev.y, radius: ev.radius || 110 }]);
+
                     if (ev.phase === 'warn') {
-                        if (isMe) { player.ultraState = 'meteor_warn'; player.ultraStateUntil = Date.now() + (ev.durationMs || 800); }
-                        ultraEffects.push({ kind: 'meteor_warn', x: ev.x, y: ev.y, radius: ev.radius || 100, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 800 });
+                        if (isMe) {
+                            player.ultraState = 'meteor_warn';
+                            player.ultraStateUntil = Date.now() + (ev.durationMs || 650);
+                        }
+                        for (const m of meteorList) {
+                            ultraEffects.push({
+                                kind: 'meteor_warn',
+                                x: m.x,
+                                y: m.y,
+                                radius: m.radius || ev.radius || 110,
+                                element: ev.element,
+                                startedAt: performance.now(),
+                                durationMs: ev.durationMs || 650
+                            });
+                        }
                     } else if (ev.phase === 'impact') {
-                        if (isMe) { player.ultraState = null; player.ultraStateUntil = 0; }
-                        SE.bossPulse(); shakeTime = 16; shakeIntensity = 9;
-                        ultraEffects.push({ kind: 'meteor_impact', x: ev.x, y: ev.y, radius: ev.radius || 100, element: ev.element, startedAt: performance.now(), durationMs: ev.durationMs || 320 });
+                        if (isMe) {
+                            player.ultraState = null;
+                            player.ultraStateUntil = 0;
+                        }
+                        SE.bossPulse();
+                        shakeTime = 16;
+                        shakeIntensity = 9;
+                        const impactList = Array.isArray(ev.impacts) && ev.impacts.length > 0 ? ev.impacts : meteorList;
+                        for (const imp of impactList) {
+                            ultraEffects.push({
+                                kind: 'meteor_impact',
+                                x: imp.x,
+                                y: imp.y,
+                                radius: imp.radius || ev.radius || 110,
+                                element: ev.element,
+                                startedAt: performance.now(),
+                                durationMs: ev.durationMs || 320
+                            });
+                            if (imp.hitCount >= 2) {
+                                addFloatingText(imp.x, imp.y - 24, `MULTI HIT! ×${imp.hitCount}`, '#ffd166');
+                            }
+                        }
+                        if ((ev.totalHits || 0) >= 2 && ev.x !== undefined) {
+                            addFloatingText(ev.x, ev.y - 44, `METEOR CHAIN! (${ev.totalHits}HIT)`, '#ff9f43');
+                        }
                     }
                 }
             });
