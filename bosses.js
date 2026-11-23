@@ -1342,18 +1342,18 @@
             spawnY: 165,
             maxHp: 950,
             hpByPlayers: { 1: 950, 2: 1900, 3: 2850, 4: 3800 },
-            speed: 5.0,
+            speed: 3.0,
             moveSpeed5: {
-                p1: 5.0,
-                p2: 6.2,
-                soloP1: 5.0,
-                multiP1: 6.0,
-                soloP2: 6.2,
-                multiP2: 7.2
+                p1: 3.0,
+                p2: 3.2,
+                soloP1: 3.0,
+                multiP1: 4.0,
+                soloP2: 3.2,
+                multiP2: 4.2
             },
             attackIntervalMs: {
-                p1: 2100,
-                p2: 1350
+                p1: 2400,
+                p2: 1850
             },
             attackProjectiles: ['snake_dark', 'shadow_orb'],
             projectileDamage: {
@@ -1700,8 +1700,8 @@
                 multiP2: 4.8
             },
             attackIntervalMs: {
-                p1: 2000,
-                p2: 1250
+                p1: 1900,
+                p2: 950
             },
             randomActionSelection: true,
             attackProjectiles: ['phantom_homing', 'curse_bolt', 'feint_orb'],
