@@ -44,8 +44,8 @@
     function canPlaySe(key, cooldownMs) {
         if (!cooldownMs || cooldownMs <= 0) return true;
         const t = nowMs();
-        const last = seCooldownMap[key];
-        if (last !== undefined && t - last < cooldownMs) return false;
+        const last = seCooldownMap[key] || 0;
+        if (t - last < cooldownMs) return false;
         seCooldownMap[key] = t;
         return true;
     }
@@ -389,49 +389,6 @@
                 playTone(620, 'sawtooth', 0.24, 0.1, 180);
             }, 65);
         },
-        timeStop: () => {
-            if (!canPlaySe('timeStop', 300)) return;
-            playTone(980, 'sine', 0.28, 0.09, 140);
-            setTimeout(() => playTone(490, 'triangle', 0.24, 0.07, 90), 80);
-        },
-        endOfDaysCharge: () => {
-            if (!canPlaySe('endOfDaysCharge', 280)) return;
-            playTone(185, 'sawtooth', 0.34, 0.08, 920);
-            setTimeout(() => playTone(370, 'triangle', 0.24, 0.06, 1280), 80);
-        },
-        endOfDaysFire: () => {
-            if (!canPlaySe('endOfDaysFire', 250)) return;
-            playNoise(0.38, 0.15);
-            playTone(220, 'sawtooth', 0.4, 0.12, 46);
-            setTimeout(() => playTone(660, 'square', 0.26, 0.08, 110), 40);
-        },
-        endOfDaysPierce: () => {
-            if (!canPlaySe('endOfDaysPierce', 100)) return;
-            playNoise(0.2, 0.13);
-            playTone(1320, 'square', 0.12, 0.09, 320);
-            setTimeout(() => playTone(210, 'sawtooth', 0.18, 0.09, 68), 40);
-        },
-        endOfDaysMitigate: () => {
-            if (!canPlaySe('endOfDaysMitigate', 100)) return;
-            playTone(740, 'triangle', 0.14, 0.09, 370);
-            setTimeout(() => playTone(490, 'sine', 0.18, 0.08, 245), 45);
-        },
-        skyMeteorWarn: () => {
-            if (!canPlaySe('skyMeteorWarn', 220)) return;
-            playTone(680, 'sine', 0.22, 0.06, 260);
-            setTimeout(() => playTone(520, 'triangle', 0.18, 0.05, 220), 65);
-        },
-        skyMeteorImpact: (impactCount) => {
-            if (!canPlaySe('skyMeteorImpact', 250)) return;
-            if (!seEnabled || !audioCtx || seVolume <= 0) return;
-            const count = Math.floor(clamp(impactCount, 1, 5, 5));
-            for (let i = 0; i < count; i++) {
-                setTimeout(() => {
-                    playNoise(0.16, 0.09);
-                    playTone(175 + Math.random() * 35, 'sawtooth', 0.18, 0.08, 44);
-                }, i * 110);
-            }
-        },
         bossSlash: () => {
             if (!canPlaySe('bossSlash', 90)) return;
             playNoise(0.25, 0.13);
@@ -446,6 +403,7 @@
             if (!canPlaySe('zoneHit', 100)) return;
             playTone(110, 'sawtooth', 0.14, 0.07, 72);
         },
+        // STAGE 3 (INFERNO DRAGON) 専用強化ギミック・P2覚醒SE
         dragonAwaken: () => {
             if (!canPlaySe('dragonAwaken', 500)) return;
             playNoise(0.35, 0.13);
@@ -492,6 +450,7 @@
             if (!canPlaySe('dragonRoarPulse', 100)) return;
             playTone(145, 'sawtooth', 0.11, 0.06, 78);
         },
+        // STAGE 4 (ABYSS WEAVER) 専用ギミック・状態異常・フェーズ遷移SE
         abyssSigilWarn: () => {
             if (!canPlaySe('abyssSigilWarn', 120)) return;
             playTone(310, 'sine', 0.22, 0.06, 465);
@@ -526,6 +485,7 @@
             if (!canPlaySe('slowDebuff', 250)) return;
             playTone(220, 'triangle', 0.24, 0.08, 95);
         },
+        // STAGE 5 (PHANTOM MIRAGE / 幻惑の蜃気楼) 専用ギミック・状態異常・演出SE
         mirageStealth: () => {
             if (!canPlaySe('mirageStealth', 220)) return;
             playTone(760, 'sine', 0.24, 0.07, 240);
@@ -627,21 +587,6 @@
     };
 
     const SE_ALIASES = {
-        end_of_days_charge: 'endOfDaysCharge',
-        end_of_days_fire: 'endOfDaysFire',
-        end_of_days_pierce: 'endOfDaysPierce',
-        end_of_days_mitigate: 'endOfDaysMitigate',
-        sky_meteor_warn: 'skyMeteorWarn',
-        sky_meteor_impact: 'skyMeteorImpact',
-        sky_meteor_hit: 'skyMeteorImpact',
-        absolute_wall: 'ultraWall',
-        full_counter: 'counter',
-        perfect_counter: 'counter',
-        demon_blade: 'itemPower',
-        ricochet_guns: 'shot',
-        phantom_boots: 'itemSpeed',
-        time_stop: 'timeStop',
-        time_stop_active: 'timeStop',
         p2_awaken: 'dragonAwaken',
         breath: 'dragonBreath',
         claw_warn: 'dragonClawWarn',
@@ -754,12 +699,6 @@
         getCurrentBgmTrack: () => currentBgmTrack,
         getCurrentBgmRate: () => currentBgmRate,
         playSe,
-        playEndOfDaysCharge: () => playSe('end_of_days_charge'),
-        playEndOfDaysFire: () => playSe('end_of_days_fire'),
-        playEndOfDaysPierce: () => playSe('end_of_days_pierce'),
-        playEndOfDaysMitigate: () => playSe('end_of_days_mitigate'),
-        playSkyMeteorWarn: () => playSe('sky_meteor_warn'),
-        playSkyMeteorImpacts: (count) => playSe('sky_meteor_impact', count),
         playBossEventSe,
         syncBossBgm,
         SE

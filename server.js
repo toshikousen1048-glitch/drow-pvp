@@ -1,44 +1,78 @@
-'use strict';
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
-
 const BossSystem = require('./bosses.js');
+
+// 起動時バリデーション実行（不正定義があれば即座に停止）
+BossSystem.validateDefinitions({ throwOnError: true });
 
 const {
     GAME_RULES,
-    STATIC_OBSTACLES,
+    STATIC_OBSTACLES: RAW_STATIC_OBSTACLES,
     SPECIAL_INK_IDS,
-    determineElementFromPixels,
-    getElementMultiplier,
-    sanitizeUltraSkillId,
-    getUltraSkillDef,
+    SPECIAL_INKS,
+    ULTRA_SKILLS,
+    ULTRA_SKILL_ORDER,
+    STAGES,
+    DEFAULT_STAGE_NUMBER,
     getStageByNumber,
     getNextStage,
     sanitizeBossId,
     getBossDef,
-    createBossInstance
+    createBossInstance,
+    determineElementFromPixels,
+    getElementMultiplier,
+    sanitizeElementId,
+    getUltraSkillDef,
+    sanitizeUltraSkillId
 } = BossSystem;
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: '*' }
-});
+const io = new Server(server);
 
-const PORT = Number(process.env.PORT) || 3000;
-const TICK_INTERVAL_MS = 1000 / 60;
+app.use(express.static(__dirname));
+
+const rooms = {};
+const profiles = {};
+
+const MAX_PLAYERS_PER_ROOM = GAME_RULES.MAX_PLAYERS;
+const INITIAL_STOCKS = 1;
+
+// 960x720 アリーナ設定（bosses.js から一元取得）
 const ARENA_WIDTH = GAME_RULES.ARENA.WIDTH;
 const ARENA_TOP = GAME_RULES.ARENA.TOP;
 const ARENA_HEIGHT = GAME_RULES.ARENA.HEIGHT;
-const ARENA_PLAY_CENTER_Y = GAME_RULES.ARENA.PLAY_CENTER_Y;
-const PLAYER_SIZE = GAME_RULES.PLAYER.SIZE;
-const BREAKABLE_WALL_SIZE = GAME_RULES.OBSTACLES.BREAKABLE_SIZE;
-const BREAKABLE_WALL_HP = GAME_RULES.OBSTACLES.BREAKABLE_HP;
+const ARENA_CENTER_X = GAME_RULES.ARENA.CENTER_X;
+const ARENA_CENTER_Y = GAME_RULES.ARENA.PLAY_CENTER_Y;
+const CHAR_SIZE = GAME_RULES.PLAYER.SIZE;
 
-// サーバーティックで直接判定する特殊弾種（クライアント重複ヒットを防止）
+const STATIC_OBSTACLES = RAW_STATIC_OBSTACLES.map((obs, idx) => ({
+    id: `obs_${idx + 1}`,
+    x: obs.x,
+    y: obs.y,
+    w: obs.w,
+    h: obs.h
+}));
+
+// 4隅の初期スポーン地点（960x720 アリーナ対応）
+const SPAWN_POINTS = [
+    { x: 64, y: 64, facing: 'right' },
+    { x: 848, y: 624, facing: 'left' },
+    { x: 848, y: 64, facing: 'left' },
+    { x: 64, y: 624, facing: 'right' }
+];
+
+// 報酬ポイント定数（サーバー基準で一括計算）
+const REWARD_PVP_WIN = 450;
+const REWARD_PVP_KO = 100;
+const REWARD_BOSS_CONTRIBUTION_POOL = 200;
+const REWARD_BOSS_MVP = 150;
+
+const VALID_FACING = ['up', 'down', 'left', 'right'];
+const CREDIT_TTL_MS = { shot: 4000, melee: 1500 };
+
+// サーバー側ティックで直接当たり判定を行うBOSS弾種（二重ダメージ防止用）
 const SERVER_AUTHORITATIVE_PROJECTILES = new Set([
     'snake_dark',
     'shadow_orb',
@@ -48,1955 +82,3143 @@ const SERVER_AUTHORITATIVE_PROJECTILES = new Set([
     'feint_orb'
 ]);
 
-app.use(express.static(path.join(__dirname)));
-
 // =========================================================================
-// 1. 永続プロファイル（clientKey 単位の正本）
+// 永続プロファイル管理（ポイント・ステージ解放・インク・必殺技ストック）
 // =========================================================================
-const profiles = new Map();
-
-function createDefaultProfile(clientKey) {
-    return {
-        clientKey: String(clientKey),
-        name: 'プレイヤー',
-        points: 1000,
-        unlockedStage: 1,
-        ownedInks: [],
-        equippedInk: '',
-        ultraStocks: {
-            end_of_days: 0,
-            absolute_wall: 0,
-            perfect_counter: 0,
-            sky_meteor: 0,
-            demon_blade: 0,
-            ricochet_guns: 0,
-            phantom_boots: 0,
-            time_stop: 0
-        },
-        equippedUltra: null,
-        selectedBossId: BossSystem.DEFAULT_BOSS_ID,
-        pixels: null,
-        element: 'neutral'
-    };
+function createDefaultUltraStocks() {
+    const stocks = {};
+    for (const skillId of ULTRA_SKILL_ORDER) {
+        stocks[skillId] = 0;
+    }
+    return stocks;
 }
 
-function normalizeUltraStocks(rawStocks) {
-    const out = {};
-    for (const id of BossSystem.ULTRA_SKILL_ORDER) {
-        const val = rawStocks && typeof rawStocks[id] === 'number' ? Math.floor(rawStocks[id]) : 0;
-        out[id] = Math.max(0, Math.min(GAME_RULES.GACHA.ULTRA_MAX_STOCK, val));
+function sanitizeClientKey(raw, fallbackId) {
+    if (typeof raw === 'string' && raw.trim()) {
+        return raw.trim().slice(0, 48);
     }
-    return out;
+    return String(fallbackId || 'guest').slice(0, 48);
 }
 
-function getOrCreateProfile(rawClientKey) {
-    const key = (typeof rawClientKey === 'string' && rawClientKey.trim())
-        ? rawClientKey.trim().slice(0, 128)
-        : `guest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+function getOrCreateProfile(clientKey, seedData) {
+    const key = sanitizeClientKey(clientKey);
+    if (!profiles[key]) {
+        const seed = seedData && typeof seedData === 'object' ? seedData : {};
+        const maxStageLimit = STAGES.length;
+        const initStage = Math.min(maxStageLimit, Math.max(1, Math.floor(Number(seed.maxUnlockedStage) || 1)));
+        const initPoints = Math.max(0, Math.min(999999, Math.floor(Number(seed.points) || 0)));
 
-    if (!profiles.has(key)) {
-        profiles.set(key, createDefaultProfile(key));
-    }
-    const prof = profiles.get(key);
-    prof.ultraStocks = normalizeUltraStocks(prof.ultraStocks);
-    prof.unlockedStage = Math.max(1, Math.min(BossSystem.STAGES.length, Number(prof.unlockedStage) || 1));
-    prof.points = Math.max(0, Math.floor(Number(prof.points) || 0));
-    if (!Array.isArray(prof.ownedInks)) prof.ownedInks = [];
-    if (prof.equippedUltra && !sanitizeUltraSkillId(prof.equippedUltra)) {
-        prof.equippedUltra = null;
-    }
-    if (prof.equippedUltra && (prof.ultraStocks[prof.equippedUltra] || 0) <= 0) {
-        prof.equippedUltra = null;
-    }
-    return prof;
-}
-
-function buildProfilePayload(prof) {
-    return {
-        clientKey: prof.clientKey,
-        name: prof.name,
-        points: prof.points,
-        unlockedStage: prof.unlockedStage,
-        ownedInks: [...prof.ownedInks],
-        equippedInk: prof.equippedInk || '',
-        ultraStocks: { ...prof.ultraStocks },
-        equippedUltra: prof.equippedUltra || null,
-        selectedBossId: sanitizeBossId(prof.selectedBossId)
-    };
-}
-
-// =========================================================================
-// 2. ルーム管理・タイマー・状態リセットヘルパー
-// =========================================================================
-const rooms = new Map();
-let matchSeq = 1;
-
-function registerTimeout(room, fn, delayMs) {
-    if (!room) return null;
-    if (!Array.isArray(room._timers)) room._timers = [];
-    const safeDelay = Math.max(0, Number(delayMs) || 0);
-    const id = setTimeout(() => {
-        if (Array.isArray(room._timers)) {
-            const idx = room._timers.indexOf(id);
-            if (idx !== -1) room._timers.splice(idx, 1);
+        const initInks = [];
+        if (Array.isArray(seed.unlockedInks)) {
+            for (const ink of seed.unlockedInks) {
+                if (SPECIAL_INK_IDS.includes(ink) && !initInks.includes(ink)) {
+                    initInks.push(ink);
+                }
+            }
         }
-        fn();
-    }, safeDelay);
-    room._timers.push(id);
-    return id;
-}
 
-function registerInterval(room, fn, intervalMs) {
-    if (!room) return null;
-    if (!Array.isArray(room._intervals)) room._intervals = [];
-    const safeInterval = Math.max(16, Number(intervalMs) || 100);
-    const id = setInterval(fn, safeInterval);
-    room._intervals.push(id);
-    return id;
-}
+        const initStocks = createDefaultUltraStocks();
+        if (seed.ultraStocks && typeof seed.ultraStocks === 'object') {
+            for (const skillId of ULTRA_SKILL_ORDER) {
+                const rawVal = Math.floor(Number(seed.ultraStocks[skillId]) || 0);
+                initStocks[skillId] = Math.min(GAME_RULES.GACHA.ULTRA_MAX_STOCK, Math.max(0, rawVal));
+            }
+        }
 
-function clearRoomTimers(room) {
-    if (!room) return;
-    if (Array.isArray(room._timers)) {
-        for (const t of room._timers) clearTimeout(t);
-        room._timers = [];
+        let initEquipped = sanitizeUltraSkillId(seed.equippedUltra);
+        if (initEquipped && initStocks[initEquipped] <= 0) {
+            initEquipped = null;
+        }
+
+        profiles[key] = {
+            clientKey: key,
+            points: initPoints,
+            maxUnlockedStage: initStage,
+            unlockedInks: initInks,
+            ultraStocks: initStocks,
+            equippedUltra: initEquipped,
+            wins: Math.max(0, Math.floor(Number(seed.wins) || 0))
+        };
     }
-    if (Array.isArray(room._intervals)) {
-        for (const iv of room._intervals) clearInterval(iv);
-        room._intervals = [];
-    }
+    return profiles[key];
 }
 
-function clearPlayerTimers(p) {
+function serializeProfile(profile) {
+    return {
+        clientKey: profile.clientKey,
+        points: profile.points,
+        maxUnlockedStage: profile.maxUnlockedStage,
+        unlockedInks: [...profile.unlockedInks],
+        ultraStocks: { ...profile.ultraStocks },
+        equippedUltra: profile.equippedUltra,
+        wins: profile.wins
+    };
+}
+
+function emitProfileToClient(socket, profile) {
+    if (!socket || !profile) return;
+    socket.emit('profileUpdated', serializeProfile(profile));
+}
+
+function findSocketsByClientKey(clientKey) {
+    const matched = [];
+    for (const [, s] of io.sockets.sockets) {
+        if (s.data && s.data.clientKey === clientKey) {
+            matched.push(s);
+        }
+    }
+    return matched;
+}
+
+// =========================================================================
+// サニタイズ & ガードヘルパー
+// =========================================================================
+function sanitizeStats(stats) {
+    if (!stats) return { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' };
+    return {
+        atk: Math.min(35, Math.max(5, Number(stats.atk) || 12)),
+        spd: Math.min(7.5, Math.max(2.0, Number(stats.spd) || 4.0)),
+        maxHp: Math.min(220, Math.max(40, Number(stats.maxHp) || 100)),
+        mainColor: typeof stats.mainColor === 'string' ? stats.mainColor.slice(0, 24) : '#00a2e8'
+    };
+}
+
+function sanitizeRoomId(raw) {
+    if (typeof raw !== 'string') return '';
+    return raw.trim().slice(0, 20);
+}
+
+function sanitizeName(raw) {
+    if (typeof raw !== 'string') return 'NoName';
+    const trimmed = raw.trim().slice(0, 12);
+    return trimmed || 'NoName';
+}
+
+function sanitizeRank(raw) {
+    const valid = ['C', 'B', 'A', 'S'];
+    return valid.includes(raw) ? raw : 'B';
+}
+
+function analyzeSpecialInkFromGrid(gridData) {
+    if (!Array.isArray(gridData)) return { hasSpecialInk: false, dominantSpecialInk: null };
+    const flat = Array.isArray(gridData[0]) ? gridData.flat() : gridData;
+    const counts = {};
+    let total = 0;
+    for (let i = 0; i < flat.length; i++) {
+        const token = flat[i];
+        if (typeof token === 'string' && Object.prototype.hasOwnProperty.call(SPECIAL_INKS, token)) {
+            counts[token] = (counts[token] || 0) + 1;
+            total++;
+        }
+    }
+    if (total === 0) return { hasSpecialInk: false, dominantSpecialInk: null };
+    let best = null;
+    let bestCount = 0;
+    for (const id of SPECIAL_INK_IDS) {
+        if ((counts[id] || 0) > bestCount) {
+            bestCount = counts[id];
+            best = id;
+        }
+    }
+    return { hasSpecialInk: true, dominantSpecialInk: best };
+}
+
+function createPlayerGuards() {
+    return {
+        buckets: {},
+        credits: { shot: [], melee: [] },
+        nextShieldAt: 0,
+        lastMoveAt: 0,
+        lastMoveVectorAt: 0,
+        vx: 0,
+        vy: 0,
+        lastServerProjHitAt: 0,
+        lastMagmaHitAt: 0,
+        lastPulseHitAt: 0
+    };
+}
+
+function resetPlayerCombatStatuses(p) {
     if (!p) return;
-    if (Array.isArray(p._timers)) {
-        for (const t of p._timers) clearTimeout(t);
-        p._timers = [];
-    }
-    if (Array.isArray(p._intervals)) {
-        for (const iv of p._intervals) clearInterval(iv);
-        p._intervals = [];
-    }
-}
-
-function resetPlayerCombatStatuses(p, now) {
-    if (!p) return;
-    clearPlayerTimers(p);
-    p.hp = p.maxHp || GAME_RULES.PLAYER.BASE_MAX_HP;
-    p.isDead = false;
-    p.isEliminated = false;
-    p.respawnAt = 0;
-    p.invincibleUntil = now + 1200;
     p.shieldUntil = 0;
     p.speedBoostUntil = 0;
     p.powerBoostUntil = 0;
     p.slowUntil = 0;
-    p.slowMultiplier = 1;
-    p.ultraActiveUntil = 0;
-    p.ultraEndOfDaysUntil = 0;
-    p.ultraAbsoluteWallUntil = 0;
-    p.ultraCounterUntil = 0;
-    p.ultraDemonBladeUntil = 0;
-    p.ultraRicochetGunsUntil = 0;
-    p.ultraPhantomBootsUntil = 0;
-    p.attackCredits = { shot: 0, slash: 0 };
+    p.slowMultiplier = 1.0;
+    p.attackDebuffUntil = 0;
+    p.attackDebuffMultiplier = 1.0;
+    p.dotUntil = 0;
+    p.dotDamage = 0;
+    p.dotIntervalMs = 600;
+    p.nextDotAt = 0;
+    p.vx = 0;
+    p.vy = 0;
+    p.lastMoveVectorAt = 0;
+    p.lastServerProjHitAt = 0;
+    p.lastMagmaHitAt = 0;
+    p.lastPulseHitAt = 0;
+    clearPlayerUltraStateAndTimers(p);
+}
+
+function takeToken(p, key, refillMs, capacity) {
+    const now = Date.now();
+    const b = p.buckets[key] || (p.buckets[key] = { tokens: capacity, last: now });
+    b.tokens = Math.min(capacity, b.tokens + (now - b.last) / refillMs);
+    b.last = now;
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
 }
 
 function addCredit(p, type) {
-    if (!p) return;
-    if (!p.attackCredits) p.attackCredits = { shot: 0, slash: 0 };
-    p.attackCredits[type] = (p.attackCredits[type] || 0) + 1;
+    const list = p.credits[type];
+    const now = Date.now();
+    while (list.length && list[0] < now) list.shift();
+    list.push(now + CREDIT_TTL_MS[type]);
+    if (list.length > 6) list.shift();
 }
 
 function useCredit(p, type) {
-    if (!p || !p.attackCredits) return false;
-    const cur = p.attackCredits[type] || 0;
-    if (cur <= 0) return false;
-    p.attackCredits[type] = cur - 1;
+    const list = p.credits[type];
+    if (!list) return false;
+    const now = Date.now();
+    while (list.length && list[0] < now) list.shift();
+    if (list.length === 0) return false;
+    list.shift();
     return true;
 }
 
-function getOrCreateRoom(roomId, mode, bossId) {
-    const id = String(roomId || 'default').trim().slice(0, 64) || 'default';
-    let room = rooms.get(id);
-    if (!room) {
-        const safeMode = mode === 'boss' ? 'boss' : 'pvp';
-        const safeBossId = sanitizeBossId(bossId);
-        room = {
-            id,
-            mode: safeMode,
-            bossId: safeBossId,
-            state: 'lobby', // 'lobby' | 'countdown' | 'playing' | 'ended'
-            matchId: 0,
-            timeLeftSec: safeMode === 'boss' ? GAME_RULES.BOSS_TIME_LIMIT_SEC : GAME_RULES.PVP_TIME_LIMIT_SEC,
-            players: Object.create(null),
-            breakableWalls: [],
-            items: [],
-            boss: null,
-            bossAttackCount: 0,
-            lastBossAttackAt: Object.create(null),
-            serverProjectiles: [],
-            magmaZones: [],
-            timeStopUntil: 0,
-            timeStopOwnerId: null,
-            _timers: [],
-            _intervals: [],
-            _lastTickAt: Date.now()
-        };
-        rooms.set(id, room);
-    } else if (mode === 'boss' || mode === 'pvp') {
-        if (room.state === 'lobby' || room.state === 'ended') {
-            room.mode = mode;
-        }
-    }
-    if (bossId && (room.state === 'lobby' || room.state === 'ended')) {
-        room.bossId = sanitizeBossId(bossId);
-    }
-    return room;
+function sanitizeHitType(raw) {
+    return raw === 'melee' ? 'melee' : (raw === 'shot' ? 'shot' : null);
 }
 
-function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+function playerCenter(p) {
+    return { x: p.x + CHAR_SIZE / 2, y: p.y + CHAR_SIZE / 2 };
+}
+
+function facingToVector(facing) {
+    switch (facing) {
+        case 'up': return { dx: 0, dy: -1 };
+        case 'down': return { dx: 0, dy: 1 };
+        case 'left': return { dx: -1, dy: 0 };
+        case 'right':
+        default: return { dx: 1, dy: 0 };
+    }
 }
 
 function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq <= 1e-6) return Math.hypot(px - x1, py - y1);
-    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
-    const projX = x1 + t * dx;
-    const projY = y1 + t * dy;
-    return Math.hypot(px - projX, py - projY);
+    const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
 }
 
-function resolvePlayerMoveSpeed(p, now, room) {
-    let spd = GAME_RULES.PLAYER.BASE_SPEED;
-    if (p.speedBoostUntil && now < p.speedBoostUntil) {
-        spd *= GAME_RULES.ITEMS.speed.speedMultiplier;
+function overlapsStaticObstacle(x, y, size, pad) {
+    const left = x + pad;
+    const right = x + size - pad;
+    const top = y + pad;
+    const bottom = y + size - pad;
+    for (const obs of STATIC_OBSTACLES) {
+        if (left < obs.x + obs.w && right > obs.x && top < obs.y + obs.h && bottom > obs.y) return true;
     }
-    if (p.ultraPhantomBootsUntil && now < p.ultraPhantomBootsUntil) {
-        const bootDef = getUltraSkillDef('phantom_boots');
-        spd *= (bootDef && bootDef.speedMultiplier) || 2.0;
-    }
-    if (p.slowUntil && now < p.slowUntil) {
-        spd *= (p.slowMultiplier || 0.75);
-    }
-    if (room && room.boss && room.boss.vortexActive && room.mode === 'boss') {
-        spd *= 0.92;
-    }
-    return spd;
+    return false;
 }
 
-function movePlayerWithCollisions(room, p, dx, dy, now) {
-    const passWalls = Boolean(p.ultraPhantomBootsUntil && now < p.ultraPhantomBootsUntil);
-    const speed = resolvePlayerMoveSpeed(p, now, room);
-    const len = Math.hypot(dx, dy);
-    const ndx = len > 0 ? dx / len : 0;
-    const ndy = len > 0 ? dy / len : 0;
-    p.vx = ndx * speed;
-    p.vy = ndy * speed;
-
-    if (ndx !== 0 || ndy !== 0) {
-        if (Math.abs(ndx) >= Math.abs(ndy)) {
-            p.facing = ndx > 0 ? 'right' : 'left';
-        } else {
-            p.facing = ndy > 0 ? 'down' : 'up';
+function pointInStaticObstacle(px, py) {
+    for (const obs of STATIC_OBSTACLES) {
+        if (px >= obs.x && px <= obs.x + obs.w && py >= obs.y && py <= obs.y + obs.h) {
+            return true;
         }
     }
-
-    const stepX = p.vx;
-    const stepY = p.vy;
-
-    const tryMoveAxis = (mx, my) => {
-        const nextX = Math.max(0, Math.min(ARENA_WIDTH - PLAYER_SIZE, p.x + mx));
-        const nextY = Math.max(ARENA_TOP, Math.min(ARENA_HEIGHT - PLAYER_SIZE, p.y + my));
-
-        if (!passWalls) {
-            for (const obs of STATIC_OBSTACLES) {
-                if (rectsOverlap(nextX, nextY, PLAYER_SIZE, PLAYER_SIZE, obs.x, obs.y, obs.w, obs.h)) {
-                    return false;
-                }
-            }
-            for (const w of room.breakableWalls) {
-                if (w.hp <= 0) continue;
-                if (rectsOverlap(nextX, nextY, PLAYER_SIZE, PLAYER_SIZE, w.x, w.y, BREAKABLE_WALL_SIZE, BREAKABLE_WALL_SIZE)) {
-                    return false;
-                }
-            }
-        }
-        p.x = nextX;
-        p.y = nextY;
-        return true;
-    };
-
-    tryMoveAxis(stepX, 0);
-    tryMoveAxis(0, stepY);
+    return false;
 }
 
-function snapPlayerOutOfWalls(room, p) {
-    const candidates = [
-        { x: p.x, y: p.y },
-        { x: ARENA_WIDTH / 2 - PLAYER_SIZE / 2, y: ARENA_PLAY_CENTER_Y - PLAYER_SIZE / 2 },
-        { x: 80, y: ARENA_TOP + 60 },
-        { x: ARENA_WIDTH - 80 - PLAYER_SIZE, y: ARENA_TOP + 60 },
-        { x: 80, y: ARENA_HEIGHT - 60 - PLAYER_SIZE },
-        { x: ARENA_WIDTH - 80 - PLAYER_SIZE, y: ARENA_HEIGHT - 60 - PLAYER_SIZE }
-    ];
+function overlapsObstacleOrWall(room, x, y, size) {
+    const pad = 4;
+    const left = x + pad;
+    const right = x + size - pad;
+    const top = y + pad;
+    const bottom = y + size - pad;
 
-    const isFree = (cx, cy) => {
-        if (cx < 0 || cx + PLAYER_SIZE > ARENA_WIDTH || cy < ARENA_TOP || cy + PLAYER_SIZE > ARENA_HEIGHT) {
-            return false;
-        }
-        for (const obs of STATIC_OBSTACLES) {
-            if (rectsOverlap(cx, cy, PLAYER_SIZE, PLAYER_SIZE, obs.x, obs.y, obs.w, obs.h)) return false;
-        }
-        for (const w of room.breakableWalls) {
-            if (w.hp > 0 && rectsOverlap(cx, cy, PLAYER_SIZE, PLAYER_SIZE, w.x, w.y, BREAKABLE_WALL_SIZE, BREAKABLE_WALL_SIZE)) {
-                return false;
-            }
-        }
-        return true;
-    };
-
-    for (const c of candidates) {
-        const sx = Math.max(0, Math.min(ARENA_WIDTH - PLAYER_SIZE, c.x));
-        const sy = Math.max(ARENA_TOP, Math.min(ARENA_HEIGHT - PLAYER_SIZE, c.y));
-        if (isFree(sx, sy)) {
-            p.x = sx;
-            p.y = sy;
-            return;
+    for (const obs of STATIC_OBSTACLES) {
+        if (left < obs.x + obs.w && right > obs.x && top < obs.y + obs.h && bottom > obs.y) {
+            return true;
         }
     }
-}
-
-// =========================================================================
-// 3. ダメージ適用・カウンター・KO・勝利判定
-// =========================================================================
-function triggerUltraCounter(roomId, defender, attacker, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
-    const defSkill = getUltraSkillDef('perfect_counter');
-    const radius = (defSkill && defSkill.counterRadius) || 210;
-    const mult = (defSkill && defSkill.damageMultiplier) || 2.8;
-    const baseDmg = GAME_RULES.PLAYER.BASE_SHOT_DAMAGE * mult;
-    const dcx = defender.x + PLAYER_SIZE / 2;
-    const dcy = defender.y + PLAYER_SIZE / 2;
-
-    io.to(roomId).emit('ultraSkillEvent', {
-        skillId: 'perfect_counter',
-        phase: 'counter_burst',
-        ownerId: defender.id,
-        x: dcx,
-        y: dcy,
-        radius
-    });
-
-    if (room.mode === 'boss' && room.boss && room.boss.hp > 0) {
-        if (Math.hypot(room.boss.x - dcx, room.boss.y - dcy) <= radius + room.boss.radius) {
-            applyDamageToBoss(roomId, defender, baseDmg, 'perfect_counter', matchId);
-        }
-    }
-
-    for (const id in room.players) {
-        const other = room.players[id];
-        if (!other || other.id === defender.id || other.isDead || other.isEliminated) continue;
-        if (room.mode === 'pvp' || (attacker && other.id === attacker.id)) {
-            const ocx = other.x + PLAYER_SIZE / 2;
-            const ocy = other.y + PLAYER_SIZE / 2;
-            if (Math.hypot(ocx - dcx, ocy - dcy) <= radius + PLAYER_SIZE / 2) {
-                applyDamageToPlayer(roomId, other, baseDmg, 'perfect_counter', matchId, defender.element, defender);
+    if (room && Array.isArray(room.walls)) {
+        for (const w of room.walls) {
+            if (left < w.x + w.w && right > w.x && top < w.y + w.h && bottom > w.y) {
+                return true;
             }
         }
     }
+    return false;
 }
 
-function applyDamageToPlayer(roomId, target, rawDamage, sourceKind, matchId, attackerElement, attackerPlayer) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
-    if (!target || target.isDead || target.isEliminated) return false;
+function findSafePosition(room, size) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+        const x = Math.floor(Math.random() * (ARENA_WIDTH - size - 48)) + 24;
+        const y = Math.floor(Math.random() * (ARENA_HEIGHT - ARENA_TOP - size - 48)) + ARENA_TOP + 24;
 
-    const now = Date.now();
-    if (now < (target.invincibleUntil || 0)) return false;
+        if (overlapsObstacleOrWall(room, x, y, size)) continue;
 
-    const isEndOfDays = sourceKind === 'end_of_days';
-    const eodDef = getUltraSkillDef('end_of_days');
-    const absWallActive = Boolean(target.ultraAbsoluteWallUntil && now < target.ultraAbsoluteWallUntil);
-    const normalShieldActive = Boolean(target.shieldUntil && now < target.shieldUntil);
-    const counterActive = Boolean(target.ultraCounterUntil && now < target.ultraCounterUntil);
-
-    if (absWallActive) {
-        if (isEndOfDays) {
-            const wallMult = (eodDef && eodDef.absoluteWallDamageMultiplier) || 0.25;
-            rawDamage = rawDamage * wallMult;
-            io.to(roomId).emit('ultraSkillEvent', {
-                skillId: 'end_of_days',
-                phase: 'pierce_absolute_wall',
-                targetId: target.id,
-                label: (eodDef && eodDef.absoluteWallFloatingText) || 'ABSOLUTE!'
-            });
-        } else {
-            io.to(roomId).emit('ultraSkillEvent', {
-                skillId: 'absolute_wall',
-                phase: 'blocked',
-                targetId: target.id,
-                label: 'ABSOLUTE!'
-            });
-            return false;
-        }
-    } else if (normalShieldActive && !isEndOfDays) {
-        io.to(roomId).emit('playerBlocked', { playerId: target.id, kind: sourceKind });
-        return false;
-    } else if (normalShieldActive && isEndOfDays) {
-        const pierMult = (eodDef && eodDef.normalBarrierDamageMultiplier) || 0.5;
-        rawDamage = rawDamage * pierMult;
-    }
-
-    const elemMult = getElementMultiplier(attackerElement || 'neutral', target.element || 'neutral');
-    const finalDamage = Math.max(1, Math.round(rawDamage * elemMult));
-
-    if (counterActive && !isEndOfDays) {
-        target.ultraCounterUntil = 0;
-        triggerUltraCounter(roomId, target, attackerPlayer, matchId);
-        return false;
-    }
-
-    target.hp = Math.max(0, target.hp - finalDamage);
-    target.invincibleUntil = now + 260;
-
-    io.to(roomId).emit('playerDamaged', {
-        playerId: target.id,
-        hp: target.hp,
-        maxHp: target.maxHp,
-        damage: finalDamage,
-        sourceKind,
-        elementMultiplier: elemMult
-    });
-
-    if (isEndOfDays && counterActive) {
-        const cMult = (eodDef && eodDef.counterInteraction && eodDef.counterInteraction.damageMultiplier) || 0.5;
-        const cDmg = Math.max(1, Math.round(rawDamage * cMult));
-        target.hp = Math.max(0, target.hp - cDmg);
-        target.ultraCounterUntil = 0;
-        io.to(roomId).emit('playerDamaged', {
-            playerId: target.id,
-            hp: target.hp,
-            maxHp: target.maxHp,
-            damage: cDmg,
-            sourceKind: 'end_of_days_counter',
-            elementMultiplier: 1
-        });
-        if (target.hp > 0) {
-            triggerUltraCounter(roomId, target, attackerPlayer, matchId);
-        }
-    }
-
-    if (target.hp <= 0) {
-        handlePlayerKO(roomId, target, attackerPlayer, matchId);
-    }
-    return true;
-}
-
-function applyPulseDamageToPlayer(roomId, target, rawDamage, sourceKind, matchId, attackerElement) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
-    if (!target || target.isDead || target.isEliminated) return false;
-
-    const now = Date.now();
-    if (target.ultraAbsoluteWallUntil && now < target.ultraAbsoluteWallUntil) return false;
-    if (target.shieldUntil && now < target.shieldUntil) return false;
-
-    const elemMult = getElementMultiplier(attackerElement || 'neutral', target.element || 'neutral');
-    const dmg = Math.max(1, Math.round(rawDamage * elemMult));
-    target.hp = Math.max(0, target.hp - dmg);
-
-    io.to(roomId).emit('playerDamaged', {
-        playerId: target.id,
-        hp: target.hp,
-        maxHp: target.maxHp,
-        damage: dmg,
-        sourceKind,
-        elementMultiplier: elemMult
-    });
-
-    if (target.hp <= 0) {
-        handlePlayerKO(roomId, target, null, matchId);
-    }
-    return true;
-}
-
-function applySlowToPlayer(roomId, target, multiplier, durationMs, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
-    if (!target || target.isDead || target.isEliminated) return;
-    const now = Date.now();
-    target.slowMultiplier = Math.max(0.2, Math.min(1, Number(multiplier) || 0.75));
-    target.slowUntil = Math.max(target.slowUntil || 0, now + Math.max(200, Number(durationMs) || 1800));
-    io.to(roomId).emit('playerSlowed', {
-        playerId: target.id,
-        slowUntil: target.slowUntil,
-        slowMultiplier: target.slowMultiplier
-    });
-}
-
-function knockbackPlayerFromPoint(roomId, target, ox, oy, strength, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
-    if (!target || target.isDead || target.isEliminated) return;
-    const now = Date.now();
-    let kbMult = 1;
-    if (target.ultraAbsoluteWallUntil && now < target.ultraAbsoluteWallUntil) {
-        const wDef = getUltraSkillDef('absolute_wall');
-        kbMult = (wDef && wDef.knockbackMultiplier) || 0.15;
-    }
-    const px = target.x + PLAYER_SIZE / 2;
-    const py = target.y + PLAYER_SIZE / 2;
-    const ang = Math.atan2(py - oy, px - ox);
-    const dist = (Number(strength) || 90) * kbMult;
-    target.x = Math.max(0, Math.min(ARENA_WIDTH - PLAYER_SIZE, target.x + Math.cos(ang) * dist));
-    target.y = Math.max(ARENA_TOP, Math.min(ARENA_HEIGHT - PLAYER_SIZE, target.y + Math.sin(ang) * dist));
-}
-
-function checkMatchEndConditions(roomId, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
-
-    const allPlayers = Object.values(room.players);
-    if (allPlayers.length === 0) return;
-
-    if (room.mode === 'boss') {
-        if (room.boss && room.boss.hp <= 0) {
-            finishMatch(roomId, matchId, 'victory', 'BOSS撃破！');
-            return;
-        }
-        const alive = allPlayers.filter((p) => !p.isDead && !p.isEliminated);
-        if (alive.length === 0) {
-            finishMatch(roomId, matchId, 'defeat', '全滅...');
-        }
-    } else {
-        const alive = allPlayers.filter((p) => !p.isDead && !p.isEliminated);
-        if (allPlayers.length >= 2 && alive.length <= 1) {
-            const winner = alive[0] || null;
-            finishMatch(roomId, matchId, 'pvp_end', winner ? `${winner.name} の勝利！` : '引き分け');
-        }
-    }
-}
-
-function handlePlayerKO(roomId, target, attacker, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
-    if (!target || target.isDead || target.isEliminated) return;
-
-    const now = Date.now();
-    clearPlayerTimers(target);
-    target.isDead = true;
-    target.shieldUntil = 0;
-    target.ultraActiveUntil = 0;
-    target.ultraEndOfDaysUntil = 0;
-    target.ultraAbsoluteWallUntil = 0;
-    target.ultraCounterUntil = 0;
-    target.ultraDemonBladeUntil = 0;
-    target.ultraRicochetGunsUntil = 0;
-    target.ultraPhantomBootsUntil = 0;
-
-    if (room.mode === 'boss') {
-        target.isEliminated = true;
-        io.to(roomId).emit('playerEliminated', { playerId: target.id });
-        checkMatchEndConditions(roomId, matchId);
-        return;
-    }
-
-    // PvP リスポーン処理（3秒後）
-    target.respawnAt = now + 3000;
-    io.to(roomId).emit('playerKO', {
-        playerId: target.id,
-        attackerId: attacker ? attacker.id : null,
-        respawnAt: target.respawnAt
-    });
-
-    registerTimeout(room, () => {
-        const cur = rooms.get(roomId);
-        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
-        const pl = cur.players[target.id];
-        if (!pl || pl.isEliminated) return;
-
-        resetPlayerCombatStatuses(pl, Date.now());
-        snapPlayerOutOfWalls(cur, pl);
-        io.to(roomId).emit('playerRespawn', {
-            playerId: pl.id,
-            x: pl.x,
-            y: pl.y,
-            hp: pl.hp,
-            maxHp: pl.maxHp,
-            invincibleUntil: pl.invincibleUntil
-        });
-    }, 3000);
-
-    checkMatchEndConditions(roomId, matchId);
-}
-
-function applyDamageToBoss(roomId, attacker, rawDamage, sourceKind, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.mode !== 'boss' || room.state !== 'playing' || room.matchId !== matchId) return false;
-    if (!room.boss || room.boss.hp <= 0) return false;
-    if (!attacker || attacker.isDead || attacker.isEliminated) return false;
-
-    const now = Date.now();
-    const boss = room.boss;
-    const def = getBossDef(boss.id);
-
-    if (boss.isStealthed && sourceKind !== 'end_of_days' && sourceKind !== 'sky_meteor') {
-        return false;
-    }
-
-    let mult = getElementMultiplier(attacker.element || 'neutral', boss.element || 'neutral');
-
-    if (attacker.powerBoostUntil && now < attacker.powerBoostUntil) {
-        mult *= GAME_RULES.ITEMS.power.attackMultiplier;
-    }
-
-    if (sourceKind === 'slash') {
-        const slashAct = GAME_RULES.ACTIONS.slash;
-        mult *= (slashAct.bossMultiplier || 1.35);
-        if (attacker.ultraDemonBladeUntil && now < attacker.ultraDemonBladeUntil) {
-            const bladeDef = getUltraSkillDef('demon_blade');
-            mult *= (bladeDef && bladeDef.slashDamageMultiplier) || 2.0;
-        }
-    }
-
-    if (boss.barrierActive && sourceKind !== 'end_of_days') {
-        mult *= (def.barrierDamageMultiplier || 0.45);
-    }
-
-    if (boss.scaleAuraActive && now < (boss.scaleAuraUntil || 0)) {
-        const scaleMult = (def.phase2Awaken && def.phase2Awaken.scaleDamageMultiplier) || 0.75;
-        mult *= scaleMult;
-    }
-
-    const dmg = Math.max(1, Math.round((Number(rawDamage) || GAME_RULES.PLAYER.BASE_SHOT_DAMAGE) * mult));
-    boss.hp = Math.max(0, boss.hp - dmg);
-
-    io.to(roomId).emit('bossDamaged', {
-        bossId: boss.id,
-        attackerId: attacker.id,
-        damage: dmg,
-        hp: boss.hp,
-        maxHp: boss.maxHp,
-        sourceKind,
-        elementMultiplier: mult
-    });
-
-    // フェーズ2覚醒（HP 50% 以下）
-    if (boss.phase === 1 && boss.hp > 0 && boss.hp <= boss.maxHp * 0.5) {
-        boss.phase = 2;
-        const awaken = def.phase2Awaken || {};
-        const auraMs = awaken.scaleAuraDurationMs || 3000;
-        boss.scaleAuraActive = true;
-        boss.scaleAuraUntil = now + auraMs;
-
-        io.to(roomId).emit('bossAttackEvent', {
-            bossId: boss.id,
-            element: boss.element,
-            type: 'p2_awaken',
-            x: boss.x,
-            y: boss.y,
-            knockbackRadius: awaken.knockbackRadius || 240,
-            scaleAuraDurationMs: auraMs
-        });
-        io.to(roomId).emit('bossStateUpdated', boss);
-
-        registerTimeout(room, () => {
-            const cur = rooms.get(roomId);
-            if (cur && cur.matchId === matchId && cur.boss) {
-                cur.boss.scaleAuraActive = false;
-                cur.boss.scaleAuraUntil = 0;
-                io.to(roomId).emit('bossStateUpdated', cur.boss);
-            }
-        }, auraMs);
-    }
-
-    if (boss.hp <= 0) {
-        checkMatchEndConditions(roomId, matchId);
-    }
-    return true;
-}
-
-function finishMatch(roomId, matchId, outcome, summaryText) {
-    const room = rooms.get(roomId);
-    if (!room || room.matchId !== matchId || room.state === 'ended') return;
-
-    room.state = 'ended';
-    room.timeStopUntil = 0;
-    room.timeStopOwnerId = null;
-    room.serverProjectiles = [];
-    room.magmaZones = [];
-    clearRoomTimers(room);
-
-    const rewards = Object.create(null);
-
-    for (const id in room.players) {
-        const p = room.players[id];
-        clearPlayerTimers(p);
-        const prof = getOrCreateProfile(p.clientKey);
-        let earnedPt = 0;
-
-        if (room.mode === 'boss') {
-            const stage = getStageByNumber(p.selectedStageNumber || (room.boss && room.boss.stageNumber) || 1);
-            if (outcome === 'victory') {
-                earnedPt = stage.clearRewardPt || 500;
-                const nextStage = getNextStage(stage.stageNumber);
-                if (nextStage && prof.unlockedStage < nextStage.stageNumber) {
-                    prof.unlockedStage = nextStage.stageNumber;
-                }
-            } else {
-                earnedPt = 100;
-            }
-        } else {
-            earnedPt = (!p.isDead && !p.isEliminated) ? 250 : 100;
+        if (room.mode === 'boss' && room.boss) {
+            if (Math.hypot((x + size / 2) - room.boss.x, (y + size / 2) - room.boss.y) < 120) continue;
         }
 
-        prof.points += earnedPt;
-        rewards[id] = {
-            earnedPt,
-            points: prof.points,
-            unlockedStage: prof.unlockedStage
-        };
-
-        io.to(id).emit('profileUpdated', buildProfilePayload(prof));
-    }
-
-    io.to(roomId).emit('matchResult', {
-        matchId,
-        mode: room.mode,
-        outcome,
-        summaryText,
-        rewards
-    });
-}
-
-// =========================================================================
-// 4. 試合開始・カウントダウン・BOSSループ
-// =========================================================================
-function initArenaEntities(room) {
-    room.breakableWalls = [];
-    room.items = [];
-    room.serverProjectiles = [];
-    room.magmaZones = [];
-    room.bossAttackCount = 0;
-    room.lastBossAttackAt = Object.create(null);
-    room.timeStopUntil = 0;
-    room.timeStopOwnerId = null;
-
-    const maxWalls = room.mode === 'boss'
-        ? GAME_RULES.OBSTACLES.BREAKABLE_MAX_BOSS
-        : GAME_RULES.OBSTACLES.BREAKABLE_MAX_PVP;
-
-    for (let i = 0; i < maxWalls; i++) {
-        const col = i % 4;
-        const row = Math.floor(i / 4);
-        const wx = 320 + col * 85;
-        const wy = ARENA_TOP + 130 + row * 160;
-        room.breakableWalls.push({
-            id: `wall_${i}`,
-            x: wx,
-            y: wy,
-            w: BREAKABLE_WALL_SIZE,
-            h: BREAKABLE_WALL_SIZE,
-            hp: BREAKABLE_WALL_HP,
-            maxHp: BREAKABLE_WALL_HP
-        });
-    }
-
-    const itemIds = Object.keys(GAME_RULES.ITEMS);
-    for (let i = 0; i < 3; i++) {
-        const kind = itemIds[i % itemIds.length];
-        room.items.push({
-            id: `item_${i}_${Date.now()}`,
-            kind,
-            x: 220 + i * 240,
-            y: ARENA_PLAY_CENTER_Y + (i % 2 === 0 ? -60 : 60),
-            radius: 16
-        });
-    }
-
-    const playerList = Object.values(room.players);
-    const spawnCoords = [
-        { x: 120, y: ARENA_TOP + 120 },
-        { x: ARENA_WIDTH - 120 - PLAYER_SIZE, y: ARENA_HEIGHT - 120 - PLAYER_SIZE },
-        { x: 120, y: ARENA_HEIGHT - 120 - PLAYER_SIZE },
-        { x: ARENA_WIDTH - 120 - PLAYER_SIZE, y: ARENA_TOP + 120 }
-    ];
-
-    const now = Date.now();
-    playerList.forEach((p, idx) => {
-        const sp = spawnCoords[idx % spawnCoords.length];
-        p.x = sp.x;
-        p.y = sp.y;
-        p.vx = 0;
-        p.vy = 0;
-        p.facing = idx % 2 === 0 ? 'right' : 'left';
-        resetPlayerCombatStatuses(p, now);
-    });
-
-    if (room.mode === 'boss') {
-        const bossId = sanitizeBossId(room.bossId);
-        room.boss = createBossInstance(bossId, Math.max(1, playerList.length));
-        room.timeLeftSec = GAME_RULES.BOSS_TIME_LIMIT_SEC;
-    } else {
-        room.boss = null;
-        room.timeLeftSec = GAME_RULES.PVP_TIME_LIMIT_SEC;
-    }
-}
-
-function startMatchCountdown(roomId) {
-    const room = rooms.get(roomId);
-    if (!room) return;
-    if (Object.keys(room.players).length === 0) return;
-
-    clearRoomTimers(room);
-    const matchId = ++matchSeq;
-    room.matchId = matchId;
-    room.state = 'countdown';
-    initArenaEntities(room);
-
-    let sec = GAME_RULES.COUNTDOWN_SEC;
-    io.to(roomId).emit('matchCountdown', {
-        matchId,
-        seconds: sec,
-        mode: room.mode,
-        boss: room.boss,
-        players: room.players,
-        breakableWalls: room.breakableWalls,
-        items: room.items
-    });
-
-    const cdInterval = registerInterval(room, () => {
-        const cur = rooms.get(roomId);
-        if (!cur || cur.matchId !== matchId || cur.state !== 'countdown') return;
-        sec -= 1;
-        if (sec > 0) {
-            io.to(roomId).emit('matchCountdown', { matchId, seconds: sec });
-        } else {
-            clearInterval(cdInterval);
-            beginPlayingMatch(roomId, matchId);
-        }
-    }, 1000);
-}
-
-function scheduleBossAttackLoop(roomId, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.mode !== 'boss' || !room.boss) return;
-
-    const triggerNext = () => {
-        const cur = rooms.get(roomId);
-        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss || cur.boss.hp <= 0) {
-            return;
-        }
-
-        const now = Date.now();
-        const isTimeStopped = Boolean(cur.timeStopUntil && now < cur.timeStopUntil && cur.timeStopOwnerId);
-        const def = getBossDef(cur.boss.id);
-        const intervalMs = cur.boss.phase === 2
-            ? (def.attackIntervalMs && def.attackIntervalMs.p2) || 1400
-            : (def.attackIntervalMs && def.attackIntervalMs.p1) || 2100;
-
-        if (!isTimeStopped && !cur.boss.isStealthed) {
-            const allPlayers = Object.values(cur.players);
-            const alivePlayers = allPlayers.filter((p) => p && !p.isDead && !p.isEliminated);
-            const targetPool = alivePlayers.length > 0 ? alivePlayers : allPlayers;
-            let targetCx = ARENA_WIDTH / 2;
-            let targetCy = ARENA_PLAY_CENTER_Y;
-            if (targetPool.length > 0) {
-                const chosen = targetPool[Math.floor(Math.random() * targetPool.length)];
-                targetCx = chosen.x + PLAYER_SIZE / 2;
-                targetCy = chosen.y + PLAYER_SIZE / 2;
-            }
-
-            const count = cur.bossAttackCount++;
-            def.executeAttack({
-                room: cur,
-                roomId,
-                matchId,
-                boss: cur.boss,
-                allPlayerCount: Math.max(1, allPlayers.length),
-                alivePlayers,
-                targetCx,
-                targetCy,
-                count,
-                io,
-                getRoom: () => rooms.get(roomId),
-                registerTimeout,
-                pointToSegmentDistance,
-                applyDamageToPlayer,
-                applyPulseDamageToPlayer,
-                applySlowToPlayer,
-                knockbackPlayerFromPoint,
-                spawnMagmaZones: (rId, zones, durationMs, mId, elem) => {
-                    const r = rooms.get(rId);
-                    if (!r || r.state !== 'playing' || r.matchId !== mId) return;
-                    const expiresAt = Date.now() + (durationMs || 2400);
-                    for (const z of (zones || [])) {
-                        r.magmaZones.push({
-                            x: z.x,
-                            y: z.y,
-                            radius: z.radius || 84,
-                            expiresAt,
-                            nextTickAt: Date.now() + 500,
-                            element: elem || 'fire'
-                        });
-                    }
-                }
-            });
-        }
-
-        registerTimeout(cur, triggerNext, intervalMs);
-    };
-
-    registerTimeout(room, triggerNext, 900);
-}
-
-function beginPlayingMatch(roomId, matchId) {
-    const room = rooms.get(roomId);
-    if (!room || room.matchId !== matchId) return;
-    room.state = 'playing';
-    room._lastTickAt = Date.now();
-
-    io.to(roomId).emit('matchStart', {
-        matchId,
-        mode: room.mode,
-        timeLeftSec: room.timeLeftSec,
-        boss: room.boss,
-        players: room.players
-    });
-
-    // 1秒タイマー
-    registerInterval(room, () => {
-        const cur = rooms.get(roomId);
-        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
-        const now = Date.now();
-        if (cur.timeStopUntil && now < cur.timeStopUntil && cur.timeStopOwnerId) {
-            return;
-        }
-        cur.timeLeftSec = Math.max(0, cur.timeLeftSec - 1);
-        io.to(roomId).emit('timerSync', { matchId, timeLeftSec: cur.timeLeftSec });
-
-        if (cur.timeLeftSec <= 0) {
-            if (cur.mode === 'boss') {
-                finishMatch(roomId, matchId, 'timeout', 'タイムアップ！');
-            } else {
-                finishMatch(roomId, matchId, 'pvp_timeout', 'タイムアップ！');
-            }
-        }
-    }, 1000);
-
-    if (room.mode === 'boss') {
-        scheduleBossAttackLoop(roomId, matchId);
-    }
-}
-
-// =========================================================================
-// 5. 60FPS サーバーシミュレーションループ
-// =========================================================================
-setInterval(() => {
-    const now = Date.now();
-
-    for (const [roomId, room] of rooms.entries()) {
-        if (!room || room.state !== 'playing') continue;
-        const matchId = room.matchId;
-
-        if (room.timeStopUntil && now >= room.timeStopUntil) {
-            const endedOwnerId = room.timeStopOwnerId;
-            room.timeStopUntil = 0;
-            room.timeStopOwnerId = null;
-            io.to(roomId).emit('ultraSkillEvent', {
-                skillId: 'time_stop',
-                phase: 'end',
-                ownerId: endedOwnerId
-            });
-        }
-
-        const timeStopped = Boolean(room.timeStopUntil && now < room.timeStopUntil && room.timeStopOwnerId);
-        const stopOwnerId = room.timeStopOwnerId;
-
-        // プレイヤー移動・バフ切れ・アイテム取得
+        let overlap = false;
         for (const id in room.players) {
             const p = room.players[id];
-            if (!p || p.isDead || p.isEliminated) continue;
-
-            if (p.slowUntil && now >= p.slowUntil) {
-                p.slowUntil = 0;
-                p.slowMultiplier = 1;
-            }
-
-            const canMove = !timeStopped || (room.mode === 'boss') || (p.id === stopOwnerId);
-            if (canMove && p.input) {
-                const mx = (p.input.right ? 1 : 0) - (p.input.left ? 1 : 0);
-                const my = (p.input.down ? 1 : 0) - (p.input.up ? 1 : 0);
-                if (mx !== 0 || my !== 0) {
-                    movePlayerWithCollisions(room, p, mx, my, now);
-                } else {
-                    p.vx = 0;
-                    p.vy = 0;
-                }
-            } else {
-                p.vx = 0;
-                p.vy = 0;
-            }
-
-            // アイテム取得
-            for (let i = room.items.length - 1; i >= 0; i--) {
-                const it = room.items[i];
-                const pcx = p.x + PLAYER_SIZE / 2;
-                const pcy = p.y + PLAYER_SIZE / 2;
-                if (Math.hypot(pcx - it.x, pcy - it.y) <= it.radius + PLAYER_SIZE / 2) {
-                    const itemDef = GAME_RULES.ITEMS[it.kind];
-                    if (itemDef) {
-                        if (itemDef.id === 'heal') {
-                            p.hp = Math.min(p.maxHp, p.hp + itemDef.healAmount);
-                        } else if (itemDef.id === 'speed') {
-                            p.speedBoostUntil = now + itemDef.durationMs;
-                        } else if (itemDef.id === 'power') {
-                            p.powerBoostUntil = now + itemDef.durationMs;
-                        }
-                        io.to(roomId).emit('itemPicked', {
-                            itemId: it.id,
-                            kind: it.kind,
-                            playerId: p.id,
-                            hp: p.hp,
-                            speedBoostUntil: p.speedBoostUntil,
-                            powerBoostUntil: p.powerBoostUntil
-                        });
-                    }
-                    room.items.splice(i, 1);
-                }
+            if (p.isEliminated || p.isDead) continue;
+            if (Math.abs((p.x + 24) - (x + size / 2)) < 75 && Math.abs((p.y + 24) - (y + size / 2)) < 75) {
+                overlap = true;
+                break;
             }
         }
+        if (overlap) continue;
 
-        // BOSS移動・渦潮吸引（timeStop 中は停止）
-        if (room.mode === 'boss' && room.boss && room.boss.hp > 0 && !timeStopped) {
-            const boss = room.boss;
-            const def = getBossDef(boss.id);
-            const playerCount = Object.keys(room.players).length;
-            const isMulti = playerCount >= 2;
-            const ms = def.moveSpeed || {};
-            let bSpeed = boss.speed || 2.8;
-            if (boss.phase === 2) {
-                bSpeed = isMulti ? (ms.multiP2 || ms.p2 || bSpeed) : (ms.soloP2 || ms.p2 || bSpeed);
-            } else {
-                bSpeed = isMulti ? (ms.multiP1 || ms.p1 || bSpeed) : (ms.soloP1 || ms.p1 || bSpeed);
-            }
-
-            if (!boss.isStealthed) {
-                const alive = Object.values(room.players).filter((pl) => pl && !pl.isDead && !pl.isEliminated);
-                if (alive.length > 0) {
-                    const target = alive[0];
-                    const tcx = target.x + PLAYER_SIZE / 2;
-                    const tcy = target.y + PLAYER_SIZE / 2;
-                    const ang = Math.atan2(tcy - boss.y, tcx - boss.x);
-                    const nx = boss.x + Math.cos(ang) * bSpeed;
-                    const ny = boss.y + Math.sin(ang) * bSpeed;
-                    boss.x = Math.max(boss.radius + 16, Math.min(ARENA_WIDTH - boss.radius - 16, nx));
-                    boss.y = Math.max(ARENA_TOP + boss.radius + 16, Math.min(ARENA_HEIGHT - boss.radius - 16, ny));
-                }
-            }
-
-            if (boss.vortexActive) {
-                const pullBase = boss.phase === 2 ? 1.95 : 1.55;
-                for (const id in room.players) {
-                    const pl = room.players[id];
-                    if (!pl || pl.isDead || pl.isEliminated) continue;
-                    let pMult = 1;
-                    if (pl.ultraAbsoluteWallUntil && now < pl.ultraAbsoluteWallUntil) {
-                        const wDef = getUltraSkillDef('absolute_wall');
-                        pMult = (wDef && wDef.pullMultiplier) || 0.15;
-                    }
-                    const pcx = pl.x + PLAYER_SIZE / 2;
-                    const pcy = pl.y + PLAYER_SIZE / 2;
-                    const ang = Math.atan2(boss.y - pcy, boss.x - pcx);
-                    const pull = pullBase * pMult;
-                    pl.x = Math.max(0, Math.min(ARENA_WIDTH - PLAYER_SIZE, pl.x + Math.cos(ang) * pull));
-                    pl.y = Math.max(ARENA_TOP, Math.min(ARENA_HEIGHT - PLAYER_SIZE, pl.y + Math.sin(ang) * pull));
-                }
+        for (const it of room.items) {
+            if (Math.abs(it.x - (x + size / 2)) < 45 && Math.abs(it.y - (y + size / 2)) < 45) {
+                overlap = true;
+                break;
             }
         }
+        if (!overlap) return { x, y };
+    }
 
-        // マグマ床ティック（timeStop 中は停止）
-        if (!timeStopped && room.magmaZones.length > 0) {
-            const magCfg = (room.boss && getBossDef(room.boss.id).magmaConfig) || { tickIntervalMs: 600, tickDamage: 6 };
-            for (let i = room.magmaZones.length - 1; i >= 0; i--) {
-                const mz = room.magmaZones[i];
-                if (now >= mz.expiresAt) {
-                    room.magmaZones.splice(i, 1);
-                    continue;
-                }
-                if (now >= mz.nextTickAt) {
-                    mz.nextTickAt = now + (magCfg.tickIntervalMs || 600);
-                    for (const id in room.players) {
-                        const pl = room.players[id];
-                        if (!pl || pl.isDead || pl.isEliminated) continue;
-                        const pcx = pl.x + PLAYER_SIZE / 2;
-                        const pcy = pl.y + PLAYER_SIZE / 2;
-                        if (Math.hypot(pcx - mz.x, pcy - mz.y) <= mz.radius) {
-                            applyPulseDamageToPlayer(roomId, pl, magCfg.tickDamage || 6, 'magma', matchId, mz.element || 'fire');
-                        }
-                    }
-                }
-            }
+    return { x: 64, y: 64 };
+}
+
+function pushPlayerSafely(p, angle, distance) {
+    if (!p || distance <= 0) return;
+    const steps = 10;
+    const stepDist = distance / steps;
+    const maxX = ARENA_WIDTH - CHAR_SIZE;
+    const maxY = ARENA_HEIGHT - CHAR_SIZE;
+    let curX = p.x;
+    let curY = p.y;
+
+    for (let s = 1; s <= steps; s++) {
+        const candX = Math.max(0, Math.min(maxX, curX + Math.cos(angle) * stepDist));
+        const candY = Math.max(ARENA_TOP, Math.min(maxY, curY + Math.sin(angle) * stepDist));
+        if (overlapsStaticObstacle(candX, candY, CHAR_SIZE, 12)) {
+            break;
         }
+        curX = candX;
+        curY = candY;
+    }
 
-        // サーバー管理弾（跳弾銃・蛇行闇弾・呪詛弾・追尾球など）
-        for (let i = room.serverProjectiles.length - 1; i >= 0; i--) {
-            const proj = room.serverProjectiles[i];
-            if (timeStopped && proj.ownerType !== 'player') {
-                continue;
-            }
-            if (timeStopped && proj.ownerType === 'player' && proj.ownerId !== stopOwnerId) {
-                continue;
-            }
+    p.x = curX;
+    p.y = curY;
+}
 
-            proj.life -= 1;
-            if (proj.life <= 0) {
-                room.serverProjectiles.splice(i, 1);
-                continue;
-            }
-
-            if (proj.kind === 'snake_dark') {
-                proj.age = (proj.age || 0) + 1;
-                proj.baseX += Math.cos(proj.angle) * proj.speed;
-                proj.baseY += Math.sin(proj.angle) * proj.speed;
-                const offset = (proj.side || 1) * Math.sin(proj.age * (proj.waveFreq || 0.12)) * (proj.waveAmp || 34);
-                const perpX = -Math.sin(proj.angle);
-                const perpY = Math.cos(proj.angle);
-                proj.x = proj.baseX + perpX * offset;
-                proj.y = proj.baseY + perpY * offset;
-            } else if ((proj.kind === 'phantom_homing' || proj.kind === 'homing') && proj.ownerType === 'boss') {
-                const alive = Object.values(room.players).filter((pl) => pl && !pl.isDead && !pl.isEliminated);
-                if (alive.length > 0) {
-                    const t = alive[0];
-                    const tcx = t.x + PLAYER_SIZE / 2;
-                    const tcy = t.y + PLAYER_SIZE / 2;
-                    const desired = Math.atan2(tcy - proj.y, tcx - proj.x);
-                    const curAng = Math.atan2(proj.vy, proj.vx);
-                    let diff = desired - curAng;
-                    while (diff > Math.PI) diff -= Math.PI * 2;
-                    while (diff < -Math.PI) diff += Math.PI * 2;
-                    const tr = proj.turnRate || 0.045;
-                    const step = Math.max(-tr, Math.min(tr, diff));
-                    const nextAng = curAng + step;
-                    const spd = proj.speed || Math.hypot(proj.vx, proj.vy) || 3.5;
-                    proj.vx = Math.cos(nextAng) * spd;
-                    proj.vy = Math.sin(nextAng) * spd;
-                }
-                proj.x += proj.vx;
-                proj.y += proj.vy;
-            } else {
-                proj.x += proj.vx;
-                proj.y += proj.vy;
-            }
-
-            // 反射判定（ricochet_guns）
-            let bounced = false;
-            if ((proj.bouncesLeft || 0) > 0) {
-                if (proj.x <= 4 || proj.x >= ARENA_WIDTH - 4) {
-                    proj.vx = -proj.vx;
-                    proj.x = Math.max(5, Math.min(ARENA_WIDTH - 5, proj.x));
-                    proj.bouncesLeft -= 1;
-                    bounced = true;
-                }
-                if (proj.y <= ARENA_TOP + 4 || proj.y >= ARENA_HEIGHT - 4) {
-                    proj.vy = -proj.vy;
-                    proj.y = Math.max(ARENA_TOP + 5, Math.min(ARENA_HEIGHT - 5, proj.y));
-                    proj.bouncesLeft -= 1;
-                    bounced = true;
-                }
-                if (!bounced) {
-                    for (const obs of STATIC_OBSTACLES) {
-                        if (proj.x >= obs.x && proj.x <= obs.x + obs.w && proj.y >= obs.y && proj.y <= obs.y + obs.h) {
-                            proj.vx = -proj.vx;
-                            proj.vy = -proj.vy;
-                            proj.x += proj.vx * 1.5;
-                            proj.y += proj.vy * 1.5;
-                            proj.bouncesLeft -= 1;
-                            bounced = true;
-                            break;
-                        }
-                    }
-                }
-                if (!bounced) {
-                    for (const w of room.breakableWalls) {
-                        if (w.hp > 0 && proj.x >= w.x && proj.x <= w.x + w.w && proj.y >= w.y && proj.y <= w.y + w.h) {
-                            proj.vx = -proj.vx;
-                            proj.vy = -proj.vy;
-                            proj.x += proj.vx * 1.5;
-                            proj.y += proj.vy * 1.5;
-                            proj.bouncesLeft -= 1;
-                            bounced = true;
-                            break;
-                        }
-                    }
-                }
-                if (bounced) {
-                    io.to(roomId).emit('projectileRicocheted', {
-                        id: proj.id,
-                        x: proj.x,
-                        y: proj.y,
-                        vx: proj.vx,
-                        vy: proj.vy
-                    });
-                    continue;
-                }
-            }
-
-            // 場外・障害物消滅
-            if (proj.x < 0 || proj.x > ARENA_WIDTH || proj.y < ARENA_TOP || proj.y > ARENA_HEIGHT) {
-                room.serverProjectiles.splice(i, 1);
-                continue;
-            }
-
-            if (proj.ownerType === 'player') {
-                const owner = room.players[proj.ownerId];
-                if (room.mode === 'boss' && room.boss && room.boss.hp > 0 && owner) {
-                    if (Math.hypot(proj.x - room.boss.x, proj.y - room.boss.y) <= room.boss.radius + 10) {
-                        applyDamageToBoss(roomId, owner, proj.damage || 40, proj.kind || 'ricochet_guns', matchId);
-                        room.serverProjectiles.splice(i, 1);
-                        continue;
-                    }
-                }
-                if (room.mode === 'pvp') {
-                    let hitAny = false;
-                    for (const id in room.players) {
-                        if (id === proj.ownerId) continue;
-                        const pl = room.players[id];
-                        if (!pl || pl.isDead || pl.isEliminated) continue;
-                        const pcx = pl.x + PLAYER_SIZE / 2;
-                        const pcy = pl.y + PLAYER_SIZE / 2;
-                        if (Math.hypot(proj.x - pcx, proj.y - pcy) <= PLAYER_SIZE / 2 + 8) {
-                            applyDamageToPlayer(roomId, pl, proj.damage || 40, proj.kind || 'ricochet_guns', matchId, proj.element || 'neutral', owner);
-                            hitAny = true;
-                            break;
-                        }
-                    }
-                    if (hitAny) {
-                        room.serverProjectiles.splice(i, 1);
-                        continue;
-                    }
-                }
-            } else if (proj.ownerType === 'boss') {
-                let hitPl = false;
-                for (const id in room.players) {
-                    const pl = room.players[id];
-                    if (!pl || pl.isDead || pl.isEliminated) continue;
-                    const pcx = pl.x + PLAYER_SIZE / 2;
-                    const pcy = pl.y + PLAYER_SIZE / 2;
-                    if (Math.hypot(proj.x - pcx, proj.y - pcy) <= PLAYER_SIZE / 2 + 8) {
-                        applyDamageToPlayer(roomId, pl, proj.damage || 10, proj.kind || 'boss_proj', matchId, proj.element || 'neutral');
-                        hitPl = true;
-                        break;
-                    }
-                }
-                if (hitPl) {
-                    room.serverProjectiles.splice(i, 1);
-                    continue;
-                }
-            }
+// =========================================================================
+// タイマー管理・必殺技タイマー完全破棄
+// =========================================================================
+function clearPlayerUltraStateAndTimers(p) {
+    if (!p) return;
+    if (Array.isArray(p.ultraTimers)) {
+        for (const tid of p.ultraTimers) {
+            clearTimeout(tid);
         }
+    }
+    p.ultraTimers = [];
+    p.ultraState = null;
+    p.ultraStateUntil = 0;
+    p.absoluteWallUntil = 0;
+    p.counterStanceUntil = 0;
+    p.ultraActiveTimerId = null;
+}
 
-        io.to(roomId).emit('gameState', {
-            matchId,
-            state: room.state,
-            timeLeftSec: room.timeLeftSec,
-            players: room.players,
-            boss: room.boss,
-            breakableWalls: room.breakableWalls,
-            items: room.items,
-            serverProjectiles: room.serverProjectiles,
-            timeStopUntil: room.timeStopUntil,
-            timeStopOwnerId: room.timeStopOwnerId
+function registerPlayerUltraTimeout(room, p, fn, delayMs) {
+    if (!room || !p) return null;
+    if (!Array.isArray(p.ultraTimers)) {
+        p.ultraTimers = [];
+    }
+    const timerId = setTimeout(() => {
+        if (p && Array.isArray(p.ultraTimers)) {
+            p.ultraTimers = p.ultraTimers.filter((id) => id !== timerId);
+        }
+        fn();
+    }, delayMs);
+    p.ultraTimers.push(timerId);
+    return timerId;
+}
+
+function registerBossTimeout(room, fn, delayMs) {
+    if (!room) return null;
+    if (!Array.isArray(room.bossPendingTimeouts)) {
+        room.bossPendingTimeouts = [];
+    }
+    const timerId = setTimeout(() => {
+        if (room && Array.isArray(room.bossPendingTimeouts)) {
+            room.bossPendingTimeouts = room.bossPendingTimeouts.filter((id) => id !== timerId);
+        }
+        fn();
+    }, delayMs);
+    room.bossPendingTimeouts.push(timerId);
+    return timerId;
+}
+
+function stopGimmickLoop(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (room.countdownTimer) { clearTimeout(room.countdownTimer); room.countdownTimer = null; }
+    if (room.wallTimer) { clearInterval(room.wallTimer); room.wallTimer = null; }
+    if (room.itemTimer) { clearInterval(room.itemTimer); room.itemTimer = null; }
+    if (room.bossMoveTimer) { clearInterval(room.bossMoveTimer); room.bossMoveTimer = null; }
+    if (room.bossProjectileTimer) { clearInterval(room.bossProjectileTimer); room.bossProjectileTimer = null; }
+    if (room.bossAttackTimer) { clearTimeout(room.bossAttackTimer); room.bossAttackTimer = null; }
+    if (Array.isArray(room.bossPendingTimeouts)) {
+        for (const tid of room.bossPendingTimeouts) {
+            clearTimeout(tid);
+        }
+        room.bossPendingTimeouts = [];
+    }
+    room.bossProjectiles = [];
+    room.bossMagmaZones = [];
+    room.bossRoarPullUntil = 0;
+    room.bossRoarPullStrength = 0;
+    if (room.boss) {
+        room.boss.scaleAuraActive = false;
+        room.boss.scaleAuraUntil = 0;
+        room.boss.pulseCharging = false;
+        room.boss.vortexActive = false;
+        room.boss.barrierActive = false;
+        room.boss.isStealthed = false;
+        room.boss.clones = [];
+    }
+    for (const id in room.players) {
+        clearPlayerUltraStateAndTimers(room.players[id]);
+    }
+}
+
+// =========================================================================
+// プレイヤー状態シリアライズ & ルーム同期
+// =========================================================================
+function serializeRoomPlayers(room) {
+    const out = {};
+    for (const id in room.players) {
+        const p = room.players[id];
+        out[id] = {
+            id: p.id,
+            clientKey: p.clientKey,
+            name: p.name,
+            rank: p.rank,
+            title: p.title,
+            element: p.element,
+            hasSpecialInk: p.hasSpecialInk,
+            dominantSpecialInk: p.dominantSpecialInk,
+            x: p.x,
+            y: p.y,
+            facing: p.facing,
+            characterData: p.characterData,
+            stats: p.stats,
+            hp: p.hp,
+            maxHp: p.maxHp,
+            stocks: p.stocks,
+            isDead: p.isDead,
+            isEliminated: p.isEliminated,
+            shieldUntil: p.shieldUntil,
+            absoluteWallUntil: p.absoluteWallUntil,
+            counterStanceUntil: p.counterStanceUntil,
+            speedBoostUntil: p.speedBoostUntil,
+            powerBoostUntil: p.powerBoostUntil,
+            slowUntil: p.slowUntil || 0,
+            slowMultiplier: p.slowMultiplier || 1.0,
+            attackDebuffUntil: p.attackDebuffUntil || 0,
+            attackDebuffMultiplier: p.attackDebuffMultiplier || 1.0,
+            dotUntil: p.dotUntil || 0,
+            ultraSkillId: p.ultraSkillId,
+            ultraRemainingUses: p.ultraRemainingUses,
+            ultraMaxUses: p.ultraMaxUses,
+            ultraCooldownUntil: p.ultraCooldownUntil,
+            ultraState: p.ultraState,
+            ultraStateUntil: p.ultraStateUntil,
+            bossDamageDealt: p.bossDamageDealt,
+            lastEarnedPoints: p.lastEarnedPoints,
+            lastPointBreakdown: p.lastPointBreakdown,
+            isReady: p.isReady,
+            wins: p.wins,
+            points: p.points
+        };
+    }
+    return out;
+}
+
+function getHostMaxUnlockedStage(room) {
+    if (!room || !room.hostId || !room.players[room.hostId]) return 1;
+    const hostPlayer = room.players[room.hostId];
+    const prof = profiles[hostPlayer.clientKey];
+    return prof ? prof.maxUnlockedStage : 1;
+}
+
+function emitRoomStateSync(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+    io.to(roomId).emit('roomStateSync', {
+        state: room.state,
+        mode: room.mode,
+        stageNumber: room.stageNumber,
+        stageId: room.stageId,
+        bossId: room.bossId,
+        hostId: room.hostId,
+        hostMaxUnlockedStage: getHostMaxUnlockedStage(room),
+        lastMatchCleared: Boolean(room.lastMatchCleared),
+        players: serializeRoomPlayers(room),
+        walls: room.walls,
+        items: room.items,
+        staticObstacles: STATIC_OBSTACLES,
+        boss: room.boss
+    });
+}
+
+function syncPlayerEquippedUltraFromProfile(p) {
+    if (!p) return;
+    const prof = profiles[p.clientKey];
+    if (!prof) {
+        p.ultraSkillId = null;
+        p.ultraRemainingUses = 0;
+        p.ultraMaxUses = 0;
+        return;
+    }
+    const equipped = sanitizeUltraSkillId(prof.equippedUltra);
+    const stock = equipped ? (prof.ultraStocks[equipped] || 0) : 0;
+    if (equipped && stock > 0) {
+        p.ultraSkillId = equipped;
+        p.ultraMaxUses = stock;
+        p.ultraRemainingUses = stock;
+    } else {
+        p.ultraSkillId = null;
+        p.ultraMaxUses = 0;
+        p.ultraRemainingUses = 0;
+    }
+}
+
+// =========================================================================
+// サーバー側BOSS弾道＆マグマ床登録＆ティック更新（STAGE 3〜5）
+// =========================================================================
+function registerServerBossProjectilesFromEvent(roomId, matchId, ev) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !room.boss || !ev) return;
+    if (!Array.isArray(room.bossProjectiles)) {
+        room.bossProjectiles = [];
+    }
+
+    const bossElem = ev.element || room.boss.element || 'neutral';
+
+    if (ev.type === 'twin_serpent' && Array.isArray(ev.snakes)) {
+        for (const s of ev.snakes) {
+            room.bossProjectiles.push({
+                kind: 'snake_dark',
+                element: bossElem,
+                x: s.x,
+                y: s.y,
+                baseX: s.x,
+                baseY: s.y,
+                angle: s.angle,
+                side: s.side || 1,
+                speed: s.speed || 4.1,
+                waveAmp: s.waveAmp || 34,
+                waveFreq: s.waveFreq || 0.12,
+                age: 0,
+                damage: s.damage || ev.damage || 14,
+                hitRadius: 22,
+                life: 155
+            });
+        }
+    } else if (ev.type === 'curse_wave') {
+        const total = Math.max(1, ev.count || 16);
+        const baseAngle = ev.baseAngle || 0;
+        const speed = ev.speed || 3.8;
+        const damage = ev.damage || 8;
+        for (let i = 0; i < total; i++) {
+            const ang = baseAngle + (Math.PI * 2 / total) * i;
+            room.bossProjectiles.push({
+                kind: 'shadow_orb',
+                element: bossElem,
+                x: ev.x,
+                y: ev.y,
+                vx: Math.cos(ang) * speed,
+                vy: Math.sin(ang) * speed,
+                damage,
+                hitRadius: 18,
+                life: 150
+            });
+        }
+    } else if (ev.type === 'roar_fire') {
+        const fireCount = Math.max(1, ev.fireCount || 10);
+        const fireSpeed = ev.fireSpeed || 3.7;
+        const curveRate = Number(ev.curveRate) || 0;
+        const fireDamage = ev.fireDamage || 20;
+        for (let i = 0; i < fireCount; i++) {
+            const ang = (Math.PI * 2 / fireCount) * i;
+            room.bossProjectiles.push({
+                kind: 'curved_fireball',
+                element: bossElem,
+                x: ev.x,
+                y: ev.y,
+                vx: Math.cos(ang) * fireSpeed,
+                vy: Math.sin(ang) * fireSpeed,
+                curveRate,
+                damage: fireDamage,
+                hitRadius: 23,
+                life: 145
+            });
+        }
+    } else if (ev.type === 'roar_warn' && ev.pullStrength) {
+        room.bossRoarPullUntil = Date.now() + (Number(ev.warnDuration) || 780);
+        room.bossRoarPullStrength = Number(ev.pullStrength) || 0.85;
+    } else if (ev.type === 'phantom_homing' && Array.isArray(ev.orbs)) {
+        for (const o of ev.orbs) {
+            room.bossProjectiles.push({
+                kind: 'phantom_homing',
+                element: bossElem,
+                x: o.x,
+                y: o.y,
+                vx: o.vx,
+                vy: o.vy,
+                speed: o.speed || 3.4,
+                turnRate: o.turnRate || 0.045,
+                damage: o.damage || ev.damage || 8,
+                hitRadius: 20,
+                life: 135
+            });
+        }
+    } else if (ev.type === 'curse_bolt_fire') {
+        const total = Math.max(1, ev.count || 3);
+        const spread = ev.spread || 0.62;
+        const speed = ev.speed || 4.1;
+        const damage = ev.damage || 10;
+        for (let i = 0; i < total; i++) {
+            const offset = total === 1 ? 0 : ((i / (total - 1)) - 0.5) * spread;
+            const ang = (ev.baseAngle || 0) + offset;
+            room.bossProjectiles.push({
+                kind: 'curse_bolt',
+                element: bossElem,
+                x: ev.x,
+                y: ev.y,
+                vx: Math.cos(ang) * speed,
+                vy: Math.sin(ang) * speed,
+                damage,
+                hitRadius: 20,
+                life: 145
+            });
+        }
+    } else if (ev.type === 'feint_barrage') {
+        const total = Math.max(1, ev.count || 10);
+        const baseAngle = ev.baseAngle || 0;
+        const speed = ev.speed || 3.8;
+        const damage = ev.damage || 6;
+        for (let i = 0; i < total; i++) {
+            const ang = baseAngle + (Math.PI * 2 / total) * i;
+            room.bossProjectiles.push({
+                kind: 'feint_orb',
+                element: bossElem,
+                x: ev.x,
+                y: ev.y,
+                vx: Math.cos(ang) * speed,
+                vy: Math.sin(ang) * speed,
+                damage,
+                hitRadius: 18,
+                life: 150
+            });
+        }
+    }
+}
+
+function spawnMagmaZones(roomId, zones, durationMs, matchId, bossElement) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !Array.isArray(zones)) return;
+    if (!Array.isArray(room.bossMagmaZones)) {
+        room.bossMagmaZones = [];
+    }
+    const expiresAt = Date.now() + (Number(durationMs) || 2400);
+    const elem = bossElement || (room.boss ? room.boss.element : 'fire');
+    for (const z of zones) {
+        room.bossMagmaZones.push({
+            x: z.x,
+            y: z.y,
+            radius: z.radius || 84,
+            expiresAt,
+            element: elem
         });
     }
-}, TICK_INTERVAL_MS);
+}
 
-// =========================================================================
-// 6. Socket.io イベントハンドラ
-// =========================================================================
-io.on('connection', (socket) => {
-    let currentRoomId = null;
-    let currentPlayerId = socket.id;
+function stepServerMagmaZones(roomId, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !room.boss) return;
+    if (!Array.isArray(room.bossMagmaZones) || room.bossMagmaZones.length === 0) return;
 
-    socket.on('syncProfile', (payload) => {
-        const data = payload || {};
-        const prof = getOrCreateProfile(data.clientKey);
-        if (typeof data.name === 'string' && data.name.trim()) {
-            prof.name = data.name.trim().slice(0, 20);
+    const now = Date.now();
+    for (let i = room.bossMagmaZones.length - 1; i >= 0; i--) {
+        if (now >= room.bossMagmaZones[i].expiresAt) {
+            room.bossMagmaZones.splice(i, 1);
         }
-        if (Array.isArray(data.pixels)) {
-            prof.pixels = data.pixels;
-            prof.element = determineElementFromPixels(data.pixels);
-        } else if (typeof data.element === 'string') {
-            prof.element = BossSystem.sanitizeElementId(data.element);
+    }
+    if (room.bossMagmaZones.length === 0) return;
+
+    const def = getBossDef(room.boss.id);
+    const magmaCfg = def.magmaConfig || { tickIntervalMs: 600, tickDamage: 6 };
+    const tickInterval = magmaCfg.tickIntervalMs || 600;
+    const tickDmg = magmaCfg.tickDamage || 6;
+
+    for (const pid in room.players) {
+        const p = room.players[pid];
+        if (!p || p.isDead || p.isEliminated) continue;
+        if (now < (p.lastMagmaHitAt || 0) + tickInterval) continue;
+
+        const pcx = p.x + CHAR_SIZE / 2;
+        const pcy = p.y + CHAR_SIZE / 2;
+        const touching = room.bossMagmaZones.find((z) => Math.hypot(pcx - z.x, pcy - z.y) <= z.radius);
+        if (touching) {
+            p.lastMagmaHitAt = now;
+            applyPulseDamageToPlayer(roomId, p, tickDmg, 'magma', matchId, touching.element);
         }
-        if (data.selectedBossId) {
-            prof.selectedBossId = sanitizeBossId(data.selectedBossId);
+    }
+}
+
+function stepServerPlayerDots(roomId, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
+
+    const now = Date.now();
+    for (const pid in room.players) {
+        const p = room.players[pid];
+        if (!p || p.isDead || p.isEliminated) continue;
+        if (!p.dotUntil || now >= p.dotUntil) {
+            if (p.dotUntil) {
+                p.dotUntil = 0;
+                p.dotDamage = 0;
+                p.nextDotAt = 0;
+            }
+            continue;
         }
-        if (data.equippedUltra !== undefined) {
-            const safeU = sanitizeUltraSkillId(data.equippedUltra);
-            if (safeU && (prof.ultraStocks[safeU] || 0) > 0) {
-                prof.equippedUltra = safeU;
-            } else if (!data.equippedUltra) {
-                prof.equippedUltra = null;
+        if (now >= (p.nextDotAt || 0)) {
+            const interval = p.dotIntervalMs || 600;
+            p.nextDotAt = now + interval;
+            const dotDmg = Math.max(1, Math.floor(Number(p.dotDamage) || 6));
+
+            p.hp = Math.max(0, p.hp - dotDmg);
+            io.to(roomId).emit('playerDamaged', {
+                targetId: p.id,
+                attackerId: 'BOSS',
+                damage: dotDmg,
+                hp: p.hp,
+                maxHp: p.maxHp,
+                knockbackDir: 'down',
+                type: 'curse_dot',
+                elementMultiplier: 1.0,
+                attackerElement: 'neutral',
+                defenderElement: p.element,
+                skipInvincible: true,
+                noKnockback: true
+            });
+
+            if (p.hp <= 0) {
+                handlePlayerKO(roomId, p, null, matchId);
             }
         }
-        socket.emit('profileUpdated', buildProfilePayload(prof));
-    });
+    }
+}
 
-    socket.on('joinRoom', (payload) => {
-        const data = payload || {};
-        const prof = getOrCreateProfile(data.clientKey);
-        if (typeof data.name === 'string' && data.name.trim()) {
-            prof.name = data.name.trim().slice(0, 20);
-        }
-        if (Array.isArray(data.pixels)) {
-            prof.pixels = data.pixels;
-            prof.element = determineElementFromPixels(data.pixels);
-        } else if (typeof data.element === 'string') {
-            prof.element = BossSystem.sanitizeElementId(data.element);
-        }
+function stepServerBossProjectiles(roomId, matchId, dtMs) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !room.boss) return;
+    if (!Array.isArray(room.bossProjectiles) || room.bossProjectiles.length === 0) return;
 
-        const mode = data.mode === 'boss' ? 'boss' : 'pvp';
-        const stageNum = Math.max(1, Math.min(BossSystem.STAGES.length, Number(data.stageNumber) || 1));
-        const stageDef = getStageByNumber(stageNum);
-        const bossId = sanitizeBossId(data.bossId || stageDef.bossId || prof.selectedBossId);
-        prof.selectedBossId = bossId;
+    const stepFrames = Math.min(4, Math.max(0.5, dtMs / (1000 / 60)));
+    const now = Date.now();
 
-        if (currentRoomId && rooms.has(currentRoomId)) {
-            const prevRoom = rooms.get(currentRoomId);
-            delete prevRoom.players[socket.id];
-            socket.leave(currentRoomId);
-            io.to(currentRoomId).emit('roomUpdated', { players: prevRoom.players });
-        }
+    for (let i = room.bossProjectiles.length - 1; i >= 0; i--) {
+        const bp = room.bossProjectiles[i];
 
-        const room = getOrCreateRoom(data.roomId || 'room_1', mode, bossId);
-        currentRoomId = room.id;
-        socket.join(room.id);
-
-        const existingCount = Object.keys(room.players).length;
-        const spawnX = 120 + (existingCount % 2) * 560;
-        const spawnY = ARENA_TOP + 120 + Math.floor(existingCount / 2) * 320;
-
-        room.players[socket.id] = {
-            id: socket.id,
-            clientKey: prof.clientKey,
-            name: prof.name,
-            x: spawnX,
-            y: spawnY,
-            vx: 0,
-            vy: 0,
-            facing: 'down',
-            hp: GAME_RULES.PLAYER.BASE_MAX_HP,
-            maxHp: GAME_RULES.PLAYER.BASE_MAX_HP,
-            isDead: false,
-            isEliminated: false,
-            respawnAt: 0,
-            invincibleUntil: 0,
-            shieldUntil: 0,
-            speedBoostUntil: 0,
-            powerBoostUntil: 0,
-            slowUntil: 0,
-            slowMultiplier: 1,
-            equippedUltra: prof.equippedUltra,
-            ultraStocks: { ...prof.ultraStocks },
-            ultraCooldownUntil: 0,
-            ultraActiveUntil: 0,
-            ultraEndOfDaysUntil: 0,
-            ultraAbsoluteWallUntil: 0,
-            ultraCounterUntil: 0,
-            ultraDemonBladeUntil: 0,
-            ultraRicochetGunsUntil: 0,
-            ultraPhantomBootsUntil: 0,
-            pixels: prof.pixels || null,
-            element: prof.element || 'neutral',
-            equippedInk: prof.equippedInk || '',
-            selectedStageNumber: stageNum,
-            input: { up: false, down: false, left: false, right: false },
-            attackCredits: { shot: 0, slash: 0 },
-            _timers: [],
-            _intervals: []
-        };
-
-        socket.emit('joinedRoom', {
-            playerId: socket.id,
-            roomId: room.id,
-            mode: room.mode,
-            bossId: room.bossId,
-            stageNumber: stageNum,
-            state: room.state,
-            players: room.players,
-            profile: buildProfilePayload(prof)
-        });
-
-        io.to(room.id).emit('roomUpdated', { players: room.players });
-    });
-
-    socket.on('startMatch', (payload) => {
-        const data = payload || {};
-        const roomId = data.roomId || currentRoomId;
-        if (!roomId || !rooms.has(roomId)) return;
-        const room = rooms.get(roomId);
-        if (data.mode === 'boss' || data.mode === 'pvp') {
-            room.mode = data.mode;
-        }
-        if (data.bossId) {
-            room.bossId = sanitizeBossId(data.bossId);
-        }
-        startMatchCountdown(roomId);
-    });
-
-    socket.on('playerInput', (input) => {
-        if (!currentRoomId || !rooms.has(currentRoomId)) return;
-        const room = rooms.get(currentRoomId);
-        const p = room.players[socket.id];
-        if (!p || !input) return;
-        p.input = {
-            up: Boolean(input.up),
-            down: Boolean(input.down),
-            left: Boolean(input.left),
-            right: Boolean(input.right)
-        };
-    });
-
-    // Z: バリア / X: 斬撃 / C: 玉
-    socket.on('playerAttack', (payload) => {
-        if (!currentRoomId || !rooms.has(currentRoomId)) return;
-        const room = rooms.get(currentRoomId);
-        if (room.state !== 'playing') return;
-        const p = room.players[socket.id];
-        if (!p || p.isDead || p.isEliminated) return;
-
-        const data = payload || {};
-        const kind = data.kind || 'shot';
-        const now = Date.now();
-
-        if (kind === 'shield') {
-            const sh = GAME_RULES.ACTIONS.shield;
-            p.shieldUntil = now + sh.durationMs;
-            io.to(room.id).emit('playerShield', { playerId: p.id, shieldUntil: p.shieldUntil });
-            return;
-        }
-
-        if (kind === 'slash') {
-            addCredit(p, 'slash');
-            io.to(room.id).emit('playerSlash', {
-                playerId: p.id,
-                x: p.x,
-                y: p.y,
-                facing: p.facing,
-                demonBladeActive: Boolean(p.ultraDemonBladeUntil && now < p.ultraDemonBladeUntil)
-            });
-            return;
-        }
-
-        // 遠距離攻撃（玉：shot）
-        addCredit(p, 'shot');
-        const shotSpeed = GAME_RULES.ACTIONS.shot.speed || 9.5;
-        let vx = 0;
-        let vy = 0;
-        if (typeof data.vx === 'number' || typeof data.vy === 'number') {
-            const len = Math.hypot(Number(data.vx) || 0, Number(data.vy) || 0) || 1;
-            vx = ((Number(data.vx) || 0) / len) * shotSpeed;
-            vy = ((Number(data.vy) || 0) / len) * shotSpeed;
+        if (bp.kind === 'phantom_homing') {
+            let nearest = null;
+            let minDist = Infinity;
+            for (const pid in room.players) {
+                const pl = room.players[pid];
+                if (!pl || pl.isDead || pl.isEliminated) continue;
+                const d = Math.hypot((pl.x + CHAR_SIZE / 2) - bp.x, (pl.y + CHAR_SIZE / 2) - bp.y);
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = pl;
+                }
+            }
+            if (nearest) {
+                const desiredAngle = Math.atan2((nearest.y + CHAR_SIZE / 2) - bp.y, (nearest.x + CHAR_SIZE / 2) - bp.x);
+                const curAngle = Math.atan2(bp.vy, bp.vx);
+                let diff = desiredAngle - curAngle;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                const maxTurn = (bp.turnRate || 0.045) * stepFrames;
+                const step = Math.max(-maxTurn, Math.min(maxTurn, diff));
+                const nextAngle = curAngle + step;
+                const spd = bp.speed || 3.4;
+                bp.vx = Math.cos(nextAngle) * spd;
+                bp.vy = Math.sin(nextAngle) * spd;
+            }
+            bp.x += bp.vx * stepFrames;
+            bp.y += bp.vy * stepFrames;
+        } else if (bp.kind === 'snake_dark') {
+            bp.age += stepFrames;
+            bp.baseX += Math.cos(bp.angle) * bp.speed * stepFrames;
+            bp.baseY += Math.sin(bp.angle) * bp.speed * stepFrames;
+            const offset = bp.side * Math.sin(bp.age * bp.waveFreq) * bp.waveAmp;
+            const perpX = -Math.sin(bp.angle);
+            const perpY = Math.cos(bp.angle);
+            bp.x = bp.baseX + perpX * offset;
+            bp.y = bp.baseY + perpY * offset;
         } else {
-            switch (data.facing || p.facing) {
-                case 'up': vy = -shotSpeed; break;
-                case 'down': vy = shotSpeed; break;
-                case 'left': vx = -shotSpeed; break;
-                case 'right': vx = shotSpeed; break;
-                default: vy = shotSpeed; break;
+            if (bp.curveRate) {
+                const angleStep = bp.curveRate * stepFrames;
+                const cosA = Math.cos(angleStep);
+                const sinA = Math.sin(angleStep);
+                const nvx = bp.vx * cosA - bp.vy * sinA;
+                const nvy = bp.vx * sinA + bp.vy * cosA;
+                bp.vx = nvx;
+                bp.vy = nvy;
             }
+            bp.x += (bp.vx || 0) * stepFrames;
+            bp.y += (bp.vy || 0) * stepFrames;
         }
 
-        io.to(room.id).emit('playerShot', {
-            playerId: p.id,
-            x: p.x + PLAYER_SIZE / 2,
-            y: p.y + PLAYER_SIZE / 2,
-            vx,
-            vy,
-            element: p.element || 'neutral',
-            damage: GAME_RULES.PLAYER.BASE_SHOT_DAMAGE
-        });
-    });
+        bp.life -= stepFrames;
 
-    // ① 遠距離攻撃（玉）や斬撃のBOSSヒット受信
-    socket.on('damageBoss', (payload) => {
-        if (!currentRoomId || !rooms.has(currentRoomId)) return;
-        const room = rooms.get(currentRoomId);
-        if (room.mode !== 'boss' || room.state !== 'playing' || !room.boss || room.boss.hp <= 0) return;
-
-        const attacker = room.players[socket.id];
-        if (!attacker || attacker.isDead || attacker.isEliminated) return;
-
-        const data = payload || {};
-        const kind = data.kind === 'slash' ? 'slash' : 'shot';
-
-        // クレジット検証（未発射・不正連打を防止）
-        if (!useCredit(attacker, kind)) {
-            return;
+        if (pointInStaticObstacle(bp.x, bp.y)) {
+            room.bossProjectiles.splice(i, 1);
+            continue;
         }
 
-        const baseDamage = kind === 'slash'
-            ? GAME_RULES.PLAYER.BASE_SHOT_DAMAGE * (GAME_RULES.ACTIONS.slash.bossMultiplier || 1.35)
-            : GAME_RULES.PLAYER.BASE_SHOT_DAMAGE;
-
-        applyDamageToBoss(room.id, attacker, baseDamage, kind, room.matchId);
-    });
-
-    // 壊せる壁の破壊同期
-    socket.on('damageBreakableWall', (payload) => {
-        if (!currentRoomId || !rooms.has(currentRoomId)) return;
-        const room = rooms.get(currentRoomId);
-        if (room.state !== 'playing') return;
-        const data = payload || {};
-        const wall = room.breakableWalls.find((w) => w.id === data.wallId && w.hp > 0);
-        if (!wall) return;
-        wall.hp = Math.max(0, wall.hp - (Number(data.damage) || 15));
-        io.to(room.id).emit('breakableWallUpdated', { wallId: wall.id, hp: wall.hp });
-    });
-
-    // ② BOSS攻撃のクライアント弾ヒット報告（サーバー権威で検証・HP反映）
-    socket.on('bossProjectileHit', (payload) => {
-        if (!currentRoomId || !rooms.has(currentRoomId)) return;
-        const room = rooms.get(currentRoomId);
-        if (room.state !== 'playing') return;
-
-        const data = payload || {};
-        const targetId = data.targetPlayerId || socket.id;
-        const target = room.players[targetId];
-        if (!target || target.isDead || target.isEliminated) return;
-
-        const kind = typeof data.kind === 'string' ? data.kind : 'spiral';
-        if (SERVER_AUTHORITATIVE_PROJECTILES.has(kind)) {
-            return;
+        if (bp.life <= 0 || bp.x < 0 || bp.x > ARENA_WIDTH || bp.y < ARENA_TOP || bp.y > ARENA_HEIGHT) {
+            room.bossProjectiles.splice(i, 1);
+            continue;
         }
 
-        const bossDef = room.boss ? getBossDef(room.boss.id) : null;
-        const tableDmg = bossDef && bossDef.projectileDamage && typeof bossDef.projectileDamage[kind] === 'number'
-            ? bossDef.projectileDamage[kind]
-            : null;
-        const rawDmg = tableDmg !== null
-            ? tableDmg
-            : Math.max(1, Math.min(45, Number(data.damage) || 12));
+        let hitPlayer = false;
+        for (const pid in room.players) {
+            const p = room.players[pid];
+            if (!p || p.isDead || p.isEliminated) continue;
+            if (now < (p.lastServerProjHitAt || 0) + 150) continue;
 
-        const elem = (room.boss && room.boss.element) || (bossDef && bossDef.element) || 'neutral';
-        applyDamageToPlayer(room.id, target, rawDmg, kind, room.matchId, elem);
-    });
-
-    // Space: 必殺技（全8種）発動
-    socket.on('useUltraSkill', (payload) => {
-        if (!currentRoomId || !rooms.has(currentRoomId)) return;
-        const room = rooms.get(currentRoomId);
-        if (room.state !== 'playing') return;
-        const p = room.players[socket.id];
-        if (!p || p.isDead || p.isEliminated) return;
-
-        const now = Date.now();
-        if (now < (p.ultraCooldownUntil || 0)) return;
-
-        const prof = getOrCreateProfile(p.clientKey);
-        const data = payload || {};
-        const skillId = sanitizeUltraSkillId(data.skillId || p.equippedUltra || prof.equippedUltra);
-        const skill = skillId ? getUltraSkillDef(skillId) : null;
-        if (!skill) return;
-
-        const curStock = prof.ultraStocks[skill.id] || 0;
-        if (curStock <= 0) return;
-
-        const matchId = room.matchId;
-        prof.ultraStocks[skill.id] = curStock - 1;
-        p.ultraStocks = { ...prof.ultraStocks };
-        if (prof.ultraStocks[skill.id] <= 0 && prof.equippedUltra === skill.id) {
-            prof.equippedUltra = null;
-            p.equippedUltra = null;
-        }
-        p.ultraCooldownUntil = now + (skill.cooldownMs || GAME_RULES.ACTIONS.ultra.cooldownMs);
-        p.ultraActiveUntil = now + skill.durationMs;
-
-        io.to(socket.id).emit('profileUpdated', buildProfilePayload(prof));
-        io.to(room.id).emit('ultraSkillEvent', {
-            skillId: skill.id,
-            phase: 'activate',
-            ownerId: p.id,
-            durationMs: skill.durationMs,
-            cooldownUntil: p.ultraCooldownUntil,
-            stocks: { ...prof.ultraStocks }
-        });
-
-        const cx = p.x + PLAYER_SIZE / 2;
-        const cy = p.y + PLAYER_SIZE / 2;
-        let dirX = 0;
-        let dirY = 1;
-        if (typeof data.dirX === 'number' || typeof data.dirY === 'number') {
-            const len = Math.hypot(Number(data.dirX) || 0, Number(data.dirY) || 0);
-            if (len > 0.01) {
-                dirX = (Number(data.dirX) || 0) / len;
-                dirY = (Number(data.dirY) || 0) / len;
-            }
-        }
-        if (dirX === 0 && dirY === 0) {
-            switch (p.facing) {
-                case 'up': dirY = -1; break;
-                case 'down': dirY = 1; break;
-                case 'left': dirX = -1; break;
-                case 'right': dirX = 1; break;
-                default: dirY = 1; break;
-            }
-        }
-
-        if (skill.id === 'end_of_days') {
-            const chargeMs = skill.chargeMs || 350;
-            const beamDuration = skill.durationMs || 260;
-            const range = skill.range || 620;
-            const halfWidth = skill.halfWidth || 56;
-            const dmg = GAME_RULES.PLAYER.BASE_SHOT_DAMAGE * (skill.damageMultiplier || 4.0);
-
-            io.to(room.id).emit('ultraSkillEvent', {
-                skillId: 'end_of_days',
-                phase: 'charge',
-                ownerId: p.id,
-                x: cx,
-                y: cy,
-                dirX,
-                dirY,
-                range,
-                halfWidth,
-                chargeMs
-            });
-
-            registerTimeout(room, () => {
-                const cur = rooms.get(room.id);
-                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
-                const owner = cur.players[p.id];
-                if (!owner || owner.isDead || owner.isEliminated) return;
-
-                const ox = owner.x + PLAYER_SIZE / 2;
-                const oy = owner.y + PLAYER_SIZE / 2;
-                const ex = ox + dirX * range;
-                const ey = oy + dirY * range;
-
-                io.to(room.id).emit('ultraSkillEvent', {
-                    skillId: 'end_of_days',
-                    phase: 'fire',
-                    ownerId: owner.id,
-                    x1: ox,
-                    y1: oy,
-                    x2: ex,
-                    y2: ey,
-                    halfWidth,
-                    durationMs: beamDuration
-                });
-
-                if (cur.mode === 'boss' && cur.boss && cur.boss.hp > 0) {
-                    const dist = pointToSegmentDistance(cur.boss.x, cur.boss.y, ox, oy, ex, ey);
-                    if (dist <= halfWidth + cur.boss.radius) {
-                        applyDamageToBoss(room.id, owner, dmg, 'end_of_days', matchId);
-                    }
+            const pcx = p.x + CHAR_SIZE / 2;
+            const pcy = p.y + CHAR_SIZE / 2;
+            if (Math.hypot(bp.x - pcx, bp.y - pcy) < (bp.hitRadius || 20)) {
+                p.lastServerProjHitAt = now;
+                const applied = applyBossDamageToPlayer(roomId, p, bp.damage, bp.kind, matchId, bp.element);
+                if (applied !== false && bp.kind === 'curse_bolt') {
+                    applyRandomPhantomCurse(roomId, p, matchId);
                 }
-
-                for (const id in cur.players) {
-                    if (id === owner.id) continue;
-                    const target = cur.players[id];
-                    if (!target || target.isDead || target.isEliminated) continue;
-                    const tcx = target.x + PLAYER_SIZE / 2;
-                    const tcy = target.y + PLAYER_SIZE / 2;
-                    if (pointToSegmentDistance(tcx, tcy, ox, oy, ex, ey) <= halfWidth + PLAYER_SIZE / 2) {
-                        applyDamageToPlayer(room.id, target, dmg, 'end_of_days', matchId, owner.element, owner);
-                    }
-                }
-            }, chargeMs);
-        } else if (skill.id === 'absolute_wall') {
-            p.ultraAbsoluteWallUntil = now + skill.durationMs;
-        } else if (skill.id === 'perfect_counter') {
-            p.ultraCounterUntil = now + (skill.stanceMs || skill.durationMs);
-        } else if (skill.id === 'sky_meteor') {
-            const warnMs = skill.warnMs || 650;
-            const count = skill.meteorCount || 5;
-            const spread = skill.fanSpreadRad || 1.05;
-            const castDist = skill.castDistance || 210;
-            const radius = skill.radius || 110;
-            const baseAng = Math.atan2(dirY, dirX);
-            const dmg = GAME_RULES.PLAYER.BASE_SHOT_DAMAGE * (skill.damageMultiplier || 2.2);
-
-            const zones = [];
-            for (let i = 0; i < count; i++) {
-                const offset = count === 1 ? 0 : ((i / (count - 1)) - 0.5) * spread;
-                const ang = baseAng + offset;
-                const zx = Math.max(radius, Math.min(ARENA_WIDTH - radius, cx + Math.cos(ang) * castDist));
-                const zy = Math.max(ARENA_TOP + radius, Math.min(ARENA_HEIGHT - radius, cy + Math.sin(ang) * castDist));
-                zones.push({ x: zx, y: zy, radius });
-            }
-
-            io.to(room.id).emit('ultraSkillEvent', {
-                skillId: 'sky_meteor',
-                phase: 'warn',
-                ownerId: p.id,
-                zones,
-                warnMs
-            });
-
-            registerTimeout(room, () => {
-                const cur = rooms.get(room.id);
-                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
-                const owner = cur.players[p.id];
-                if (!owner || owner.isDead || owner.isEliminated) return;
-
-                io.to(room.id).emit('ultraSkillEvent', {
-                    skillId: 'sky_meteor',
-                    phase: 'fire',
-                    ownerId: owner.id,
-                    zones
-                });
-
-                for (const z of zones) {
-                    if (cur.mode === 'boss' && cur.boss && cur.boss.hp > 0) {
-                        if (Math.hypot(cur.boss.x - z.x, cur.boss.y - z.y) <= z.radius + cur.boss.radius) {
-                            applyDamageToBoss(room.id, owner, dmg, 'sky_meteor', matchId);
-                        }
-                    }
-                    for (const id in cur.players) {
-                        if (id === owner.id) continue;
-                        const target = cur.players[id];
-                        if (!target || target.isDead || target.isEliminated) continue;
-                        const tcx = target.x + PLAYER_SIZE / 2;
-                        const tcy = target.y + PLAYER_SIZE / 2;
-                        if (Math.hypot(tcx - z.x, tcy - z.y) <= z.radius + PLAYER_SIZE / 2) {
-                            applyDamageToPlayer(room.id, target, dmg, 'sky_meteor', matchId, owner.element, owner);
-                        }
-                    }
-                }
-            }, warnMs);
-        } else if (skill.id === 'demon_blade') {
-            p.ultraDemonBladeUntil = now + skill.durationMs;
-        } else if (skill.id === 'ricochet_guns') {
-            p.ultraRicochetGunsUntil = now + skill.durationMs;
-            const intervalMs = Number(skill.waveIntervalMs ?? skill.fireIntervalMs) || 625;
-            const maxWaves = skill.maxWaves || 8;
-            const dirs = skill.directions || 8;
-            const baseDmg = skill.baseDamage || 40;
-            const maxBounces = skill.maxBounces || 1;
-
-            let wave = 0;
-            const fireWave = () => {
-                const cur = rooms.get(room.id);
-                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
-                const owner = cur.players[p.id];
-                if (!owner || owner.isDead || owner.isEliminated) return;
-                if (Date.now() > owner.ultraRicochetGunsUntil) return;
-
-                const ox = owner.x + PLAYER_SIZE / 2;
-                const oy = owner.y + PLAYER_SIZE / 2;
-                const spd = 8.5;
-                const waveOffset = wave * 0.2;
-
-                for (let d = 0; d < dirs; d++) {
-                    const ang = waveOffset + (Math.PI * 2 / dirs) * d;
-                    cur.serverProjectiles.push({
-                        id: `rg_${matchId}_${owner.id}_${wave}_${d}_${Date.now()}`,
-                        kind: 'ricochet_guns',
-                        ownerType: 'player',
-                        ownerId: owner.id,
-                        element: owner.element || 'neutral',
-                        x: ox,
-                        y: oy,
-                        vx: Math.cos(ang) * spd,
-                        vy: Math.sin(ang) * spd,
-                        damage: baseDmg,
-                        bouncesLeft: maxBounces,
-                        life: 140
-                    });
-                }
-
-                wave += 1;
-                if (wave < maxWaves) {
-                    registerTimeout(cur, fireWave, intervalMs);
-                }
-            };
-            fireWave();
-        } else if (skill.id === 'phantom_boots') {
-            p.ultraPhantomBootsUntil = now + skill.durationMs;
-            registerTimeout(room, () => {
-                const cur = rooms.get(room.id);
-                if (!cur || cur.matchId !== matchId) return;
-                const owner = cur.players[p.id];
-                if (!owner) return;
-                owner.ultraPhantomBootsUntil = 0;
-                if (skill.snapOnEnd) {
-                    snapPlayerOutOfWalls(cur, owner);
-                    io.to(room.id).emit('playerRespawn', {
-                        playerId: owner.id,
-                        x: owner.x,
-                        y: owner.y,
-                        hp: owner.hp,
-                        maxHp: owner.maxHp,
-                        invincibleUntil: owner.invincibleUntil
-                    });
-                }
-            }, skill.durationMs);
-        } else if (skill.id === 'time_stop') {
-            room.timeStopUntil = Math.max(room.timeStopUntil || 0, now + skill.durationMs);
-            room.timeStopOwnerId = p.id;
-            io.to(room.id).emit('ultraSkillEvent', {
-                skillId: 'time_stop',
-                phase: 'time_stop_active',
-                ownerId: p.id,
-                timeStopUntil: room.timeStopUntil
-            });
-        }
-    });
-
-    // ③ 特別インクガチャ（300Pt / 重複100Pt還元）
-    socket.on('pullInkGacha', (payload) => {
-        const data = payload || {};
-        const prof = getOrCreateProfile(data.clientKey);
-        const cost = GAME_RULES.GACHA.INK_COST;
-        if (prof.points < cost) {
-            socket.emit('inkGachaResult', { ok: false, reason: 'insufficient_points', profile: buildProfilePayload(prof) });
-            return;
-        }
-
-        prof.points -= cost;
-        const pickedId = SPECIAL_INK_IDS[Math.floor(Math.random() * SPECIAL_INK_IDS.length)];
-        const isDuplicate = prof.ownedInks.includes(pickedId);
-        let refundPt = 0;
-
-        if (isDuplicate) {
-            refundPt = GAME_RULES.GACHA.INK_DUPLICATE_REFUND;
-            prof.points += refundPt;
-        } else {
-            prof.ownedInks.push(pickedId);
-            prof.equippedInk = pickedId;
-        }
-
-        const p = currentRoomId && rooms.get(currentRoomId) ? rooms.get(currentRoomId).players[socket.id] : null;
-        if (p) p.equippedInk = prof.equippedInk;
-
-        const out = buildProfilePayload(prof);
-        socket.emit('inkGachaResult', {
-            ok: true,
-            inkId: pickedId,
-            isDuplicate,
-            refundPt,
-            profile: out
-        });
-        socket.emit('profileUpdated', out);
-    });
-
-    // ③ 必殺技ガチャ（1000Pt / 重複300Pt還元 / 最大3ストック）
-    socket.on('pullUltraGacha', (payload) => {
-        const data = payload || {};
-        const prof = getOrCreateProfile(data.clientKey);
-        const cost = GAME_RULES.GACHA.ULTRA_COST;
-        if (prof.points < cost) {
-            socket.emit('ultraGachaResult', { ok: false, reason: 'insufficient_points', profile: buildProfilePayload(prof) });
-            return;
-        }
-
-        prof.points -= cost;
-        const pool = GAME_RULES.GACHA.ULTRA_POOL;
-        const totalW = pool.reduce((acc, item) => acc + item.weight, 0);
-        let roll = Math.random() * totalW;
-        let chosen = pool[pool.length - 1];
-        for (const item of pool) {
-            roll -= item.weight;
-            if (roll <= 0) {
-                chosen = item;
+                hitPlayer = true;
                 break;
             }
         }
 
-        const skillId = sanitizeUltraSkillId(chosen.skillId) || 'end_of_days';
-        const curStock = prof.ultraStocks[skillId] || 0;
-        let isDuplicate = false;
-        let refundPt = 0;
+        if (hitPlayer) {
+            room.bossProjectiles.splice(i, 1);
+        }
+    }
+}
 
-        if (curStock >= GAME_RULES.GACHA.ULTRA_MAX_STOCK) {
-            isDuplicate = true;
-            refundPt = GAME_RULES.GACHA.ULTRA_DUPLICATE_REFUND;
-            prof.points += refundPt;
-        } else {
-            prof.ultraStocks[skillId] = curStock + 1;
-            if (!prof.equippedUltra) {
-                prof.equippedUltra = skillId;
+// =========================================================================
+// ギミックループ & BOSS AI
+// =========================================================================
+function startGimmickLoop(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    const currentMatchId = room.matchId;
+
+    room.wallTimer = setInterval(() => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'playing' || r.matchId !== currentMatchId) {
+            return;
+        }
+        const maxWalls = r.mode === 'boss'
+            ? GAME_RULES.OBSTACLES.BREAKABLE_MAX_BOSS
+            : GAME_RULES.OBSTACLES.BREAKABLE_MAX_PVP;
+        const wallSize = GAME_RULES.OBSTACLES.BREAKABLE_SIZE;
+        const wallHp = GAME_RULES.OBSTACLES.BREAKABLE_HP;
+
+        if (r.walls.length < maxWalls) {
+            const wallPos = findSafePosition(r, wallSize);
+            if (wallPos) {
+                r.walls.push({
+                    id: 'w_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    x: wallPos.x,
+                    y: wallPos.y,
+                    w: wallSize,
+                    h: wallSize,
+                    hp: wallHp,
+                    maxHp: wallHp
+                });
+                io.to(roomId).emit('gimmicksUpdated', { walls: r.walls, items: r.items });
+            }
+        }
+    }, 8500);
+
+    const ITEM_TYPES = ['speed', 'heal', 'power'];
+    room.itemTimer = setInterval(() => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'playing' || r.matchId !== currentMatchId) {
+            return;
+        }
+        const maxItems = r.mode === 'boss' ? 6 : 5;
+        if (r.items.length < maxItems) {
+            const itemPos = findSafePosition(r, 24);
+            if (itemPos) {
+                const chosenType = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+                r.items.push({
+                    id: 'i_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    type: chosenType,
+                    x: itemPos.x + 12,
+                    y: itemPos.y + 12
+                });
+                io.to(roomId).emit('gimmicksUpdated', { walls: r.walls, items: r.items });
+            }
+        }
+    }, room.mode === 'boss' ? 8000 : 11000);
+
+    if (room.mode === 'boss') {
+        startBossAILoop(roomId, currentMatchId);
+    }
+}
+
+function startBossAILoop(roomId, matchId) {
+    const room = rooms[roomId];
+    if (!room || !room.boss) return;
+
+    let tick = 0;
+
+    room.bossMoveTimer = setInterval(() => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'playing' || r.matchId !== matchId || !r.boss) {
+            return;
+        }
+        const boss = r.boss;
+        const curDef = getBossDef(boss.id);
+        tick++;
+
+        if (boss.scaleAuraActive && Date.now() >= (boss.scaleAuraUntil || 0)) {
+            boss.scaleAuraActive = false;
+            boss.scaleAuraUntil = 0;
+        }
+
+        const activePlayerCount = Object.keys(r.players).length;
+        const isSolo = activePlayerCount <= 1;
+
+        let nearest = null;
+        let minDist = Infinity;
+        for (const id in r.players) {
+            const p = r.players[id];
+            if (p.isDead || p.isEliminated) continue;
+            const d = Math.hypot((p.x + 24) - boss.x, (p.y + 24) - boss.y);
+            if (d < minDist) {
+                minDist = d;
+                nearest = p;
             }
         }
 
-        const p = currentRoomId && rooms.get(currentRoomId) ? rooms.get(currentRoomId).players[socket.id] : null;
-        if (p) {
-            p.ultraStocks = { ...prof.ultraStocks };
-            p.equippedUltra = prof.equippedUltra;
+        if (nearest && !boss.pulseCharging && !boss.isStealthed) {
+            const angle = Math.atan2((nearest.y + 24) - boss.y, (nearest.x + 24) - boss.x);
+            const moveCfg = curDef.moveSpeed || {};
+            let moveSpd = boss.phase === 2
+                ? (isSolo ? (moveCfg.soloP2 ?? moveCfg.p2 ?? curDef.speed) : (moveCfg.multiP2 ?? moveCfg.p2 ?? curDef.speed))
+                : (isSolo ? (moveCfg.soloP1 ?? moveCfg.p1 ?? curDef.speed) : (moveCfg.multiP1 ?? moveCfg.p1 ?? curDef.speed));
+
+            if (boss.vortexActive) {
+                moveSpd *= 0.65;
+            }
+
+            boss.x += Math.cos(angle) * moveSpd;
+            boss.y += Math.sin(angle) * moveSpd;
+
+            boss.x = Math.max(95, Math.min(ARENA_WIDTH - 95, boss.x));
+            boss.y = Math.max(ARENA_TOP + 85, Math.min(ARENA_HEIGHT - 95, boss.y));
         }
 
-        const out = buildProfilePayload(prof);
-        socket.emit('ultraGachaResult', {
-            ok: true,
-            skillId,
-            rarity: chosen.rarity,
-            isDuplicate,
-            refundPt,
-            stocks: { ...prof.ultraStocks },
-            profile: out
+        if (!boss.isStealthed && tick % 5 === 0) {
+            for (const id in r.players) {
+                const p = r.players[id];
+                if (p.isDead || p.isEliminated) continue;
+                const d = Math.hypot((p.x + 24) - boss.x, (p.y + 24) - boss.y);
+                if (d < boss.radius + 14) {
+                    const vortexDmg = boss.vortexActive ? 12 : 8;
+                    applyBossDamageToPlayer(roomId, p, vortexDmg, 'vortex', matchId, boss.element);
+                }
+            }
+        }
+
+        io.to(roomId).emit('bossStateUpdated', boss);
+    }, 200);
+
+    let lastProjTickAt = Date.now();
+    room.bossProjectileTimer = setInterval(() => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'playing' || r.matchId !== matchId || !r.boss) {
+            return;
+        }
+        const now = Date.now();
+        const dtMs = Math.min(80, Math.max(16, now - lastProjTickAt));
+        lastProjTickAt = now;
+        stepServerBossProjectiles(roomId, matchId, dtMs);
+        stepServerMagmaZones(roomId, matchId);
+        stepServerPlayerDots(roomId, matchId);
+    }, 32);
+
+    let attackCount = 0;
+    const scheduleNextAttack = () => {
+        const r = rooms[roomId];
+        if (!r || r.state !== 'playing' || r.matchId !== matchId || !r.boss) return;
+
+        const curDef = getBossDef(r.boss.id);
+        const interval = r.boss.phase === 2 ? curDef.attackIntervalMs.p2 : curDef.attackIntervalMs.p1;
+        r.bossAttackTimer = setTimeout(() => {
+            const cur = rooms[roomId];
+            if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+            executeBossAttack(roomId, attackCount, matchId);
+            attackCount++;
+            scheduleNextAttack();
+        }, interval);
+    };
+
+    scheduleNextAttack();
+}
+
+function executeBossAttack(roomId, count, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId || !room.boss) return;
+    const boss = room.boss;
+    const def = getBossDef(boss.id);
+
+    const now = Date.now();
+    const allPlayerCount = Math.min(MAX_PLAYERS_PER_ROOM, Math.max(1, Object.keys(room.players).length));
+    const alivePlayers = Object.values(room.players)
+        .filter((p) => !p.isDead && !p.isEliminated)
+        .map((p) => {
+            if (now - (p.lastMoveVectorAt || 0) > 250) {
+                p.vx = 0;
+                p.vy = 0;
+            }
+            return p;
         });
-        socket.emit('profileUpdated', out);
-    });
+    if (alivePlayers.length === 0) return;
 
-    socket.on('equipUltraSkill', (payload) => {
-        const data = payload || {};
-        const prof = getOrCreateProfile(data.clientKey);
-        const skillId = sanitizeUltraSkillId(data.skillId);
-        if (!skillId) {
-            prof.equippedUltra = null;
-        } else if ((prof.ultraStocks[skillId] || 0) > 0) {
-            prof.equippedUltra = skillId;
+    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+    const targetCx = target.x + 24;
+    const targetCy = target.y + 24;
+
+    // bosses.js の攻撃イベント配信をフックし、サーバー弾道・引き寄せが必要な技を自動登録する
+    const wrappedIo = {
+        to: (targetRoomId) => ({
+            emit: (eventName, eventPayload) => {
+                if (eventName === 'bossAttackEvent') {
+                    registerServerBossProjectilesFromEvent(targetRoomId, matchId, eventPayload);
+                }
+                io.to(targetRoomId).emit(eventName, eventPayload);
+            }
+        })
+    };
+
+    def.executeAttack({
+        room,
+        roomId,
+        matchId,
+        boss,
+        allPlayerCount,
+        alivePlayers,
+        target,
+        targetCx,
+        targetCy,
+        count,
+        io: wrappedIo,
+        getRoom: () => rooms[roomId],
+        registerTimeout: registerBossTimeout,
+        pointToSegmentDistance,
+        applyDamageToPlayer: applyBossDamageToPlayer,
+        applyPulseDamageToPlayer,
+        applySlowToPlayer,
+        knockbackPlayerFromPoint,
+        spawnMagmaZones
+    });
+}
+
+// =========================================================================
+// 状態異常・ノックバック・P2覚醒・ダメージ適用・完全反撃・絶対防壁・KO・勝敗判定
+// =========================================================================
+function triggerBossPhase2Awaken(roomId, room, def, matchId) {
+    if (!room || !room.boss || !def || !def.phase2Awaken) return;
+    const boss = room.boss;
+    const cfg = def.phase2Awaken;
+    const now = Date.now();
+    const auraDuration = Number(cfg.scaleAuraDurationMs) || 3000;
+    const kbRadius = Number(cfg.knockbackRadius) || 240;
+    const kbDist = Number(cfg.knockbackDistance) || 120;
+
+    boss.scaleAuraActive = true;
+    boss.scaleAuraUntil = now + auraDuration;
+
+    // 周囲ノックバック衝撃波（ダメージなし）
+    for (const id in room.players) {
+        const p = room.players[id];
+        if (!p || p.isDead || p.isEliminated) continue;
+        const pcx = p.x + CHAR_SIZE / 2;
+        const pcy = p.y + CHAR_SIZE / 2;
+        const dist = Math.hypot(pcx - boss.x, pcy - boss.y);
+        if (dist <= kbRadius) {
+            const ang = dist > 0.1 ? Math.atan2(pcy - boss.y, pcx - boss.x) : Math.PI / 2;
+            let mult = 1.0;
+            if (now < (p.absoluteWallUntil || 0)) mult = 0.15;
+            else if (now < (p.shieldUntil || 0)) mult = 0.25;
+            pushPlayerSafely(p, ang, kbDist * mult);
+            io.to(roomId).emit('playerKnockback', {
+                id: p.id,
+                x: p.x,
+                y: p.y,
+                facing: p.facing,
+                source: 'p2_awaken'
+            });
+            io.to(roomId).emit('playerMoved', {
+                id: p.id,
+                x: p.x,
+                y: p.y,
+                facing: p.facing
+            });
         }
-        const p = currentRoomId && rooms.get(currentRoomId) ? rooms.get(currentRoomId).players[socket.id] : null;
-        if (p) p.equippedUltra = prof.equippedUltra;
-        socket.emit('profileUpdated', buildProfilePayload(prof));
+    }
+
+    io.to(roomId).emit('bossAttackEvent', {
+        bossId: boss.id,
+        element: boss.element,
+        type: 'p2_awaken',
+        x: boss.x,
+        y: boss.y,
+        knockbackRadius: kbRadius,
+        scaleAuraDurationMs: auraDuration
+    });
+    io.to(roomId).emit('bossStateUpdated', boss);
+
+    registerBossTimeout(room, () => {
+        const cur = rooms[roomId];
+        if (!cur || cur.matchId !== matchId || !cur.boss) return;
+        cur.boss.scaleAuraActive = false;
+        cur.boss.scaleAuraUntil = 0;
+        io.to(roomId).emit('bossStateUpdated', cur.boss);
+    }, auraDuration);
+}
+
+function applySlowToPlayer(roomId, target, multiplier, durationMs, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
+    if (!target || target.isDead || target.isEliminated) return false;
+
+    const safeMult = Math.min(1.0, Math.max(0.25, Number(multiplier) || 0.75));
+    const safeDuration = Math.max(100, Math.floor(Number(durationMs) || 1800));
+    const until = Date.now() + safeDuration;
+
+    target.slowMultiplier = safeMult;
+    target.slowUntil = until;
+
+    io.to(roomId).emit('playerSlowed', {
+        id: target.id,
+        multiplier: safeMult,
+        durationMs: safeDuration,
+        until
+    });
+    return true;
+}
+
+function applyAttackDebuffToPlayer(roomId, target, multiplier, durationMs, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
+    if (!target || target.isDead || target.isEliminated) return false;
+
+    const safeMult = Math.min(1.0, Math.max(0.25, Number(multiplier) || 0.75));
+    const safeDuration = Math.max(100, Math.floor(Number(durationMs) || 3000));
+    const until = Date.now() + safeDuration;
+
+    target.attackDebuffMultiplier = safeMult;
+    target.attackDebuffUntil = until;
+
+    io.to(roomId).emit('playerAttackDebuffed', {
+        id: target.id,
+        multiplier: safeMult,
+        durationMs: safeDuration,
+        until
+    });
+    return true;
+}
+
+function applyPoisonDotToPlayer(roomId, target, damagePerTick, intervalMs, durationMs, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
+    if (!target || target.isDead || target.isEliminated) return false;
+
+    const now = Date.now();
+    const safeInterval = Math.max(200, Math.floor(Number(intervalMs) || 600));
+    const safeDuration = Math.max(safeInterval, Math.floor(Number(durationMs) || 3000));
+    const safeDamage = Math.max(1, Math.floor(Number(damagePerTick) || 6));
+    const until = now + safeDuration;
+
+    const alreadyActive = Boolean(target.dotUntil && now < target.dotUntil);
+    target.dotDamage = safeDamage;
+    target.dotIntervalMs = safeInterval;
+    target.dotUntil = until;
+    if (!alreadyActive || !target.nextDotAt || target.nextDotAt < now) {
+        target.nextDotAt = now + safeInterval;
+    }
+
+    io.to(roomId).emit('playerDotApplied', {
+        id: target.id,
+        damage: safeDamage,
+        intervalMs: safeInterval,
+        durationMs: safeDuration,
+        until
+    });
+    return true;
+}
+
+function applyRandomPhantomCurse(roomId, target, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
+    if (!target || target.isDead || target.isEliminated) return;
+
+    // 4択完全ランダム抽選：減速(2000ms/0.75x)、攻撃低下(3000ms/0.75x)、持続ダメ(3000ms/600ms毎6)、状態異常なし
+    const roll = Math.floor(Math.random() * 4);
+    if (roll === 0) {
+        applySlowToPlayer(roomId, target, 0.75, 2000, matchId);
+    } else if (roll === 1) {
+        applyAttackDebuffToPlayer(roomId, target, 0.75, 3000, matchId);
+    } else if (roll === 2) {
+        applyPoisonDotToPlayer(roomId, target, 6, 600, 3000, matchId);
+    }
+}
+
+function knockbackPlayerFromPoint(roomId, target, originX, originY, targetDistanceFromOrigin, matchId, source) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
+    if (!target || target.isDead || target.isEliminated) return false;
+
+    const now = Date.now();
+    const pcx = target.x + CHAR_SIZE / 2;
+    const pcy = target.y + CHAR_SIZE / 2;
+    const dist = Math.hypot(pcx - originX, pcy - originY);
+    const ang = dist > 0.1 ? Math.atan2(pcy - originY, pcx - originX) : Math.random() * Math.PI * 2;
+    const desiredDist = Math.max(40, (Number(targetDistanceFromOrigin) || 136) - dist);
+
+    let mult = 1.0;
+    if (now < (target.absoluteWallUntil || 0)) mult = 0.15;
+    else if (now < (target.shieldUntil || 0)) mult = 0.25;
+
+    pushPlayerSafely(target, ang, desiredDist * mult);
+
+    io.to(roomId).emit('playerKnockback', {
+        id: target.id,
+        x: target.x,
+        y: target.y,
+        facing: target.facing,
+        source: source || 'boss_knockback'
+    });
+    io.to(roomId).emit('playerMoved', {
+        id: target.id,
+        x: target.x,
+        y: target.y,
+        facing: target.facing
+    });
+    return true;
+}
+
+function getPlayerEffectiveAttackMultiplier(p, now) {
+    if (!p) return 1.0;
+    const powerMult = now < (p.powerBoostUntil || 0) ? 1.5 : 1.0;
+    const debuffMult = now < (p.attackDebuffUntil || 0) ? (p.attackDebuffMultiplier || 0.75) : 1.0;
+    return powerMult * debuffMult;
+}
+
+function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitTypeLabel) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return;
+    if (!attacker || room.boss.hp <= 0) return;
+    if (room.boss.isStealthed) return;
+
+    const now = Date.now();
+    const def = getBossDef(room.boss.id);
+    const elemMult = getElementMultiplier(attacker.element, room.boss.element);
+    const barrierMult = (room.boss.barrierActive && def.barrierDamageMultiplier) ? def.barrierDamageMultiplier : 1.0;
+
+    if (room.boss.scaleAuraActive && now >= (room.boss.scaleAuraUntil || 0)) {
+        room.boss.scaleAuraActive = false;
+        room.boss.scaleAuraUntil = 0;
+    }
+    const scaleAuraMult = (room.boss.scaleAuraActive && def.phase2Awaken)
+        ? (def.phase2Awaken.scaleDamageMultiplier || 0.75)
+        : 1.0;
+
+    const finalDamage = Math.max(1, Math.round(rawDamage * elemMult * barrierMult * scaleAuraMult));
+
+    room.boss.hp = Math.max(0, room.boss.hp - finalDamage);
+    attacker.bossDamageDealt = (attacker.bossDamageDealt || 0) + finalDamage;
+
+    let triggeredAwaken = false;
+    if (room.boss.phase === 1 && room.boss.hp > 0 && room.boss.hp <= room.boss.maxHp * 0.5) {
+        room.boss.phase = 2;
+        if (def.phase2Awaken) {
+            triggeredAwaken = true;
+        }
+    }
+
+    io.to(roomId).emit('bossDamaged', {
+        attackerId: attacker.id,
+        damage: finalDamage,
+        hp: room.boss.hp,
+        maxHp: room.boss.maxHp,
+        phase: room.boss.phase,
+        blockedByBarrier: Boolean(room.boss.barrierActive),
+        reducedByScaleAura: scaleAuraMult < 1.0,
+        elementMultiplier: elemMult,
+        attackerElement: attacker.element,
+        defenderElement: room.boss.element,
+        attackType: hitTypeLabel || attackKind
     });
 
-    socket.on('returnToLobby', (payload) => {
-        const roomId = (payload && payload.roomId) || currentRoomId;
-        if (!roomId || !rooms.has(roomId)) return;
-        const room = rooms.get(roomId);
-        clearRoomTimers(room);
-        room.state = 'lobby';
+    if (triggeredAwaken) {
+        triggerBossPhase2Awaken(roomId, room, def, room.matchId);
+    }
+
+    if (room.boss.hp <= 0) {
+        checkMatchWinner(roomId);
+    }
+}
+
+function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockDir, hitType, matchId, attackerElement, opts) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
+    if (!target || target.isDead || target.isEliminated) return false;
+
+    const now = Date.now();
+    const options = opts || {};
+    const isEndOfDays = Boolean(options.isEndOfDays);
+    const eodDef = isEndOfDays ? getUltraSkillDef('end_of_days') : null;
+
+    // 1. 完全反撃（構え中）チェック
+    if (now < target.counterStanceUntil) {
+        if (isEndOfDays) {
+            const counterMult = (eodDef && eodDef.counterInteraction && typeof eodDef.counterInteraction.damageMultiplier === 'number')
+                ? eodDef.counterInteraction.damageMultiplier
+                : 0.5;
+            const shouldCounter = eodDef && eodDef.counterInteraction
+                ? Boolean(eodDef.counterInteraction.triggersCounter)
+                : true;
+            const atkElem = attackerElement || (attacker && attacker !== 'BOSS' ? attacker.element : 'neutral');
+            const elemMult = getElementMultiplier(atkElem, target.element);
+            const damage = Math.max(1, Math.round(rawDamage * elemMult * counterMult));
+
+            target.hp = Math.max(0, target.hp - damage);
+            io.to(roomId).emit('playerDamaged', {
+                targetId: target.id,
+                attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
+                damage,
+                hp: target.hp,
+                maxHp: target.maxHp,
+                knockbackDir: knockDir || 'down',
+                type: hitType,
+                elementMultiplier: elemMult,
+                attackerElement: atkElem,
+                defenderElement: target.element,
+                skipInvincible: Boolean(options.skipInvincible),
+                noKnockback: Boolean(options.noKnockback)
+            });
+
+            if (shouldCounter && target.hp > 0) {
+                triggerPerfectCounter(roomId, target, attacker || 'BOSS', matchId);
+            } else {
+                clearPlayerUltraStateAndTimers(target);
+            }
+
+            if (target.hp <= 0) {
+                handlePlayerKO(roomId, target, attacker && attacker !== 'BOSS' ? attacker : null, matchId);
+            }
+            return true;
+        }
+        triggerPerfectCounter(roomId, target, attacker || 'BOSS', matchId);
+        return false;
+    }
+
+    // 2. 絶対防壁 / 通常バリア Z チェック
+    const hasAbsoluteWall = now < target.absoluteWallUntil;
+    const hasShield = now < target.shieldUntil;
+    if (hasAbsoluteWall || hasShield) {
+        if (isEndOfDays) {
+            const absMult = (eodDef && typeof eodDef.absoluteWallDamageMultiplier === 'number')
+                ? eodDef.absoluteWallDamageMultiplier
+                : 0.25;
+            const shieldMult = (eodDef && typeof eodDef.normalBarrierDamageMultiplier === 'number')
+                ? eodDef.normalBarrierDamageMultiplier
+                : 0.5;
+            const guardMult = hasAbsoluteWall ? absMult : shieldMult;
+
+            if (hasAbsoluteWall) {
+                io.to(roomId).emit('attackBlocked', {
+                    targetId: target.id,
+                    attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
+                    knockbackDir: knockDir || 'down',
+                    type: hitType,
+                    byAbsoluteWall: true,
+                    pierced: true
+                });
+            }
+
+            const atkElem = attackerElement || (attacker && attacker !== 'BOSS' ? attacker.element : 'neutral');
+            const elemMult = getElementMultiplier(atkElem, target.element);
+            const damage = Math.max(1, Math.round(rawDamage * elemMult * guardMult));
+
+            target.hp = Math.max(0, target.hp - damage);
+            io.to(roomId).emit('playerDamaged', {
+                targetId: target.id,
+                attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
+                damage,
+                hp: target.hp,
+                maxHp: target.maxHp,
+                knockbackDir: knockDir || 'down',
+                type: hitType,
+                elementMultiplier: elemMult,
+                attackerElement: atkElem,
+                defenderElement: target.element,
+                skipInvincible: Boolean(options.skipInvincible),
+                noKnockback: Boolean(options.noKnockback),
+                byAbsoluteWall: hasAbsoluteWall,
+                byShield: !hasAbsoluteWall && hasShield
+            });
+
+            if (target.hp <= 0) {
+                handlePlayerKO(roomId, target, attacker && attacker !== 'BOSS' ? attacker : null, matchId);
+            }
+            return true;
+        }
+
+        io.to(roomId).emit('attackBlocked', {
+            targetId: target.id,
+            attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
+            knockbackDir: knockDir || 'down',
+            type: hitType,
+            byAbsoluteWall: hasAbsoluteWall
+        });
+        return false;
+    }
+
+    const atkElem = attackerElement || (attacker && attacker !== 'BOSS' ? attacker.element : 'neutral');
+    const elemMult = getElementMultiplier(atkElem, target.element);
+    const damage = Math.max(1, Math.round(rawDamage * elemMult));
+
+    target.hp = Math.max(0, target.hp - damage);
+    io.to(roomId).emit('playerDamaged', {
+        targetId: target.id,
+        attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
+        damage,
+        hp: target.hp,
+        maxHp: target.maxHp,
+        knockbackDir: knockDir || 'down',
+        type: hitType,
+        elementMultiplier: elemMult,
+        attackerElement: atkElem,
+        defenderElement: target.element,
+        skipInvincible: Boolean(options.skipInvincible),
+        noKnockback: Boolean(options.noKnockback)
+    });
+
+    if (target.hp <= 0) {
+        handlePlayerKO(roomId, target, attacker && attacker !== 'BOSS' ? attacker : null, matchId);
+    }
+    return true;
+}
+
+function applyBossDamageToPlayer(roomId, target, damage, attackType, matchId, bossElement) {
+    const room = rooms[roomId];
+    if (!room || !room.boss) return false;
+    const elem = bossElement || room.boss.element || 'neutral';
+    return applyDamageToPlayerInternal(roomId, target, 'BOSS', damage, 'down', attackType, matchId, elem);
+}
+
+function applyPulseDamageToPlayer(roomId, target, damage, attackType, matchId, bossElement) {
+    const room = rooms[roomId];
+    if (!room || !room.boss) return false;
+    const elem = bossElement || room.boss.element || 'neutral';
+    return applyDamageToPlayerInternal(roomId, target, 'BOSS', damage, 'down', attackType, matchId, elem, {
+        skipInvincible: true,
+        noKnockback: true
+    });
+}
+
+function triggerPerfectCounter(roomId, counterPlayer, attacker, matchId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchId) return;
+    if (!counterPlayer || counterPlayer.isDead || counterPlayer.isEliminated) return;
+
+    const skill = getUltraSkillDef('perfect_counter');
+    if (!skill) return;
+
+    clearPlayerUltraStateAndTimers(counterPlayer);
+
+    const pc = playerCenter(counterPlayer);
+    const counterRadius = skill.counterRadius || 210;
+    const atkMult = getPlayerEffectiveAttackMultiplier(counterPlayer, Date.now());
+    const baseCounterDmg = counterPlayer.stats.atk * skill.damageMultiplier * atkMult;
+
+    io.to(roomId).emit('ultraSkillEvent', {
+        playerId: counterPlayer.id,
+        skillId: 'perfect_counter',
+        phase: 'counter_fire',
+        x: pc.x,
+        y: pc.y,
+        radius: counterRadius,
+        facing: counterPlayer.facing,
+        element: counterPlayer.element,
+        durationMs: 320
+    });
+
+    if (room.mode === 'boss' && room.boss && room.boss.hp > 0) {
+        const distToBoss = Math.hypot(room.boss.x - pc.x, room.boss.y - pc.y);
+        // BOSS攻撃のカウンター時、あるいは反撃範囲＋α内にBOSSがいれば反撃ヒット
+        if (attacker === 'BOSS' || distToBoss <= counterRadius + room.boss.radius + 90) {
+            applyDamageToBossInternal(roomId, counterPlayer, baseCounterDmg, 'ultra_counter', 'ultra');
+        }
+    } else if (room.mode === 'pvp') {
+        for (const id in room.players) {
+            if (id === counterPlayer.id) continue;
+            const enemy = room.players[id];
+            if (!enemy || enemy.isDead || enemy.isEliminated) continue;
+            const ec = playerCenter(enemy);
+            const dist = Math.hypot(ec.x - pc.x, ec.y - pc.y);
+            if (dist <= counterRadius + 24 || (attacker && attacker !== 'BOSS' && attacker.id === id && dist <= counterRadius + 80)) {
+                const knockDir = Math.abs(ec.x - pc.x) >= Math.abs(ec.y - pc.y)
+                    ? (ec.x >= pc.x ? 'right' : 'left')
+                    : (ec.y >= pc.y ? 'down' : 'up');
+                applyDamageToPlayerInternal(roomId, enemy, counterPlayer, baseCounterDmg, knockDir, 'ultra_counter', matchId, counterPlayer.element);
+            }
+        }
+    }
+}
+
+function saveSessionRecord(room, playerObj) {
+    if (!room || !playerObj || !playerObj.clientKey) return;
+    const prof = profiles[playerObj.clientKey];
+    if (prof) {
+        prof.wins = playerObj.wins || prof.wins;
+        prof.points = playerObj.points;
+    }
+    room.sessionRecords[playerObj.clientKey] = {
+        wins: playerObj.wins || 0,
+        points: playerObj.points || 0
+    };
+}
+
+function handlePlayerKO(roomId, target, attacker, matchIdAtKO) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing' || room.matchId !== matchIdAtKO) return;
+    if (target.isDead || target.isEliminated) return;
+
+    target.isDead = true;
+    clearPlayerUltraStateAndTimers(target);
+    resetPlayerCombatStatuses(target);
+    target.stocks = Math.max(0, target.stocks - 1);
+
+    const koBonus = attacker ? REWARD_PVP_KO : 0;
+    if (attacker) {
+        attacker.points = (attacker.points || 0) + koBonus;
+        saveSessionRecord(room, attacker);
+        const atkSockets = findSocketsByClientKey(attacker.clientKey);
+        for (const s of atkSockets) emitProfileToClient(s, profiles[attacker.clientKey]);
+    }
+
+    const targetId = target.id;
+
+    if (target.stocks <= 0) {
+        target.isEliminated = true;
+        let survivalBonus = 0;
+        if (room.mode === 'pvp') {
+            const aliveCount = Object.values(room.players).filter((pl) => !pl.isEliminated).length;
+            if (aliveCount === 1) survivalBonus = 100;
+            else if (aliveCount === 2) survivalBonus = 50;
+        }
+
+        if (survivalBonus > 0) {
+            target.points = (target.points || 0) + survivalBonus;
+        }
+        saveSessionRecord(room, target);
+        const tgtSockets = findSocketsByClientKey(target.clientKey);
+        for (const s of tgtSockets) emitProfileToClient(s, profiles[target.clientKey]);
+
+        io.to(roomId).emit('playerKO', {
+            targetId,
+            attackerId: attacker ? attacker.id : 'BOSS',
+            stocks: 0,
+            isEliminated: true,
+            koBonus,
+            survivalBonus,
+            attackerPoints: attacker ? attacker.points : 0,
+            targetPoints: target.points
+        });
+
+        checkMatchWinner(roomId);
+    } else {
+        io.to(roomId).emit('playerKO', {
+            targetId,
+            attackerId: attacker ? attacker.id : 'BOSS',
+            stocks: target.stocks,
+            isEliminated: false,
+            koBonus,
+            survivalBonus: 0,
+            attackerPoints: attacker ? attacker.points : 0,
+            targetPoints: target.points
+        });
+
+        setTimeout(() => {
+            const currentR = rooms[roomId];
+            if (currentR && currentR.state === 'playing' && currentR.matchId === matchIdAtKO && currentR.players[targetId]) {
+                const respawnTarget = currentR.players[targetId];
+                if (!respawnTarget.isEliminated && respawnTarget.isDead) {
+                    respawnTarget.isDead = false;
+                    resetPlayerCombatStatuses(respawnTarget);
+                    respawnTarget.hp = respawnTarget.maxHp;
+                    const safeSpawn = findSafePosition(currentR, CHAR_SIZE);
+                    respawnTarget.x = safeSpawn.x;
+                    respawnTarget.y = safeSpawn.y;
+                    io.to(roomId).emit('playerRespawn', {
+                        id: respawnTarget.id,
+                        hp: respawnTarget.hp,
+                        x: respawnTarget.x,
+                        y: respawnTarget.y
+                    });
+                }
+            }
+        }, 2000);
+    }
+}
+
+// =========================================================================
+// ステージ開始・再挑戦時リセット & カウントダウン開始
+// =========================================================================
+function beginMatchCountdown(roomId) {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    stopGimmickLoop(roomId);
+    room.state = 'countdown';
+    room.lastMatchCleared = false;
+    room.matchId = (room.matchId || 0) + 1;
+    const startingMatchId = room.matchId;
+
+    room.walls = [];
+    room.items = [];
+    room.lastBossAttackAt = {};
+    room.bossProjectiles = [];
+    room.bossMagmaZones = [];
+    room.bossRoarPullUntil = 0;
+    room.bossRoarPullStrength = 0;
+
+    const stage = getStageByNumber(room.stageNumber);
+    room.stageNumber = stage.stageNumber;
+    room.stageId = stage.stageId;
+    room.bossId = stage.bossId;
+
+    const playerIds = Object.keys(room.players);
+    room.boss = room.mode === 'boss' ? createBossInstance(room.bossId, playerIds.length) : null;
+
+    playerIds.forEach((id, index) => {
+        const p = room.players[id];
+        const spawn = SPAWN_POINTS[index % SPAWN_POINTS.length];
+        resetPlayerCombatStatuses(p);
+        Object.assign(p, createPlayerGuards());
+
+        p.isDead = false;
+        p.isEliminated = false;
+        p.stocks = INITIAL_STOCKS;
+        p.bossDamageDealt = 0;
+        p.lastEarnedPoints = 0;
+        p.lastPointBreakdown = null;
+        p.ultraCooldownUntil = 0;
+        syncPlayerEquippedUltraFromProfile(p);
+
+        p.hp = p.maxHp;
+        p.x = spawn.x;
+        p.y = spawn.y;
+        p.facing = spawn.facing;
+    });
+
+    io.to(roomId).emit('currentPlayers', serializeRoomPlayers(room));
+    io.to(roomId).emit('gimmicksUpdated', { walls: [], items: [] });
+    if (room.mode === 'boss') {
+        io.to(roomId).emit('bossStateUpdated', room.boss);
+    }
+    io.to(roomId).emit('matchCountdown', {
+        seconds: GAME_RULES.COUNTDOWN_SEC,
+        mode: room.mode,
+        stageNumber: room.stageNumber,
+        stageId: room.stageId,
+        bossId: room.bossId
+    });
+
+    room.countdownTimer = setTimeout(() => {
+        const r = rooms[roomId];
+        if (r && r.state === 'countdown' && r.matchId === startingMatchId) {
+            r.countdownTimer = null;
+            r.state = 'playing';
+            io.to(roomId).emit('matchStart', {
+                mode: r.mode,
+                stageNumber: r.stageNumber,
+                stageId: r.stageId,
+                bossId: r.bossId,
+                boss: r.boss
+            });
+            startGimmickLoop(roomId);
+        }
+    }, GAME_RULES.COUNTDOWN_SEC * 1000);
+}
+
+function checkAllReadyAndStart(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'waiting') return;
+
+    const playerIds = Object.keys(room.players);
+    const minRequired = room.mode === 'boss' ? 1 : 2;
+    if (playerIds.length < minRequired) return;
+
+    const allReady = playerIds.every((id) => room.players[id].isReady);
+    if (!allReady) return;
+
+    beginMatchCountdown(roomId);
+}
+
+function checkMatchWinner(roomId) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing') return;
+
+    const playerIds = Object.keys(room.players);
+    const survivors = playerIds.filter((id) => !room.players[id].isEliminated);
+
+    if (room.mode === 'boss') {
+        if (room.boss && room.boss.hp <= 0) {
+            room.state = 'result';
+            room.lastMatchCleared = true;
+            room.matchId = (room.matchId || 0) + 1;
+            stopGimmickLoop(roomId);
+
+            const stage = getStageByNumber(room.stageNumber);
+            const clearBonus = stage.clearRewardPt || 300;
+            const nextStage = getNextStage(room.stageNumber);
+
+            let mvpId = null;
+            let maxDmg = -1;
+            let totalDamageDealt = 0;
+
+            playerIds.forEach((id) => {
+                const dmg = room.players[id].bossDamageDealt || 0;
+                totalDamageDealt += dmg;
+                if (dmg > maxDmg) {
+                    maxDmg = dmg;
+                    mvpId = id;
+                }
+            });
+            if (maxDmg <= 0) mvpId = null;
+
+            const rewardsByPlayer = {};
+            const unlockedStagesByPlayer = {};
+
+            playerIds.forEach((id) => {
+                const p = room.players[id];
+                resetPlayerCombatStatuses(p);
+                const dmg = p.bossDamageDealt || 0;
+                const dmgRatio = totalDamageDealt > 0 ? (dmg / totalDamageDealt) : (1 / Math.max(1, playerIds.length));
+                const contributionBonus = Math.round(REWARD_BOSS_CONTRIBUTION_POOL * dmgRatio);
+                const mvpBonus = (id === mvpId) ? REWARD_BOSS_MVP : 0;
+                const totalEarned = clearBonus + contributionBonus + mvpBonus;
+
+                p.wins = (p.wins || 0) + 1;
+                p.points = (p.points || 0) + totalEarned;
+                p.lastEarnedPoints = totalEarned;
+                p.lastPointBreakdown = {
+                    clearBonus,
+                    contributionBonus,
+                    mvpBonus,
+                    damageRatioPercent: Math.round(dmgRatio * 100),
+                    totalEarned
+                };
+
+                const prof = getOrCreateProfile(p.clientKey);
+                prof.wins = p.wins;
+                prof.points = p.points;
+                let newlyUnlockedStage = null;
+                if (nextStage && prof.maxUnlockedStage < nextStage.stageNumber) {
+                    prof.maxUnlockedStage = nextStage.stageNumber;
+                    newlyUnlockedStage = nextStage.stageNumber;
+                }
+                unlockedStagesByPlayer[id] = {
+                    maxUnlockedStage: prof.maxUnlockedStage,
+                    newlyUnlockedStage
+                };
+
+                rewardsByPlayer[id] = p.lastPointBreakdown;
+                saveSessionRecord(room, p);
+
+                const sock = io.sockets.sockets.get(id);
+                if (sock) emitProfileToClient(sock, prof);
+            });
+
+            io.to(roomId).emit('matchResult', {
+                mode: 'boss',
+                stageNumber: room.stageNumber,
+                stageId: room.stageId,
+                bossId: room.bossId,
+                bossName: room.boss.name,
+                bossCleared: true,
+                nextStageNumber: nextStage ? nextStage.stageNumber : null,
+                nextStageTitle: nextStage ? nextStage.title : null,
+                mvpId,
+                clearBonus,
+                contributionPool: REWARD_BOSS_CONTRIBUTION_POOL,
+                mvpBonus: REWARD_BOSS_MVP,
+                rewardsByPlayer,
+                unlockedStagesByPlayer,
+                players: serializeRoomPlayers(room)
+            });
+            return;
+        }
+
+        if (survivors.length === 0) {
+            room.state = 'result';
+            room.lastMatchCleared = false;
+            room.matchId = (room.matchId || 0) + 1;
+            stopGimmickLoop(roomId);
+
+            const rewardsByPlayer = {};
+            playerIds.forEach((id) => {
+                const p = room.players[id];
+                resetPlayerCombatStatuses(p);
+                p.lastEarnedPoints = 0;
+                p.lastPointBreakdown = {
+                    clearBonus: 0,
+                    contributionBonus: 0,
+                    mvpBonus: 0,
+                    damageRatioPercent: 0,
+                    totalEarned: 0
+                };
+                rewardsByPlayer[id] = p.lastPointBreakdown;
+                saveSessionRecord(room, p);
+            });
+
+            io.to(roomId).emit('matchResult', {
+                mode: 'boss',
+                stageNumber: room.stageNumber,
+                stageId: room.stageId,
+                bossId: room.bossId,
+                bossName: room.boss ? room.boss.name : getBossDef(room.bossId).name,
+                bossCleared: false,
+                nextStageNumber: null,
+                mvpId: null,
+                clearBonus: 0,
+                contributionPool: 0,
+                mvpBonus: 0,
+                rewardsByPlayer,
+                players: serializeRoomPlayers(room)
+            });
+        }
+        return;
+    }
+
+    // PvPモード勝敗判定
+    if (survivors.length <= 1) {
+        room.state = 'result';
+        room.lastMatchCleared = false;
+        room.matchId = (room.matchId || 0) + 1;
+        stopGimmickLoop(roomId);
+
+        const winnerId = survivors.length === 1 ? survivors[0] : null;
+        const rewardsByPlayer = {};
+
+        playerIds.forEach((id) => {
+            const p = room.players[id];
+            resetPlayerCombatStatuses(p);
+            const earned = (id === winnerId) ? REWARD_PVP_WIN : 0;
+            if (id === winnerId) {
+                p.wins = (p.wins || 0) + 1;
+                p.points = (p.points || 0) + earned;
+            }
+            p.lastEarnedPoints = earned;
+            p.lastPointBreakdown = { totalEarned: earned };
+            rewardsByPlayer[id] = p.lastPointBreakdown;
+
+            const prof = getOrCreateProfile(p.clientKey);
+            prof.wins = p.wins;
+            prof.points = p.points;
+            saveSessionRecord(room, p);
+
+            const sock = io.sockets.sockets.get(id);
+            if (sock) emitProfileToClient(sock, prof);
+        });
+
+        const serialized = serializeRoomPlayers(room);
+        io.to(roomId).emit('matchResult', {
+            mode: 'pvp',
+            winner: winnerId ? serialized[winnerId] : null,
+            winnerId,
+            winBonus: winnerId ? REWARD_PVP_WIN : 0,
+            rewardsByPlayer,
+            players: serialized
+        });
+    }
+}
+
+function handlePlayerExit(socket, roomId) {
+    if (!roomId || !rooms[roomId]) return;
+    const room = rooms[roomId];
+    const leavingPlayer = room.players[socket.id];
+    if (!leavingPlayer) return;
+
+    const wasEliminated = Boolean(leavingPlayer.isEliminated);
+    resetPlayerCombatStatuses(leavingPlayer);
+    saveSessionRecord(room, leavingPlayer);
+
+    delete room.players[socket.id];
+    io.to(roomId).emit('disconnectPlayer', socket.id);
+
+    const remainingIds = Object.keys(room.players);
+    if (remainingIds.length === 0) {
+        room.matchId = (room.matchId || 0) + 1;
+        stopGimmickLoop(roomId);
+        delete rooms[roomId];
+        return;
+    }
+
+    // ホスト引き継ぎ
+    if (room.hostId === socket.id) {
+        room.hostId = remainingIds[0];
+        const hostMax = getHostMaxUnlockedStage(room);
+        if (room.stageNumber > hostMax) {
+            const clampedStage = getStageByNumber(hostMax);
+            room.stageNumber = clampedStage.stageNumber;
+            room.stageId = clampedStage.stageId;
+            room.bossId = clampedStage.bossId;
+        }
+    }
+
+    if (room.state === 'playing') {
+        if (!wasEliminated) {
+            checkMatchWinner(roomId);
+        }
+    } else if (room.state === 'countdown') {
+        const minReq = room.mode === 'boss' ? 1 : 2;
+        if (remainingIds.length < minReq) {
+            room.matchId = (room.matchId || 0) + 1;
+            stopGimmickLoop(roomId);
+            room.state = 'waiting';
+            for (const id of remainingIds) {
+                resetPlayerCombatStatuses(room.players[id]);
+                room.players[id].isReady = false;
+            }
+            emitRoomStateSync(roomId);
+        }
+    } else {
+        emitRoomStateSync(roomId);
+    }
+}
+
+// =========================================================================
+// サーバー側 斬撃（X）当たり判定＆モーション配信
+// =========================================================================
+function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
+    const room = rooms[roomId];
+    if (!room || room.state !== 'playing') return;
+
+    const matchId = room.matchId;
+    const slashCfg = GAME_RULES.ACTIONS.slash;
+    const vec = facingToVector(facing);
+    const range = slashCfg.range || 78;
+    const endX = ox + vec.dx * range;
+    const endY = oy + vec.dy * range;
+    const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now());
+
+    // 斬撃モーション描画イベントをルーム全員へ配信
+    io.to(roomId).emit('slashMotionEvent', {
+        attackerId: attacker.id,
+        x: ox,
+        y: oy,
+        facing,
+        element: attacker.element,
+        mainColor: attacker.stats.mainColor,
+        isPowered,
+        hasSpecialInk: Boolean(attacker.hasSpecialInk),
+        specialInkType: attacker.dominantSpecialInk || null,
+        durationMs: 220
+    });
+
+    // 壊せる壁へのダメージ
+    let wallsChanged = false;
+    for (let i = room.walls.length - 1; i >= 0; i--) {
+        const w = room.walls[i];
+        const wx = w.x + w.w / 2;
+        const wy = w.y + w.h / 2;
+        if (pointToSegmentDistance(wx, wy, ox, oy, endX, endY) <= 44) {
+            w.hp -= 20;
+            wallsChanged = true;
+            if (w.hp <= 0) {
+                room.walls.splice(i, 1);
+            }
+        }
+    }
+    if (wallsChanged) {
+        io.to(roomId).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
+    }
+
+    if (room.mode === 'boss' && room.boss && room.boss.hp > 0) {
+        const hitDist = pointToSegmentDistance(room.boss.x, room.boss.y, ox, oy, endX, endY);
+        if (hitDist <= room.boss.radius + 32) {
+            const rawDmg = attacker.stats.atk * slashCfg.bossMultiplier * atkMult;
+            applyDamageToBossInternal(roomId, attacker, rawDmg, 'melee', 'melee');
+        }
+    } else if (room.mode === 'pvp') {
+        for (const id in room.players) {
+            if (id === attacker.id) continue;
+            const target = room.players[id];
+            if (!target || target.isDead || target.isEliminated) continue;
+            const tc = playerCenter(target);
+            if (pointToSegmentDistance(tc.x, tc.y, ox, oy, endX, endY) <= 42) {
+                const rawDmg = attacker.stats.atk * slashCfg.pvpMultiplier * atkMult;
+                applyDamageToPlayerInternal(roomId, target, attacker, rawDmg, facing, 'melee', matchId, attacker.element);
+            }
+        }
+    }
+}
+
+// =========================================================================
+// Socket.IO イベントハンドラ
+// =========================================================================
+io.on('connection', (socket) => {
+    console.log(`クライアントが接続しました: ${socket.id}`);
+    let currentRoom = null;
+
+    // クライアントプロファイル初期化・同期
+    socket.on('syncProfile', (payload) => {
+        const clientKey = sanitizeClientKey(payload && payload.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+        emitProfileToClient(socket, prof);
+    });
+
+    // 特別インクガチャ（300Pt / 重複100Pt還元）
+    socket.on('drawInkGacha', (payload) => {
+        const clientKey = sanitizeClientKey((payload && payload.clientKey) || socket.data.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+
+        const cost = GAME_RULES.GACHA.INK_COST;
+        const dupRefund = GAME_RULES.GACHA.INK_DUPLICATE_REFUND;
+        if (prof.points < cost) {
+            socket.emit('gachaError', { type: 'ink', message: `ポイントが不足しています（必要: ${cost}Pt）`, profile: serializeProfile(prof) });
+            return;
+        }
+
+        prof.points -= cost;
+        const pool = SPECIAL_INK_IDS;
+        const drawnInkId = pool[Math.floor(Math.random() * pool.length)];
+        const inkDef = SPECIAL_INKS[drawnInkId];
+        const rarity = drawnInkId === 'SPECIAL_VENOM' ? 'A' : 'S';
+        const isDuplicate = prof.unlockedInks.includes(drawnInkId);
+        let refundPt = 0;
+
+        if (isDuplicate) {
+            refundPt = dupRefund;
+            prof.points += refundPt;
+        } else {
+            prof.unlockedInks.push(drawnInkId);
+        }
+
+        if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
+            rooms[currentRoom].players[socket.id].points = prof.points;
+        }
+
+        socket.emit('inkGachaResult', {
+            inkId: drawnInkId,
+            inkName: inkDef ? inkDef.name : drawnInkId,
+            rarity,
+            isDuplicate,
+            cost,
+            refundPt,
+            profile: serializeProfile(prof)
+        });
+    });
+
+    // ウルトラガチャ（1000Pt / 同一技最大3ストック / ×3到達後重複300Pt還元）
+    socket.on('drawUltraGacha', (payload) => {
+        const clientKey = sanitizeClientKey((payload && payload.clientKey) || socket.data.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+
+        const cost = GAME_RULES.GACHA.ULTRA_COST;
+        const maxStock = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+        const maxDupRefund = GAME_RULES.GACHA.ULTRA_DUPLICATE_REFUND;
+
+        if (prof.points < cost) {
+            socket.emit('gachaError', { type: 'ultra', message: `ポイントが不足しています（必要: ${cost}Pt）`, profile: serializeProfile(prof) });
+            return;
+        }
+
+        prof.points -= cost;
+
+        // 重み付き抽選（Aランク各30%、Sランク各20%）
+        const weightedPool = [
+            { id: 'end_of_days', weight: 20 },
+            { id: 'absolute_wall', weight: 30 },
+            { id: 'perfect_counter', weight: 20 },
+            { id: 'sky_meteor', weight: 30 }
+        ];
+        const totalWeight = weightedPool.reduce((acc, item) => acc + item.weight, 0);
+        let roll = Math.random() * totalWeight;
+        let drawnSkillId = ULTRA_SKILL_ORDER[0];
+        for (const entry of weightedPool) {
+            roll -= entry.weight;
+            if (roll <= 0) {
+                drawnSkillId = entry.id;
+                break;
+            }
+        }
+
+        const skillDef = getUltraSkillDef(drawnSkillId);
+        const prevStock = prof.ultraStocks[drawnSkillId] || 0;
+        let newStock = prevStock;
+        let isMaxDuplicate = false;
+        let refundPt = 0;
+
+        if (prevStock >= maxStock) {
+            isMaxDuplicate = true;
+            refundPt = maxDupRefund;
+            prof.points += refundPt;
+        } else {
+            newStock = prevStock + 1;
+            prof.ultraStocks[drawnSkillId] = newStock;
+            if (!prof.equippedUltra) {
+                prof.equippedUltra = drawnSkillId;
+            }
+        }
+
+        if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
+            const p = rooms[currentRoom].players[socket.id];
+            p.points = prof.points;
+            if (rooms[currentRoom].state === 'waiting') {
+                syncPlayerEquippedUltraFromProfile(p);
+                emitRoomStateSync(currentRoom);
+            }
+        }
+
+        socket.emit('ultraGachaResult', {
+            skillId: drawnSkillId,
+            skillName: skillDef.name,
+            rarity: skillDef.rarity,
+            icon: skillDef.icon,
+            prevStock,
+            newStock,
+            isDuplicate: prevStock > 0,
+            isMaxDuplicate,
+            cost,
+            refundPt,
+            profile: serializeProfile(prof)
+        });
+    });
+
+    // 必殺技の装備変更
+    socket.on('equipUltraSkill', (payload) => {
+        const clientKey = sanitizeClientKey((payload && payload.clientKey) || socket.data.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+
+        const requestedId = payload && payload.skillId ? sanitizeUltraSkillId(payload.skillId) : null;
+        if (requestedId && (prof.ultraStocks[requestedId] || 0) <= 0) {
+            socket.emit('gachaError', { type: 'equip', message: '未所持の必殺技は装備できません', profile: serializeProfile(prof) });
+            return;
+        }
+
+        prof.equippedUltra = requestedId;
+        emitProfileToClient(socket, prof);
+
+        if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
+            const r = rooms[currentRoom];
+            if (r.state === 'waiting') {
+                syncPlayerEquippedUltraFromProfile(r.players[socket.id]);
+                emitRoomStateSync(currentRoom);
+            }
+        }
+    });
+
+    // ルーム入室
+    socket.on('joinRoom', (payload) => {
+        const roomId = sanitizeRoomId(payload && payload.roomId);
+        if (!roomId) return;
+
+        const occupied = rooms[roomId]
+            ? Object.keys(rooms[roomId].players).filter((id) => id !== socket.id).length
+            : 0;
+        if (occupied >= MAX_PLAYERS_PER_ROOM) {
+            socket.emit('roomFull', { roomId });
+            return;
+        }
+
+        if (currentRoom && rooms[currentRoom]) {
+            socket.leave(currentRoom);
+            handlePlayerExit(socket, currentRoom);
+        }
+
+        let clientKey = sanitizeClientKey(payload && payload.clientKey, socket.id);
+        if (rooms[roomId] && Object.values(rooms[roomId].players).some((other) => other.clientKey === clientKey && other.id !== socket.id)) {
+            clientKey = clientKey.slice(0, 34) + '_' + socket.id.slice(0, 8);
+        }
+        socket.data.clientKey = clientKey;
+
+        const prof = getOrCreateProfile(clientKey, payload && payload.profile ? payload.profile : payload);
+        emitProfileToClient(socket, prof);
+
+        currentRoom = roomId;
+        socket.join(roomId);
+
+        if (!rooms[roomId]) {
+            const reqStageNum = Math.min(prof.maxUnlockedStage, Math.max(1, Math.floor(Number(payload && payload.stageNumber) || DEFAULT_STAGE_NUMBER)));
+            const stage = payload && payload.bossId
+                ? (STAGES.find((s) => s.bossId === sanitizeBossId(payload.bossId) && s.stageNumber <= prof.maxUnlockedStage) || getStageByNumber(reqStageNum))
+                : getStageByNumber(reqStageNum);
+
+            rooms[roomId] = {
+                state: 'waiting',
+                mode: payload && payload.mode === 'boss' ? 'boss' : 'pvp',
+                stageNumber: stage.stageNumber,
+                stageId: stage.stageId,
+                bossId: stage.bossId,
+                hostId: socket.id,
+                lastMatchCleared: false,
+                matchId: 0,
+                players: {},
+                sessionRecords: {},
+                walls: [],
+                items: [],
+                boss: null,
+                bossProjectiles: [],
+                bossMagmaZones: [],
+                bossRoarPullUntil: 0,
+                bossRoarPullStrength: 0,
+                lastBossAttackAt: {},
+                countdownTimer: null,
+                wallTimer: null,
+                itemTimer: null,
+                bossMoveTimer: null,
+                bossProjectileTimer: null,
+                bossAttackTimer: null,
+                bossPendingTimeouts: []
+            };
+        }
+
+        const room = rooms[roomId];
+        const cleanStats = sanitizeStats(payload && payload.stats);
+        const gridData = payload && Array.isArray(payload.gridData) ? payload.gridData : null;
+        const element = gridData
+            ? determineElementFromPixels(gridData)
+            : sanitizeElementId(payload && payload.element);
+        const inkMeta = analyzeSpecialInkFromGrid(gridData);
+
+        const equippedSkill = sanitizeUltraSkillId(prof.equippedUltra);
+        const ultraStockCount = equippedSkill ? (prof.ultraStocks[equippedSkill] || 0) : 0;
+
+        room.players[socket.id] = {
+            id: socket.id,
+            clientKey,
+            name: sanitizeName(payload && payload.name),
+            rank: sanitizeRank(payload && payload.rank),
+            title: payload && typeof payload.title === 'string' ? payload.title.slice(0, 16) : '',
+            element,
+            hasSpecialInk: inkMeta.hasSpecialInk,
+            dominantSpecialInk: inkMeta.dominantSpecialInk,
+            x: ARENA_CENTER_X - 24,
+            y: ARENA_CENTER_Y - 24,
+            facing: 'right',
+            characterData: gridData,
+            stats: cleanStats,
+            hp: cleanStats.maxHp,
+            maxHp: cleanStats.maxHp,
+            stocks: INITIAL_STOCKS,
+            isDead: false,
+            isEliminated: false,
+            shieldUntil: 0,
+            absoluteWallUntil: 0,
+            counterStanceUntil: 0,
+            speedBoostUntil: 0,
+            powerBoostUntil: 0,
+            slowUntil: 0,
+            slowMultiplier: 1.0,
+            attackDebuffUntil: 0,
+            attackDebuffMultiplier: 1.0,
+            dotUntil: 0,
+            dotDamage: 0,
+            dotIntervalMs: 600,
+            nextDotAt: 0,
+            ultraSkillId: ultraStockCount > 0 ? equippedSkill : null,
+            ultraRemainingUses: ultraStockCount,
+            ultraMaxUses: ultraStockCount,
+            ultraCooldownUntil: 0,
+            ultraState: null,
+            ultraStateUntil: 0,
+            ultraTimers: [],
+            bossDamageDealt: 0,
+            lastEarnedPoints: 0,
+            lastPointBreakdown: null,
+            isReady: false,
+            wins: prof.wins,
+            points: prof.points,
+            ...createPlayerGuards()
+        };
+
+        emitRoomStateSync(roomId);
+    });
+
+    // ルームモード切替（ホストのみ・waiting中）
+    socket.on('changeRoomMode', (payload) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'waiting') return;
+        if (room.hostId !== socket.id) {
+            socket.emit('roomActionRejected', { message: 'モード変更はルーム作成者（ホスト）のみ可能です' });
+            return;
+        }
+
+        const nextMode = typeof payload === 'object' && payload !== null ? payload.mode : payload;
+        room.mode = nextMode === 'boss' ? 'boss' : 'pvp';
+
+        if (typeof payload === 'object' && payload !== null && (payload.stageNumber || payload.bossId)) {
+            const hostMax = getHostMaxUnlockedStage(room);
+            const targetStage = payload.stageNumber
+                ? getStageByNumber(payload.stageNumber)
+                : (STAGES.find((s) => s.bossId === sanitizeBossId(payload.bossId)) || getStageByNumber(1));
+            if (targetStage.stageNumber <= hostMax) {
+                room.stageNumber = targetStage.stageNumber;
+                room.stageId = targetStage.stageId;
+                room.bossId = targetStage.bossId;
+            }
+        }
+
+        for (const id in room.players) {
+            room.players[id].isReady = false;
+        }
+        emitRoomStateSync(currentRoom);
+    });
+
+    // ステージ変更（ホストのみ・ホスト解放済みステージ上限まで）
+    socket.on('changeRoomStage', (payload) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'waiting') return;
+
+        if (room.hostId !== socket.id) {
+            socket.emit('roomActionRejected', { message: 'ステージ変更はルーム作成者（ホスト）のみ可能です' });
+            return;
+        }
+
+        const reqNum = typeof payload === 'object' && payload !== null
+            ? Number(payload.stageNumber)
+            : Number(payload);
+        const reqBossId = typeof payload === 'object' && payload !== null && payload.bossId
+            ? sanitizeBossId(payload.bossId)
+            : null;
+
+        const targetStage = reqBossId
+            ? (STAGES.find((s) => s.bossId === reqBossId) || getStageByNumber(1))
+            : getStageByNumber(reqNum || 1);
+
+        const hostMax = getHostMaxUnlockedStage(room);
+        if (targetStage.stageNumber > hostMax) {
+            socket.emit('roomActionRejected', { message: `STAGE ${targetStage.stageNumber} はまだ解放されていません` });
+            return;
+        }
+
+        room.matchId = (room.matchId || 0) + 1;
+        stopGimmickLoop(currentRoom);
+        room.stageNumber = targetStage.stageNumber;
+        room.stageId = targetStage.stageId;
+        room.bossId = targetStage.bossId;
+
+        for (const id in room.players) {
+            resetPlayerCombatStatuses(room.players[id]);
+            room.players[id].isReady = false;
+        }
+        emitRoomStateSync(currentRoom);
+    });
+
+    // 後方互換用 changeRoomBoss（ホスト・解放済みチェック適用）
+    socket.on('changeRoomBoss', (newBossId) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'waiting') return;
+        if (room.hostId !== socket.id) {
+            socket.emit('roomActionRejected', { message: 'ステージ変更はルーム作成者（ホスト）のみ可能です' });
+            return;
+        }
+
+        const safeBossId = sanitizeBossId(newBossId);
+        const targetStage = STAGES.find((s) => s.bossId === safeBossId) || getStageByNumber(1);
+        const hostMax = getHostMaxUnlockedStage(room);
+        if (targetStage.stageNumber > hostMax) {
+            socket.emit('roomActionRejected', { message: `STAGE ${targetStage.stageNumber} はまだ解放されていません` });
+            return;
+        }
+
+        room.matchId = (room.matchId || 0) + 1;
+        stopGimmickLoop(currentRoom);
+        room.stageNumber = targetStage.stageNumber;
+        room.stageId = targetStage.stageId;
+        room.bossId = targetStage.bossId;
+
+        for (const id in room.players) {
+            resetPlayerCombatStatuses(room.players[id]);
+            room.players[id].isReady = false;
+        }
+        emitRoomStateSync(currentRoom);
+    });
+
+    socket.on('toggleReady', (isReady) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        const p = room.players[socket.id];
+        if (!p || room.state !== 'waiting') return;
+
+        p.isReady = Boolean(isReady);
+        io.to(currentRoom).emit('playerReadyUpdated', {
+            id: socket.id,
+            isReady: p.isReady
+        });
+
+        checkAllReadyAndStart(currentRoom);
+    });
+
+    // 全滅時・リザルトからの「同じステージを最初からやり直す（再挑戦）」
+    socket.on('retryStage', () => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'result') return;
+
+        const playerIds = Object.keys(room.players);
+        const minReq = room.mode === 'boss' ? 1 : 2;
+        if (playerIds.length < minReq) return;
+
+        beginMatchCountdown(currentRoom);
+    });
+
+    // リザルトからロビーへ帰還（クリア後は次ステージを自動選択した状態で戻る）
+    socket.on('returnToLobby', () => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        room.matchId = (room.matchId || 0) + 1;
+        stopGimmickLoop(currentRoom);
+        room.state = 'waiting';
+        room.walls = [];
+        room.items = [];
         room.boss = null;
-        room.serverProjectiles = [];
-        room.magmaZones = [];
-        room.timeStopUntil = 0;
-        room.timeStopOwnerId = null;
+        room.bossProjectiles = [];
+        room.bossMagmaZones = [];
+        room.bossRoarPullUntil = 0;
+        room.bossRoarPullStrength = 0;
+        room.lastBossAttackAt = {};
+
+        // 直前がBOSS撃破クリアだった場合、次ステージが解放済みなら自動選択状態にする
+        if (room.mode === 'boss' && room.lastMatchCleared) {
+            const nextStage = getNextStage(room.stageNumber);
+            const hostMax = getHostMaxUnlockedStage(room);
+            if (nextStage && nextStage.stageNumber <= hostMax) {
+                room.stageNumber = nextStage.stageNumber;
+                room.stageId = nextStage.stageId;
+                room.bossId = nextStage.bossId;
+            }
+        }
+        room.lastMatchCleared = false;
 
         for (const id in room.players) {
             const p = room.players[id];
-            resetPlayerCombatStatuses(p, Date.now());
+            resetPlayerCombatStatuses(p);
+            Object.assign(p, createPlayerGuards());
+            p.isReady = false;
+            p.isDead = false;
+            p.isEliminated = false;
+            p.stocks = INITIAL_STOCKS;
+            p.ultraCooldownUntil = 0;
+            syncPlayerEquippedUltraFromProfile(p);
+            p.bossDamageDealt = 0;
+            p.lastEarnedPoints = 0;
+            p.lastPointBreakdown = null;
+            p.hp = p.maxHp;
+            saveSessionRecord(room, p);
         }
-        io.to(roomId).emit('returnedToLobby', { players: room.players });
+        emitRoomStateSync(currentRoom);
+    });
+
+    socket.on('leaveRoom', () => {
+        if (currentRoom && rooms[currentRoom]) {
+            const leftRoom = currentRoom;
+            socket.leave(leftRoom);
+            handlePlayerExit(socket, leftRoom);
+            currentRoom = null;
+        }
+    });
+
+    socket.on('playerMovement', (data) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing' || !data) return;
+
+        const p = room.players[socket.id];
+        if (p && !p.isDead && !p.isEliminated) {
+            const now = Date.now();
+            const maxX = ARENA_WIDTH - CHAR_SIZE;
+            const maxY = ARENA_HEIGHT - CHAR_SIZE;
+            let nx = Math.max(0, Math.min(maxX, Number(data.x) || 0));
+            let ny = Math.max(ARENA_TOP, Math.min(maxY, Number(data.y) || ARENA_TOP));
+
+            const dt = Math.min(1500, Math.max(16, now - (p.lastMoveAt || now)));
+            const boosted = now < p.speedBoostUntil + 500;
+            const slowed = now < (p.slowUntil || 0);
+            const slowMult = slowed ? (p.slowMultiplier || 0.75) : 1.0;
+            const effSpd = p.stats.spd * (boosted ? GAME_RULES.ITEMS.speed.speedMultiplier : 1) * slowMult;
+            const perSec = (effSpd + (room.mode === 'boss' ? 2.2 : 0)) * 60;
+            const budget = perSec * (dt / 1000) * 1.3 + 64;
+            const dist = Math.hypot(nx - p.x, ny - p.y);
+            if (dist > budget) {
+                const ratio = budget / dist;
+                nx = p.x + (nx - p.x) * ratio;
+                ny = p.y + (ny - p.y) * ratio;
+            }
+
+            if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12)) {
+                nx = p.x;
+                ny = p.y;
+            }
+
+            const moveDx = nx - p.x;
+            const moveDy = ny - p.y;
+            if (Math.hypot(moveDx, moveDy) > 0.2) {
+                p.vx = moveDx;
+                p.vy = moveDy;
+                p.lastMoveVectorAt = now;
+            }
+
+            p.lastMoveAt = now;
+            p.x = nx;
+            p.y = ny;
+            p.facing = VALID_FACING.includes(data.facing) ? data.facing : p.facing;
+            socket.to(currentRoom).emit('playerMoved', {
+                id: socket.id,
+                x: p.x,
+                y: p.y,
+                facing: p.facing
+            });
+        }
+    });
+
+    socket.on('damageWall', (data) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing') return;
+
+        const p = room.players[socket.id];
+        const hitType = sanitizeHitType(data && data.type);
+        if (!p || p.isDead || p.isEliminated || !hitType) return;
+
+        const wallIndex = room.walls.findIndex((w) => w.id === data.wallId);
+        if (wallIndex === -1) return;
+        if (!useCredit(p, hitType)) return;
+
+        const dmg = hitType === 'melee' ? 20 : 10;
+        room.walls[wallIndex].hp -= dmg;
+
+        if (room.walls[wallIndex].hp <= 0) {
+            room.walls.splice(wallIndex, 1);
+        }
+
+        io.to(currentRoom).emit('gimmicksUpdated', {
+            walls: room.walls,
+            items: room.items
+        });
+    });
+
+    socket.on('collectItem', (data) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing') return;
+
+        const p = room.players[socket.id];
+        if (!p || p.isDead || p.isEliminated) return;
+
+        const itemIndex = room.items.findIndex((it) => it.id === (data && data.itemId));
+        if (itemIndex === -1) return;
+
+        const item = room.items[itemIndex];
+        room.items.splice(itemIndex, 1);
+
+        if (item.type === 'speed') {
+            const duration = GAME_RULES.ITEMS.speed.durationMs;
+            p.speedBoostUntil = Date.now() + duration;
+            io.to(currentRoom).emit('itemEffectApplied', { id: socket.id, type: 'speed', duration });
+        } else if (item.type === 'heal') {
+            const healAmount = GAME_RULES.ITEMS.heal.healAmount;
+            p.hp = Math.min(p.maxHp, p.hp + healAmount);
+            io.to(currentRoom).emit('itemEffectApplied', { id: socket.id, type: 'heal', hp: p.hp, maxHp: p.maxHp, healAmount });
+        } else if (item.type === 'power') {
+            const duration = GAME_RULES.ITEMS.power.durationMs;
+            p.powerBoostUntil = Date.now() + duration;
+            io.to(currentRoom).emit('itemEffectApplied', { id: socket.id, type: 'power', duration });
+        }
+
+        io.to(currentRoom).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
+    });
+
+    socket.on('updateCharacter', (payload) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        const p = room.players[socket.id];
+        if (p && payload && room.state === 'waiting') {
+            const actualGrid = Array.isArray(payload) ? payload : payload.gridData;
+            p.characterData = actualGrid;
+            if (payload.name !== undefined) p.name = sanitizeName(payload.name);
+            if (payload.rank !== undefined) p.rank = sanitizeRank(payload.rank);
+            if (payload.title !== undefined) p.title = String(payload.title).slice(0, 16);
+
+            if (Array.isArray(actualGrid)) {
+                p.element = determineElementFromPixels(actualGrid);
+                const inkMeta = analyzeSpecialInkFromGrid(actualGrid);
+                p.hasSpecialInk = inkMeta.hasSpecialInk;
+                p.dominantSpecialInk = inkMeta.dominantSpecialInk;
+            } else if (payload.element !== undefined) {
+                p.element = sanitizeElementId(payload.element);
+            }
+
+            if (!Array.isArray(payload) && payload.stats) {
+                const cleanStats = sanitizeStats(payload.stats);
+                p.stats = cleanStats;
+                p.maxHp = cleanStats.maxHp;
+                p.hp = cleanStats.maxHp;
+            }
+
+            io.to(currentRoom).emit('characterUpdated', {
+                id: socket.id,
+                name: p.name,
+                rank: p.rank,
+                title: p.title,
+                element: p.element,
+                hasSpecialInk: p.hasSpecialInk,
+                dominantSpecialInk: p.dominantSpecialInk,
+                characterData: p.characterData,
+                stats: p.stats,
+                hp: p.hp,
+                maxHp: p.maxHp
+            });
+        }
+    });
+
+    // バリア (Z): 持続 1200ms / CD 4000ms
+    socket.on('activateShield', () => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing') return;
+
+        const p = room.players[socket.id];
+        if (p && !p.isDead && !p.isEliminated) {
+            const now = Date.now();
+            if (now < p.nextShieldAt) return;
+            const duration = GAME_RULES.ACTIONS.shield.durationMs;
+            const cooldown = GAME_RULES.ACTIONS.shield.cooldownMs;
+            p.nextShieldAt = now + cooldown;
+            p.shieldUntil = now + duration;
+            io.to(currentRoom).emit('playerShielded', {
+                id: socket.id,
+                duration,
+                cooldownMs: cooldown
+            });
+        }
+    });
+
+    // 通常攻撃（斬撃 X: CD 600ms / 玉 C: CD 450ms）
+    socket.on('playerAttack', (attackData) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing' || !attackData) return;
+
+        const p = room.players[socket.id];
+        const hitType = sanitizeHitType(attackData.type);
+        if (!p || p.isDead || p.isEliminated || !hitType) return;
+
+        const refillMs = hitType === 'melee'
+            ? GAME_RULES.ACTIONS.slash.cooldownMs
+            : GAME_RULES.ACTIONS.shot.cooldownMs;
+        const allowed = takeToken(p, hitType, refillMs, 1);
+        if (!allowed) return;
+
+        const c = playerCenter(p);
+        let ox = Number(attackData.x);
+        let oy = Number(attackData.y);
+        if (!Number.isFinite(ox) || !Number.isFinite(oy) || Math.hypot(ox - c.x, oy - c.y) > 90) {
+            ox = c.x;
+            oy = c.y;
+        }
+        const facing = VALID_FACING.includes(attackData.facing) ? attackData.facing : p.facing;
+        p.facing = facing;
+
+        const now = Date.now();
+        const boostedSpd = now < p.speedBoostUntil ? p.stats.spd * GAME_RULES.ITEMS.speed.speedMultiplier : p.stats.spd;
+        const isPowered = now < p.powerBoostUntil;
+
+        if (hitType === 'melee') {
+            // 斬撃（X）はサーバー正として即座に当たり判定＋モーションイベント配信
+            executeServerSlash(currentRoom, p, ox, oy, facing, isPowered);
+            return;
+        }
+
+        // 玉（C）は弾生成クレジットを付与してリモートへ配信
+        addCredit(p, 'shot');
+        socket.to(currentRoom).emit('remoteAttack', {
+            attackerId: socket.id,
+            type: 'shot',
+            x: ox,
+            y: oy,
+            facing,
+            element: p.element,
+            color: isPowered ? '#ff2222' : p.stats.mainColor,
+            spd: boostedSpd,
+            isPowered
+        });
+    });
+
+    // 必殺技（Space）発動要求（サーバー側でストック・CD・フェーズ・タイマーを厳密管理）
+    socket.on('activateUltra', (payload) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing') return;
+
+        const p = room.players[socket.id];
+        if (!p || p.isDead || p.isEliminated) return;
+
+        const skillId = sanitizeUltraSkillId(p.ultraSkillId);
+        const skill = getUltraSkillDef(skillId);
+        if (!skill || p.ultraRemainingUses <= 0) return;
+
+        const now = Date.now();
+        // 溜め/構え/予兆/展開中の多重発動禁止
+        if (p.ultraState !== null && now < p.ultraStateUntil) return;
+        // 6000ms 再使用クールダウン中チェック
+        if (now < p.ultraCooldownUntil) return;
+
+        if (payload && VALID_FACING.includes(payload.facing)) {
+            p.facing = payload.facing;
+        }
+
+        // 発動確定（ストック消費＆サーバー基準時刻 activatedAt で 6000ms CD 起算統一）
+        const activatedAt = now;
+        const cooldownMs = Number(skill.cooldownMs) || 6000;
+        const matchId = room.matchId;
+        const roomId = currentRoom;
+        p.ultraRemainingUses = Math.max(0, p.ultraRemainingUses - 1);
+        p.ultraCooldownUntil = activatedAt + cooldownMs;
+
+        const pc = playerCenter(p);
+        const facing = p.facing;
+
+        if (skill.id === 'end_of_days') {
+            const chargeMs = Number(skill.chargeMs) || 350;
+            const range = Number(skill.range) || 620;
+            const halfWidth = Number(skill.halfWidth) || 56;
+            const dmgMult = Number(skill.damageMultiplier) || 4.0;
+            p.ultraState = 'charging';
+            p.ultraStateUntil = activatedAt + chargeMs;
+
+            io.to(roomId).emit('ultraSkillEvent', {
+                playerId: p.id,
+                skillId: skill.id,
+                phase: 'charge',
+                x: pc.x,
+                y: pc.y,
+                facing,
+                range,
+                halfWidth,
+                element: p.element,
+                durationMs: chargeMs,
+                remainingUses: p.ultraRemainingUses,
+                maxUses: p.ultraMaxUses,
+                cooldownMs,
+                cooldownUntil: p.ultraCooldownUntil
+            });
+
+            registerPlayerUltraTimeout(room, p, () => {
+                const cur = rooms[roomId];
+                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
+                const shooter = cur.players[p.id];
+                if (!shooter || shooter.isDead || shooter.isEliminated) {
+                    if (shooter) {
+                        clearPlayerUltraStateAndTimers(shooter);
+                    }
+                    return;
+                }
+
+                shooter.ultraState = null;
+                shooter.ultraStateUntil = 0;
+
+                const curCenter = playerCenter(shooter);
+                const curFacing = shooter.facing;
+                const vec = facingToVector(curFacing);
+                const x1 = curCenter.x;
+                const y1 = curCenter.y;
+                const x2 = x1 + vec.dx * range;
+                const y2 = y1 + vec.dy * range;
+                const atkMult = getPlayerEffectiveAttackMultiplier(shooter, Date.now());
+                const rawDamage = shooter.stats.atk * dmgMult * atkMult;
+
+                io.to(roomId).emit('ultraSkillEvent', {
+                    playerId: shooter.id,
+                    skillId: skill.id,
+                    phase: 'fire',
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    range,
+                    halfWidth,
+                    facing: curFacing,
+                    element: shooter.element,
+                    durationMs: Number(skill.durationMs) || 260
+                });
+
+                // ライン上の壊せる壁を粉砕（76px以内）
+                let wallsChanged = false;
+                for (let i = cur.walls.length - 1; i >= 0; i--) {
+                    const w = cur.walls[i];
+                    if (pointToSegmentDistance(w.x + w.w / 2, w.y + w.h / 2, x1, y1, x2, y2) <= 76) {
+                        cur.walls.splice(i, 1);
+                        wallsChanged = true;
+                    }
+                }
+                if (wallsChanged) {
+                    io.to(roomId).emit('gimmicksUpdated', { walls: cur.walls, items: cur.items });
+                }
+
+                if (cur.mode === 'boss' && cur.boss && cur.boss.hp > 0) {
+                    if (pointToSegmentDistance(cur.boss.x, cur.boss.y, x1, y1, x2, y2) <= halfWidth + cur.boss.radius) {
+                        applyDamageToBossInternal(roomId, shooter, rawDamage, 'ultra_line', 'ultra');
+                    }
+                } else if (cur.mode === 'pvp') {
+                    for (const tid in cur.players) {
+                        if (tid === shooter.id) continue;
+                        const target = cur.players[tid];
+                        if (!target || target.isDead || target.isEliminated) continue;
+                        const tc = playerCenter(target);
+                        if (pointToSegmentDistance(tc.x, tc.y, x1, y1, x2, y2) <= halfWidth + 20) {
+                            applyDamageToPlayerInternal(
+                                roomId,
+                                target,
+                                shooter,
+                                rawDamage,
+                                curFacing,
+                                'ultra_line',
+                                matchId,
+                                shooter.element,
+                                { isEndOfDays: true }
+                            );
+                        }
+                    }
+                }
+            }, chargeMs);
+        } else if (skill.id === 'absolute_wall') {
+            const durationMs = Number(skill.durationMs) || 2600;
+            p.ultraState = 'active_wall';
+            p.ultraStateUntil = activatedAt + durationMs;
+            p.absoluteWallUntil = activatedAt + durationMs;
+
+            io.to(roomId).emit('ultraSkillEvent', {
+                playerId: p.id,
+                skillId: skill.id,
+                phase: 'active',
+                durationMs,
+                pullMultiplier: skill.pullMultiplier || 0.15,
+                remainingUses: p.ultraRemainingUses,
+                maxUses: p.ultraMaxUses,
+                cooldownMs,
+                cooldownUntil: p.ultraCooldownUntil
+            });
+
+            registerPlayerUltraTimeout(room, p, () => {
+                const cur = rooms[roomId];
+                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
+                const holder = cur.players[p.id];
+                if (!holder) return;
+                holder.ultraState = null;
+                holder.ultraStateUntil = 0;
+                holder.absoluteWallUntil = 0;
+                io.to(roomId).emit('ultraSkillEvent', {
+                    playerId: holder.id,
+                    skillId: skill.id,
+                    phase: 'end'
+                });
+            }, durationMs);
+        } else if (skill.id === 'perfect_counter') {
+            const stanceMs = Number(skill.stanceMs) || 1800;
+            p.ultraState = 'counter_stance';
+            p.ultraStateUntil = activatedAt + stanceMs;
+            p.counterStanceUntil = activatedAt + stanceMs;
+
+            io.to(roomId).emit('ultraSkillEvent', {
+                playerId: p.id,
+                skillId: skill.id,
+                phase: 'stance',
+                durationMs: stanceMs,
+                remainingUses: p.ultraRemainingUses,
+                maxUses: p.ultraMaxUses,
+                cooldownMs,
+                cooldownUntil: p.ultraCooldownUntil
+            });
+
+            // 構え終了まで被弾しなかった場合もストック消費済みで終了（CDは継続）
+            registerPlayerUltraTimeout(room, p, () => {
+                const cur = rooms[roomId];
+                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
+                const holder = cur.players[p.id];
+                if (!holder) return;
+                if (holder.counterStanceUntil > 0) {
+                    holder.counterStanceUntil = 0;
+                    holder.ultraState = null;
+                    holder.ultraStateUntil = 0;
+                    io.to(roomId).emit('ultraSkillEvent', {
+                        playerId: holder.id,
+                        skillId: skill.id,
+                        phase: 'end',
+                        whiff: true
+                    });
+                }
+            }, stanceMs);
+        } else if (skill.id === 'sky_meteor') {
+            const warnMs = Number(skill.warnMs) || 650;
+            const radius = Number(skill.radius) || 110;
+            const dmgMult = Number(skill.damageMultiplier) || 2.2;
+            const meteorCount = Math.max(1, Number(skill.meteorCount) || 5);
+            const spreadRad = Number(skill.fanSpreadRad) || 1.05;
+            const baseCastDist = Number(skill.castDistance) || 210;
+            const vec = facingToVector(facing);
+            const baseAngle = Math.atan2(vec.dy, vec.dx);
+
+            // 前方扇状5発の着弾座標を算出しアリーナ内にクランプ
+            const meteors = [];
+            for (let idx = 0; idx < meteorCount; idx++) {
+                const ratio = meteorCount === 1 ? 0 : (idx / (meteorCount - 1)) - 0.5;
+                const angle = baseAngle + ratio * spreadRad;
+                // 中央をやや奥・両翼を手前に配置して前方扇状エリアを面制圧
+                const distOffset = (1 - Math.abs(ratio) * 2) * 35;
+                const dist = baseCastDist + distOffset;
+                const rawX = pc.x + Math.cos(angle) * dist;
+                const rawY = pc.y + Math.sin(angle) * dist;
+                const clampedX = Math.max(radius, Math.min(ARENA_WIDTH - radius, rawX));
+                const clampedY = Math.max(ARENA_TOP + radius, Math.min(ARENA_HEIGHT - radius, rawY));
+                meteors.push({
+                    index: idx,
+                    x: clampedX,
+                    y: clampedY,
+                    radius
+                });
+            }
+
+            const centerMeteor = meteors[Math.floor(meteors.length / 2)];
+            p.ultraState = 'meteor_warn';
+            p.ultraStateUntil = activatedAt + warnMs;
+
+            io.to(roomId).emit('ultraSkillEvent', {
+                playerId: p.id,
+                skillId: skill.id,
+                phase: 'warn',
+                x: centerMeteor.x,
+                y: centerMeteor.y,
+                radius,
+                meteors,
+                facing,
+                element: p.element,
+                durationMs: warnMs,
+                remainingUses: p.ultraRemainingUses,
+                maxUses: p.ultraMaxUses,
+                cooldownMs,
+                cooldownUntil: p.ultraCooldownUntil
+            });
+
+            registerPlayerUltraTimeout(room, p, () => {
+                const cur = rooms[roomId];
+                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
+                const caster = cur.players[p.id];
+                if (!caster) return;
+                if (caster.isDead || caster.isEliminated) {
+                    clearPlayerUltraStateAndTimers(caster);
+                    return;
+                }
+
+                caster.ultraState = null;
+                caster.ultraStateUntil = 0;
+
+                const atkMult = getPlayerEffectiveAttackMultiplier(caster, Date.now());
+                const rawDamage = caster.stats.atk * dmgMult * atkMult;
+
+                io.to(roomId).emit('ultraSkillEvent', {
+                    playerId: caster.id,
+                    skillId: skill.id,
+                    phase: 'impact',
+                    x: centerMeteor.x,
+                    y: centerMeteor.y,
+                    radius,
+                    meteors,
+                    facing,
+                    element: caster.element,
+                    durationMs: Number(skill.durationMs) || 320
+                });
+
+                // 各隕石（130px以内）の壊せる壁を破壊
+                let wallsChanged = false;
+                for (let i = cur.walls.length - 1; i >= 0; i--) {
+                    const w = cur.walls[i];
+                    const wcx = w.x + w.w / 2;
+                    const wcy = w.y + w.h / 2;
+                    if (meteors.some((m) => Math.hypot(wcx - m.x, wcy - m.y) <= 130)) {
+                        cur.walls.splice(i, 1);
+                        wallsChanged = true;
+                    }
+                }
+                if (wallsChanged) {
+                    io.to(roomId).emit('gimmicksUpdated', { walls: cur.walls, items: cur.items });
+                }
+
+                // 各半径110px円ごとに独立ヒット（複数ヒット可）・バリア防御・PvPノックバックを処理
+                for (const m of meteors) {
+                    if (cur.mode === 'boss') {
+                        if (cur.boss && cur.boss.hp > 0 && cur.state === 'playing') {
+                            if (Math.hypot(cur.boss.x - m.x, cur.boss.y - m.y) <= radius + cur.boss.radius) {
+                                applyDamageToBossInternal(roomId, caster, rawDamage, 'ultra_meteor', 'ultra');
+                            }
+                        }
+                    } else if (cur.mode === 'pvp' && cur.state === 'playing') {
+                        for (const tid in cur.players) {
+                            if (tid === caster.id) continue;
+                            const target = cur.players[tid];
+                            if (!target || target.isDead || target.isEliminated) continue;
+                            const tc = playerCenter(target);
+                            const dist = Math.hypot(tc.x - m.x, tc.y - m.y);
+                            if (dist <= radius + 20) {
+                                const knockDir = Math.abs(tc.x - m.x) >= Math.abs(tc.y - m.y)
+                                    ? (tc.x >= m.x ? 'right' : 'left')
+                                    : (tc.y >= m.y ? 'down' : 'up');
+                                const hitApplied = applyDamageToPlayerInternal(
+                                    roomId,
+                                    target,
+                                    caster,
+                                    rawDamage,
+                                    knockDir,
+                                    'ultra_meteor',
+                                    matchId,
+                                    caster.element,
+                                    { skipInvincible: true }
+                                );
+                                if (hitApplied && !target.isDead && !target.isEliminated) {
+                                    const kbAng = dist > 0.1 ? Math.atan2(tc.y - m.y, tc.x - m.x) : baseAngle;
+                                    pushPlayerSafely(target, kbAng, 48);
+                                    io.to(roomId).emit('playerKnockback', {
+                                        id: target.id,
+                                        x: target.x,
+                                        y: target.y,
+                                        facing: target.facing,
+                                        source: 'sky_meteor'
+                                    });
+                                    io.to(roomId).emit('playerMoved', {
+                                        id: target.id,
+                                        x: target.x,
+                                        y: target.y,
+                                        facing: target.facing
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }, warnMs);
+        }
+    });
+
+    // BOSSへのダメージ処理（遠距離弾ヒット用）
+    socket.on('damageBoss', (hitData) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return;
+
+        const attacker = room.players[socket.id];
+        if (!attacker || attacker.isDead || attacker.isEliminated) return;
+
+        const hitType = sanitizeHitType(hitData && hitData.type);
+        if (!hitType || hitType !== 'shot' || room.boss.hp <= 0) return;
+        if (!useCredit(attacker, 'shot')) return;
+
+        const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now());
+        const rawDamage = attacker.stats.atk * atkMult;
+        applyDamageToBossInternal(currentRoom, attacker, rawDamage, 'shot', 'shot');
+    });
+
+    // BOSSの弾・追尾ミサイルに当たったときの処理
+    socket.on('bossProjectileHit', (data) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return;
+
+        const p = room.players[socket.id];
+        if (!p || p.isDead || p.isEliminated) return;
+
+        const def = getBossDef(room.boss.id);
+        const kind = data && typeof data.kind === 'string' && def.attackProjectiles.includes(data.kind)
+            ? data.kind
+            : def.attackProjectiles[0];
+        if (!kind) return;
+
+        // サーバーティックで直接判定する弾種・カーブ軌道火炎弾は二重ダメージ防止のため無視
+        if (SERVER_AUTHORITATIVE_PROJECTILES.has(kind) || (data && data.curveRate)) return;
+
+        const lastAt = room.lastBossAttackAt && room.lastBossAttackAt[kind];
+        if (!lastAt || Date.now() - lastAt > 8500) return;
+
+        const dmg = def.projectileDamage[kind] || 12;
+        applyBossDamageToPlayer(currentRoom, p, dmg, kind, room.matchId, room.boss.element);
+    });
+
+    // PvPモードでのプレイヤー間ダメージ（遠距離弾ヒット用）
+    socket.on('applyDamage', (hitData) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.state !== 'playing' || room.mode === 'boss') return;
+
+        const attacker = room.players[socket.id];
+        const hitType = sanitizeHitType(hitData && hitData.type);
+        const target = hitData ? room.players[hitData.targetId] : null;
+
+        if (!attacker || !target || hitType !== 'shot' || attacker.id === target.id) return;
+        if (attacker.isDead || attacker.isEliminated || target.isDead || target.isEliminated) return;
+        if (!useCredit(attacker, 'shot')) return;
+
+        const knockDir = VALID_FACING.includes(hitData.facing) ? hitData.facing : attacker.facing;
+        const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now());
+        const rawDamage = attacker.stats.atk * atkMult;
+
+        applyDamageToPlayerInternal(currentRoom, target, attacker, rawDamage, knockDir, 'shot', room.matchId, attacker.element);
     });
 
     socket.on('disconnect', () => {
-        if (currentRoomId && rooms.has(currentRoomId)) {
-            const room = rooms.get(currentRoomId);
-            const p = room.players[socket.id];
-            if (p) clearPlayerTimers(p);
-            delete room.players[socket.id];
-            io.to(currentRoomId).emit('roomUpdated', { players: room.players });
-
-            if (Object.keys(room.players).length === 0) {
-                clearRoomTimers(room);
-                rooms.delete(currentRoomId);
-            } else if (room.state === 'playing') {
-                checkMatchEndConditions(currentRoomId, room.matchId);
-            }
+        console.log(`クライアントが切断しました: ${socket.id}`);
+        if (currentRoom && rooms[currentRoom]) {
+            handlePlayerExit(socket, currentRoom);
+            currentRoom = null;
         }
     });
 });
 
+const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {
-    console.log(`[Server] Listening on http://localhost:${PORT}`);
+    console.log(`完全版バトルサーバー起動中: http://localhost:${PORT}`);
 });
