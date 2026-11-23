@@ -52,6 +52,15 @@
             padding: 11px; font-size: 0.92rem; font-weight: bold; border-radius: 8px; cursor: pointer;
         }
         .home-sound-row { margin-top: 14px; display: flex; justify-content: center; gap: 10px; }
+        #appToast {
+            position: fixed; left: 50%; bottom: 24px; z-index: 1000;
+            max-width: min(90vw, 520px); padding: 10px 16px; border: 1px solid #5364a5;
+            border-radius: 10px; background: rgba(15, 22, 46, 0.96); color: #fff;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.55); font-size: 0.9rem;
+            opacity: 0; pointer-events: none; transform: translate(-50%, 10px);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        #appToast.show { opacity: 1; transform: translate(-50%, 0); }
 
         /* 🎰 刷新ガチャモーダル */
         .modal-overlay {
@@ -634,6 +643,7 @@
         const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb', 'phantom_homing', 'curse_bolt', 'feint_orb']);
 
         let currentUiStep = 1;
+        const keys = {};
         let currentRoomMode = 'pvp';
         let currentStageNumber = 1;
         let currentBossId = BOSS ? BOSS.DEFAULT_BOSS_ID : 'void_typhoon';
@@ -655,12 +665,14 @@
         window.addEventListener('resize', fitBattleCanvas);
 
         function switchStep(stepNum) {
+            clearKeys();
             if (stepNum === 2 && isDraftEditing) { enterJudgmentRoom(); return; }
             leaveJudgmentRoom();
             currentUiStep = stepNum;
             [1, 2, 3].forEach((n) => {
-                document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
-                document.getElementById(`tabStep${n}`).classList.toggle('active', n === stepNum);
+                const screen = document.getElementById(`step${n}Screen`), tab = document.getElementById(`tabStep${n}`);
+                if (screen) screen.classList.toggle('active', n === stepNum);
+                if (tab) tab.classList.toggle('active', n === stepNum);
             });
             if (stepNum === 1) startBgm('drawing', 1.0);
             else if (stepNum === 2) { renderLobbyPreview(); startBgm('menu', 1.0); }
@@ -682,6 +694,32 @@
             stars: Array.from({ length: 70 }, () => ({ x: Math.random() * 480, y: Math.random() * 320, r: Math.random() * 1.5 + 0.4, p: Math.random() * 6.28 }))
         };
         function jEl(id) { return document.getElementById(id); }
+        function jSetText(id, value) { const el = jEl(id); if (el) el.textContent = value; }
+        function jSetStyle(id, property, value) { const el = jEl(id); if (el) el.style[property] = value; }
+        function jToggleClass(id, className, force) { const el = jEl(id); if (el) el.classList.toggle(className, force); }
+        function clearKeys() { for (const key in keys) keys[key] = false; }
+        let appToastTimer = 0;
+        function showToast(message) {
+            let toast = document.getElementById('appToast');
+            if (!toast && document.body) {
+                toast = document.createElement('div');
+                toast.id = 'appToast';
+                toast.setAttribute('role', 'status');
+                toast.setAttribute('aria-live', 'polite');
+                document.body.appendChild(toast);
+            }
+            if (!toast) {
+                console.warn(String(message));
+                return;
+            }
+            toast.textContent = String(message);
+            toast.classList.add('show');
+            if (appToastTimer) clearTimeout(appToastTimer);
+            appToastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+                appToastTimer = 0;
+            }, 3200);
+        }
         function jWait(ms, tok) {
             return new Promise((resolve) => {
                 const start = performance.now();
@@ -694,7 +732,7 @@
             });
         }
         async function jSay(text, tok) {
-            const box = jEl('judgeText'); box.textContent = '';
+            const box = jEl('judgeText'); if (!box) return false; box.textContent = '';
             for (let i = 1; i <= text.length; i++) {
                 if (tok !== judgeState.token) return false;
                 if (judgeState.skip) { box.textContent = text; return true; }
@@ -704,6 +742,7 @@
             return tok === judgeState.token;
         }
         async function jCount(el, to, tok, suffix = '', ms = 600) {
+            if (!el) return false;
             const steps = 12;
             for (let i = 1; i <= steps; i++) {
                 if (judgeState.skip) break;
@@ -723,20 +762,21 @@
         function resetJudgeUI() {
             judgeState.charAlpha = 0; judgeState.circlePower = 0.25; judgeState.rankColor = '#8a5cff';
             judgeState.flash = 0; judgeState.particles = []; judgeState.skip = false;
-            jEl('judgeText').textContent = '';
-            ['jrCounts', 'jrBalance', 'jrStats'].forEach((id) => jEl(id).classList.remove('show'));
-            jEl('jrRank').classList.add('show');
-            jEl('jrDots').textContent = '0'; jEl('jrColors').textContent = '0'; jEl('jrElement').textContent = '⚪ 無';
-            ['jbPower', 'jbSpeed', 'jbTough', 'jsAtkBar', 'jsSpdBar', 'jsHpBar'].forEach((id) => { jEl(id).style.width = '0%'; });
-            ['jvPower', 'jvSpeed', 'jvTough'].forEach((id) => { jEl(id).textContent = '0%'; });
-            jEl('jsAtk').textContent = '0'; jEl('jsSpd').textContent = '0'; jEl('jsHp').textContent = '0';
-            const box = jEl('judgeRankBox'); box.className = 'judge-rank-box'; box.textContent = '?';
-            jEl('jrTitle').textContent = '???'; jEl('jrBoost').style.display = 'none';
-            jEl('judgeActions').classList.remove('show'); jEl('judgeSkipBtn').style.display = '';
+            jSetText('judgeText', '');
+            ['jrCounts', 'jrBalance', 'jrStats'].forEach((id) => jToggleClass(id, 'show', false));
+            jToggleClass('jrRank', 'show', true);
+            jSetText('jrDots', '0'); jSetText('jrColors', '0'); jSetText('jrElement', '⚪ 無');
+            ['jbPower', 'jbSpeed', 'jbTough', 'jsAtkBar', 'jsSpdBar', 'jsHpBar'].forEach((id) => jSetStyle(id, 'width', '0%'));
+            ['jvPower', 'jvSpeed', 'jvTough'].forEach((id) => jSetText(id, '0%'));
+            jSetText('jsAtk', '0'); jSetText('jsSpd', '0'); jSetText('jsHp', '0');
+            const box = jEl('judgeRankBox'); if (box) { box.className = 'judge-rank-box'; box.textContent = '?'; }
+            jSetText('jrTitle', '???'); jSetStyle('jrBoost', 'display', 'none');
+            jToggleClass('judgeActions', 'show', false); jSetStyle('judgeSkipBtn', 'display', '');
         }
         function drawJudgeCanvas(t) {
             const cv = jEl('judgeCanvas'); if (!cv) return;
-            const c = cv.getContext('2d'), W = 480, H = 320, cx = 240, cy = 190;
+            const c = cv.getContext('2d'); if (!c) return;
+            const W = 480, H = 320, cx = 240, cy = 190;
             const grad = c.createLinearGradient(0, 0, 0, H);
             grad.addColorStop(0, '#0b0820'); grad.addColorStop(1, '#241046');
             c.fillStyle = grad; c.fillRect(0, 0, W, H);
@@ -789,15 +829,19 @@
         }
         function enterJudgmentRoom() {
             initAudio(); leaveJudgmentRoom(); startBgm('judge', 1.0);
-            const result = finalizeCharacterJudgment(gridData, charNameInput.value);
+            const result = finalizeCharacterJudgment(gridData, charNameInput ? charNameInput.value : '');
             judgeState.result = result;
             const tok = judgeState.token; currentUiStep = 'judge';
-            [1, 2, 3].forEach((n) => { document.getElementById(`step${n}Screen`).classList.remove('active'); document.getElementById(`tabStep${n}`).classList.remove('active'); });
-            jEl('judgeScreen').classList.add('active'); resetJudgeUI();
+            [1, 2, 3].forEach((n) => {
+                const screen = document.getElementById(`step${n}Screen`), tab = document.getElementById(`tabStep${n}`);
+                if (screen) screen.classList.remove('active');
+                if (tab) tab.classList.remove('active');
+            });
+            jToggleClass('judgeScreen', 'active', true); resetJudgeUI();
             judgeState.active = true; judgeState.raf = requestAnimationFrame(judgeLoop);
             runJudgeSequence(tok, result);
         }
-        function skipJudgment() { judgeState.skip = true; jEl('judgeSkipBtn').style.display = 'none'; }
+        function skipJudgment() { judgeState.skip = true; jSetStyle('judgeSkipBtn', 'display', 'none'); }
         async function runJudgeSequence(tok, r) {
             const d = r.detail, S = judgeState, quiet = () => S.skip;
             const elemInfo = BOSS ? BOSS.getElementInfo(r.element) : { icon: '⚪', name: '無' };
@@ -807,23 +851,23 @@
                 const hello = d.totalPixels === 0 ? 'ようこそ、判定の間へ。……キャンバスが真っ白ですね。' : 'ようこそ、判定の間へ。あなたの魂と属性を見極めましょう。';
                 if (!(await jSay(hello, tok))) return;
                 if (!(await jWait(300, tok))) return;
-                jEl('jrCounts').classList.add('show');
+                jToggleClass('jrCounts', 'show', true);
                 if (!(await jSay('インクの量、色数、そして宿る属性を読み取ります……', tok))) return;
                 if (!(await jCount(jEl('jrDots'), d.totalPixels, tok))) return;
                 if (!(await jCount(jEl('jrColors'), d.uniqueColors, tok, '', 320))) return;
-                jEl('jrElement').textContent = `${elemInfo.icon} ${elemInfo.name}`;
+                jSetText('jrElement', `${elemInfo.icon} ${elemInfo.name}`);
                 if (!(await jWait(240, tok))) return;
-                S.circlePower = 0.7; jEl('jrBalance').classList.add('show');
+                S.circlePower = 0.7; jToggleClass('jrBalance', 'show', true);
                 if (!(await jWait(100, tok))) return;
                 const pct = (v) => Math.round(v * 100);
-                jEl('jbPower').style.width = pct(d.pRatio) + '%'; jEl('jvPower').textContent = pct(d.pRatio) + '%';
-                jEl('jbSpeed').style.width = pct(d.sRatio) + '%'; jEl('jvSpeed').textContent = pct(d.sRatio) + '%';
-                jEl('jbTough').style.width = pct(d.tRatio) + '%'; jEl('jvTough').textContent = pct(d.tRatio) + '%';
+                jSetStyle('jbPower', 'width', pct(d.pRatio) + '%'); jSetText('jvPower', pct(d.pRatio) + '%');
+                jSetStyle('jbSpeed', 'width', pct(d.sRatio) + '%'); jSetText('jvSpeed', pct(d.sRatio) + '%');
+                jSetStyle('jbTough', 'width', pct(d.tRatio) + '%'); jSetText('jvTough', pct(d.tRatio) + '%');
                 if (!quiet()) SE.judgeTick();
                 if (!(await jSay(`この魂には「${elemInfo.icon} ${elemInfo.name}属性」が宿っていますね！`, tok))) return;
                 if (!(await jWait(360, tok))) return;
                 if (!(await jSay('それでは、ランクを判定いたします……！', tok))) return;
-                const box = jEl('judgeRankBox'); box.className = 'judge-rank-box spinning'; S.circlePower = 1;
+                const box = jEl('judgeRankBox'); if (!box) return; box.className = 'judge-rank-box spinning'; S.circlePower = 1;
                 const letters = ['C', 'B', 'A', 'S'], spinStart = performance.now(); let i = 0;
                 while (!S.skip && performance.now() - spinStart < 1200) {
                     box.textContent = letters[i++ % 4]; SE.judgeTick();
@@ -834,18 +878,18 @@
                 jBurst(S.rankColor, r.rank === 'S' ? 120 : (r.rank === 'A' ? 80 : 40));
                 if (!quiet()) SE.judgeRank(r.rank);
                 if (!(await jWait(480, tok))) return;
-                jEl('jrTitle').textContent = r.title || '称号なし';
-                if (r.hasTitleBoost) jEl('jrBoost').style.display = 'inline-block';
+                jSetText('jrTitle', r.title || '称号なし');
+                if (r.hasTitleBoost) jSetStyle('jrBoost', 'display', 'inline-block');
                 if (!(await jSay(JUDGE_RANK_LINES[r.rank], tok))) return;
                 if (!(await jWait(280, tok))) return;
-                jEl('jrStats').classList.add('show');
+                jToggleClass('jrStats', 'show', true);
                 if (!(await jWait(100, tok))) return;
-                jEl('jsAtkBar').style.width = Math.min(100, r.stats.atk / 35 * 100) + '%';
-                jEl('jsSpdBar').style.width = Math.min(100, r.stats.spd / 7.5 * 100) + '%';
-                jEl('jsHpBar').style.width = Math.min(100, r.stats.maxHp / 220 * 100) + '%';
+                jSetStyle('jsAtkBar', 'width', Math.min(100, r.stats.atk / 35 * 100) + '%');
+                jSetStyle('jsSpdBar', 'width', Math.min(100, r.stats.spd / 7.5 * 100) + '%');
+                jSetStyle('jsHpBar', 'width', Math.min(100, r.stats.maxHp / 220 * 100) + '%');
                 if (!(await jCount(jEl('jsAtk'), r.stats.atk, tok, '', 420))) return;
                 if (!(await jCount(jEl('jsHp'), r.stats.maxHp, tok, '', 420))) return;
-                jEl('jsSpd').textContent = r.stats.spd.toFixed(1);
+                jSetText('jsSpd', r.stats.spd.toFixed(1));
                 await jSay('さあ、この姿で戦いの世界へ転生しましょう！', tok);
             } finally {
                 if (tok === judgeState.token) finalizeJudgeUI(r);
@@ -853,21 +897,21 @@
         }
         function finalizeJudgeUI(r) {
             const d = r.detail, elemInfo = BOSS ? BOSS.getElementInfo(r.element) : { icon: '⚪', name: '無' };
-            jEl('jrCounts').classList.add('show'); jEl('jrBalance').classList.add('show'); jEl('jrStats').classList.add('show');
-            jEl('jrDots').textContent = d.totalPixels; jEl('jrColors').textContent = d.uniqueColors; jEl('jrElement').textContent = `${elemInfo.icon} ${elemInfo.name}`;
+            jToggleClass('jrCounts', 'show', true); jToggleClass('jrBalance', 'show', true); jToggleClass('jrStats', 'show', true);
+            jSetText('jrDots', d.totalPixels); jSetText('jrColors', d.uniqueColors); jSetText('jrElement', `${elemInfo.icon} ${elemInfo.name}`);
             const pct = (v) => Math.round(v * 100);
-            jEl('jbPower').style.width = pct(d.pRatio) + '%'; jEl('jvPower').textContent = pct(d.pRatio) + '%';
-            jEl('jbSpeed').style.width = pct(d.sRatio) + '%'; jEl('jvSpeed').textContent = pct(d.sRatio) + '%';
-            jEl('jbTough').style.width = pct(d.tRatio) + '%'; jEl('jvTough').textContent = pct(d.tRatio) + '%';
-            const box = jEl('judgeRankBox'); box.textContent = r.rank; box.className = `judge-rank-box rank-${r.rank}`;
+            jSetStyle('jbPower', 'width', pct(d.pRatio) + '%'); jSetText('jvPower', pct(d.pRatio) + '%');
+            jSetStyle('jbSpeed', 'width', pct(d.sRatio) + '%'); jSetText('jvSpeed', pct(d.sRatio) + '%');
+            jSetStyle('jbTough', 'width', pct(d.tRatio) + '%'); jSetText('jvTough', pct(d.tRatio) + '%');
+            const box = jEl('judgeRankBox'); if (box) { box.textContent = r.rank; box.className = `judge-rank-box rank-${r.rank}`; }
             judgeState.rankColor = JUDGE_RANK_COLORS[r.rank]; judgeState.charAlpha = 1; judgeState.circlePower = 1;
-            jEl('jrTitle').textContent = r.title || '称号なし';
-            jEl('jrBoost').style.display = r.hasTitleBoost ? 'inline-block' : 'none';
-            jEl('jsAtkBar').style.width = Math.min(100, r.stats.atk / 35 * 100) + '%';
-            jEl('jsSpdBar').style.width = Math.min(100, r.stats.spd / 7.5 * 100) + '%';
-            jEl('jsHpBar').style.width = Math.min(100, r.stats.maxHp / 220 * 100) + '%';
-            jEl('jsAtk').textContent = r.stats.atk; jEl('jsSpd').textContent = r.stats.spd.toFixed(1); jEl('jsHp').textContent = r.stats.maxHp;
-            jEl('judgeSkipBtn').style.display = 'none'; jEl('judgeActions').classList.add('show');
+            jSetText('jrTitle', r.title || '称号なし');
+            jSetStyle('jrBoost', 'display', r.hasTitleBoost ? 'inline-block' : 'none');
+            jSetStyle('jsAtkBar', 'width', Math.min(100, r.stats.atk / 35 * 100) + '%');
+            jSetStyle('jsSpdBar', 'width', Math.min(100, r.stats.spd / 7.5 * 100) + '%');
+            jSetStyle('jsHpBar', 'width', Math.min(100, r.stats.maxHp / 220 * 100) + '%');
+            jSetText('jsAtk', r.stats.atk); jSetText('jsSpd', r.stats.spd.toFixed(1)); jSetText('jsHp', r.stats.maxHp);
+            jSetStyle('judgeSkipBtn', 'display', 'none'); jToggleClass('judgeActions', 'show', true);
         }
         function completeJudgment() {
             if (!judgeState.result) return;
@@ -903,9 +947,15 @@
         function updateModeButtonsUI() {
             const pvpBtn = document.getElementById('modePvpBtn'), bossBtn = document.getElementById('modeBossBtn'), desc = document.getElementById('modeDescBanner');
             const isInRoom = Boolean(activeRoom), amHost = !isInRoom || (socket && roomHostId === socket.id), lockedByState = isInRoom && roomState !== 'waiting';
-            pvpBtn.className = 'mode-btn' + (currentRoomMode === 'pvp' ? ' active-pvp' : '');
-            bossBtn.className = 'mode-btn' + (currentRoomMode === 'boss' ? ' active-boss' : '');
-            pvpBtn.disabled = lockedByState || !amHost; bossBtn.disabled = !BOSS || lockedByState || !amHost;
+            if (pvpBtn) {
+                pvpBtn.className = 'mode-btn' + (currentRoomMode === 'pvp' ? ' active-pvp' : '');
+                pvpBtn.disabled = lockedByState || !amHost;
+            }
+            if (bossBtn) {
+                bossBtn.className = 'mode-btn' + (currentRoomMode === 'boss' ? ' active-boss' : '');
+                bossBtn.disabled = !BOSS || lockedByState || !amHost;
+            }
+            if (!desc) { renderBossSelector(); return; }
             if (currentRoomMode === 'boss' && BOSS) {
                 const stage = BOSS.getStageByNumber(currentStageNumber), def = BOSS.getBossDef(stage.bossId), elem = BOSS.getElementInfo(def.element);
                 desc.innerHTML = `🌀 <b>STAGE ${stage.stageNumber}: ${def.name}</b> (${elem.icon}${elem.name}) — ${def.summary}` + (amHost ? '' : ' <span style="color:#ffd166;">[ホストが選択中]</span>');
@@ -933,7 +983,8 @@
         }
         function renderLobbyPreview() {
             const pCanvas = document.getElementById('lobbyPreviewCanvas'); if (!pCanvas) return;
-            const pCtx = pCanvas.getContext('2d'); pCtx.clearRect(0, 0, 76, 76);
+            const pCtx = pCanvas.getContext('2d'); if (!pCtx) return;
+            pCtx.clearRect(0, 0, 76, 76);
             const scale = 76 / 32, now = performance.now();
             for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (gridData[y][x]) {
                 pCtx.fillStyle = resolvePixelColor(gridData[y][x], now); pCtx.fillRect(x * scale, y * scale, scale, scale);
@@ -965,7 +1016,27 @@
             { id: 'SPECIAL_GOLD', name: '🌟 ゴールドインク', rarity: 'S', preview: 'linear-gradient(135deg, #7a5c10 0%, #fff0b0 50%, #7a5c10 100%)', label: '金', shimmer: true },
             { id: 'SPECIAL_VENOM', name: '🧪 ヴェノムインク', rarity: 'A', preview: 'linear-gradient(135deg, #460876 0%, #d68cff 50%, #460876 100%)', label: '毒', shimmer: true }
         ];
-        let userProgress = { points: 300, maxUnlockedStage: 1, unlockedInks: [], ultraStocks: { end_of_days: 0, absolute_wall: 0, perfect_counter: 0, sky_meteor: 0 }, equippedUltra: null, wins: 0 };
+        const ULTRA_SKILL_UI = [
+            { id: 'end_of_days', name: '終焉の一閃', rarity: 'S', icon: '🌅', description: '350ms溜めた後、射程620px・幅112pxの貫通斬撃。' },
+            { id: 'demon_blade', name: '聖魔の覇剣', rarity: 'S', icon: '🗡️', description: '5000msの間、斬撃リーチ1.5倍・威力2.0倍。' },
+            { id: 'ricochet_guns', name: '全方位跳弾銃', rarity: 'S', icon: '🔫', description: '5000msの間、625msごとに威力40・壁1回反射の8方向弾を発射。' },
+            { id: 'time_stop', name: '刻の静止', rarity: 'S', icon: '⏳', description: '2500msの間、自分以外の敵・弾幕・タイマーを停止。' },
+            { id: 'absolute_wall', name: '絶対防壁', rarity: 'A', icon: '🛡️', description: '2600msの間、受けるダメージを軽減。' },
+            { id: 'perfect_counter', name: '完全反撃', rarity: 'A', icon: '⚔️', description: '反撃の構えを取り、受けた攻撃を半減して反撃。' },
+            { id: 'sky_meteor', name: '天空隕石', rarity: 'A', icon: '☄️', description: '複数の隕石を降らせ、着弾地点を攻撃。' },
+            { id: 'phantom_boots', name: '疾風幻影靴', rarity: 'A', icon: '👢', description: '4000msの間、移動速度2.0倍・障害物すり抜け。' }
+        ];
+        function normalizeUltraStocks(stocks) {
+            const normalized = {};
+            ULTRA_SKILL_UI.forEach((skill) => {
+                normalized[skill.id] = Math.max(0, Math.min(3, Math.floor(Number(stocks && stocks[skill.id]) || 0)));
+            });
+            return normalized;
+        }
+        function getUltraSkillUiDef(skillId) {
+            return ULTRA_SKILL_UI.find((skill) => skill.id === skillId) || null;
+        }
+        let userProgress = { points: 300, maxUnlockedStage: 1, unlockedInks: [], ultraStocks: normalizeUltraStocks(), equippedUltra: null, wins: 0 };
 
         function loadUserProgress() {
             try {
@@ -975,7 +1046,7 @@
                         points: Math.max(0, Math.floor(saved.points)),
                         maxUnlockedStage: Math.max(1, Math.floor(saved.maxUnlockedStage || 1)),
                         unlockedInks: Array.isArray(saved.unlockedInks) ? saved.unlockedInks : [],
-                        ultraStocks: Object.assign({ end_of_days: 0, absolute_wall: 0, perfect_counter: 0, sky_meteor: 0 }, saved.ultraStocks || {}),
+                        ultraStocks: normalizeUltraStocks(saved.ultraStocks),
                         equippedUltra: saved.equippedUltra || null,
                         wins: Math.max(0, Math.floor(saved.wins || 0))
                     };
@@ -989,7 +1060,7 @@
                 points: Math.max(0, Math.floor(prof.points || 0)),
                 maxUnlockedStage: Math.max(1, Math.floor(prof.maxUnlockedStage || 1)),
                 unlockedInks: Array.isArray(prof.unlockedInks) ? prof.unlockedInks : [],
-                ultraStocks: Object.assign({ end_of_days: 0, absolute_wall: 0, perfect_counter: 0, sky_meteor: 0 }, prof.ultraStocks || {}),
+                ultraStocks: normalizeUltraStocks(prof.ultraStocks),
                 equippedUltra: prof.equippedUltra || null,
                 wins: Math.max(0, Math.floor(prof.wins || 0))
             };
@@ -1003,26 +1074,29 @@
         }
 
         let currentGachaTab = 'ink', isPullingGacha = false, gachaAnimToken = 0, gachaSkipRequested = false, gachaParticles = [], gachaParticleRaf = 0;
-        function openGachaModal(tab = 'ink') { initAudio(); SE.click(); updatePointsDisplay(); switchGachaTab(tab); document.getElementById('gachaModal').style.display = 'flex'; }
-        function closeGachaModal() { SE.click(); gachaAnimToken++; isPullingGacha = false; if (gachaParticleRaf) cancelAnimationFrame(gachaParticleRaf); gachaParticleRaf = 0; document.getElementById('gachaModal').style.display = 'none'; }
-        function openHowToModal() { initAudio(); SE.click(); document.getElementById('howToModal').style.display = 'flex'; }
-        function closeHowToModal() { SE.click(); document.getElementById('howToModal').style.display = 'none'; }
+        function openGachaModal(tab = 'ink') { clearKeys(); initAudio(); SE.click(); updatePointsDisplay(); switchGachaTab(tab); const modal = document.getElementById('gachaModal'); if (modal) modal.style.display = 'flex'; }
+        function closeGachaModal() { clearKeys(); SE.click(); gachaAnimToken++; isPullingGacha = false; if (gachaParticleRaf) cancelAnimationFrame(gachaParticleRaf); gachaParticleRaf = 0; const modal = document.getElementById('gachaModal'); if (modal) modal.style.display = 'none'; }
+        function openHowToModal() { clearKeys(); initAudio(); SE.click(); const modal = document.getElementById('howToModal'); if (modal) modal.style.display = 'flex'; }
+        function closeHowToModal() { clearKeys(); SE.click(); const modal = document.getElementById('howToModal'); if (modal) modal.style.display = 'none'; }
         function switchGachaTab(tab) {
             currentGachaTab = tab;
-            document.getElementById('tabGachaInk').classList.toggle('active', tab === 'ink');
-            document.getElementById('tabGachaUltra').classList.toggle('active', tab === 'ultra');
-            document.getElementById('tabGachaEquip').classList.toggle('active', tab === 'equip');
+            const inkTab = document.getElementById('tabGachaInk'), ultraTab = document.getElementById('tabGachaUltra'), equipTab = document.getElementById('tabGachaEquip');
+            if (inkTab) inkTab.classList.toggle('active', tab === 'ink');
+            if (ultraTab) ultraTab.classList.toggle('active', tab === 'ultra');
+            if (equipTab) equipTab.classList.toggle('active', tab === 'equip');
             const isRoll = (tab === 'ink' || tab === 'ultra');
-            document.getElementById('gachaRollPanel').style.display = isRoll ? 'block' : 'none';
-            document.getElementById('gachaEquipPanel').style.display = tab === 'equip' ? 'block' : 'none';
+            const rollPanel = document.getElementById('gachaRollPanel'), equipPanel = document.getElementById('gachaEquipPanel');
+            if (rollPanel) rollPanel.style.display = isRoll ? 'block' : 'none';
+            if (equipPanel) equipPanel.style.display = tab === 'equip' ? 'block' : 'none';
             if (isRoll) {
-                const capsule = document.getElementById('gachaCapsule'); capsule.className = 'gacha-capsule'; capsule.textContent = tab === 'ink' ? '🧪' : '⚡';
+                const capsule = document.getElementById('gachaCapsule'); if (capsule) { capsule.className = 'gacha-capsule'; capsule.textContent = tab === 'ink' ? '🧪' : '⚡'; }
                 const btn = document.getElementById('pullGachaBtn');
                 const msg = tab === 'ink'
                     ? '特別インク3種（虹・金・毒）が排出！重複時は 100Pt 還元！'
-                    : '必殺技4種が排出！同技×3までストック増加、上限重複で 300Pt 還元！';
-                btn.textContent = tab === 'ink' ? '特別インクガチャ (300Pt)' : 'ウルトラガチャ (1000Pt)';
-                document.getElementById('gachaResultArea').innerHTML = `<p id="gachaRuleDesc" style="font-size:0.8rem; color:#b8c6e8; margin:0;">${msg}</p>`;
+                    : '必殺技8種（Sレア4種・Aレア4種）が排出！同技×3までストック増加、上限重複で 300Pt 還元！';
+                if (btn) btn.textContent = tab === 'ink' ? '特別インクガチャ (300Pt)' : 'ウルトラガチャ (1000Pt)';
+                const resultArea = document.getElementById('gachaResultArea');
+                if (resultArea) resultArea.innerHTML = `<p id="gachaRuleDesc" style="font-size:0.8rem; color:#b8c6e8; margin:0;">${msg}</p>`;
             } else {
                 renderGachaInventoryPanel();
             }
@@ -1038,9 +1112,9 @@
                     inksEl.appendChild(badge);
                 });
             }
-            const listEl = document.getElementById('ultraEquipList'); if (!listEl || !BOSS) return;
+            const listEl = document.getElementById('ultraEquipList'); if (!listEl) return;
             listEl.innerHTML = '';
-            BOSS.getAllUltraSkills().forEach((skill) => {
+            ULTRA_SKILL_UI.forEach((skill) => {
                 const stock = userProgress.ultraStocks[skill.id] || 0;
                 const isEquipped = userProgress.equippedUltra === skill.id && stock > 0;
                 const card = document.createElement('div');
@@ -1056,11 +1130,12 @@
         }
         function equipUltraSkill(skillId) {
             initAudio(); SE.click();
-            if (!socket || !socket.connected) { alert('サーバー未接続のため装備を変更できません。'); return; }
+            if (!socket || !socket.connected) { showToast('サーバー未接続のため装備を変更できません。'); return; }
             socket.emit('equipUltraSkill', { clientKey: MY_CLIENT_KEY, skillId });
         }
         function spawnGachaInkParticles(rarity, paletteType) {
             const cv = document.getElementById('gachaParticleCanvas'); if (!cv) return;
+            const c = cv.getContext('2d'); if (!c) return;
             const colors = paletteType === 'SPECIAL_RAINBOW' ? ['#ff0080', '#ff8c00', '#ffd166', '#2ecc71', '#00e5ff', '#9b59b6']
                 : paletteType === 'SPECIAL_GOLD' ? ['#ffd166', '#fff3b0', '#f39c12', '#ffffff']
                 : paletteType === 'SPECIAL_VENOM' ? ['#a349a4', '#d68cff', '#6c5ce7', '#ff6bff']
@@ -1074,7 +1149,8 @@
         }
         function runGachaParticlesLoop() {
             const cv = document.getElementById('gachaParticleCanvas'); if (!cv) return;
-            const c = cv.getContext('2d'); c.clearRect(0, 0, cv.width, cv.height);
+            const c = cv.getContext('2d'); if (!c) return;
+            c.clearRect(0, 0, cv.width, cv.height);
             for (let i = gachaParticles.length - 1; i >= 0; i--) {
                 const p = gachaParticles[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.11; p.life--;
                 if (p.life <= 0) { gachaParticles.splice(i, 1); continue; }
@@ -1095,21 +1171,23 @@
                 step();
             });
         }
-        function skipGachaAnim() { gachaSkipRequested = true; document.getElementById('gachaSkipBtn').style.display = 'none'; }
+        function skipGachaAnim() { gachaSkipRequested = true; const btn = document.getElementById('gachaSkipBtn'); if (btn) btn.style.display = 'none'; }
         function pullCurrentGacha() {
             initAudio(); if (isPullingGacha) return;
-            if (!socket || !socket.connected) { alert('サーバーに接続されていません！少し待ってから再度お試しください。'); return; }
+            if (!socket || !socket.connected) { showToast('サーバーに接続されていません！少し待ってから再度お試しください。'); return; }
             const cost = currentGachaTab === 'ultra' ? RULES.GACHA.ULTRA_COST : RULES.GACHA.INK_COST;
-            if (userProgress.points < cost) { alert(`ポイントが不足しています（必要: ${cost}Pt）`); return; }
+            if (userProgress.points < cost) { showToast(`ポイントが不足しています（必要: ${cost}Pt）`); return; }
             isPullingGacha = true; gachaSkipRequested = false;
-            document.getElementById('pullGachaBtn').disabled = true;
-            document.getElementById('gachaSkipBtn').style.display = 'inline-block';
-            document.getElementById('gachaResultArea').innerHTML = '<p style="color:#00e5ff; font-weight:bold; margin:8px 0;">✨ 魔力カプセル召喚中...</p>';
+            const pullButton = document.getElementById('pullGachaBtn'), skipButton = document.getElementById('gachaSkipBtn'), resultArea = document.getElementById('gachaResultArea');
+            if (pullButton) pullButton.disabled = true;
+            if (skipButton) skipButton.style.display = 'inline-block';
+            if (resultArea) resultArea.innerHTML = '<p style="color:#00e5ff; font-weight:bold; margin:8px 0;">✨ 魔力カプセル召喚中...</p>';
             socket.emit(currentGachaTab === 'ultra' ? 'drawUltraGacha' : 'drawInkGacha', { clientKey: MY_CLIENT_KEY });
         }
         async function playGachaResultSequence(kind, payload) {
             const tok = ++gachaAnimToken, rarity = payload.rarity || 'B';
             const capsule = document.getElementById('gachaCapsule'), flash = document.getElementById('gachaFlashOverlay'), resultArea = document.getElementById('gachaResultArea');
+            if (!capsule || !flash || !resultArea) { isPullingGacha = false; showToast('ガチャ表示を読み込めませんでした。'); return; }
             const shakeCount = rarity === 'S' ? 3 : (rarity === 'A' ? 2 : 1);
             capsule.className = 'gacha-capsule'; capsule.textContent = '❓';
             for (let i = 1; i <= shakeCount; i++) {
@@ -1142,17 +1220,18 @@
                 }
             }
             if (payload.profile) applyServerProfile(payload.profile);
-            document.getElementById('pullGachaBtn').disabled = false;
-            document.getElementById('gachaSkipBtn').style.display = 'none';
+            const pullButton = document.getElementById('pullGachaBtn'), skipButton = document.getElementById('gachaSkipBtn');
+            if (pullButton) pullButton.disabled = false;
+            if (skipButton) skipButton.style.display = 'none';
             isPullingGacha = false;
         }
 
         // 🏠 ホームデモ
-        const homeScreen = document.getElementById('homeScreen'), demoBgCanvas = document.getElementById('demoBgCanvas'), demoCtx = demoBgCanvas.getContext('2d');
+        const homeScreen = document.getElementById('homeScreen'), demoBgCanvas = document.getElementById('demoBgCanvas'), demoCtx = demoBgCanvas ? demoBgCanvas.getContext('2d') : null;
         const demoBots = [{ x: 150, y: 200, vx: 2.2, vy: 1.5, color: '#ff4d4d' }, { x: 600, y: 350, vx: -2.0, vy: -1.8, color: '#00a2e8' }, { x: 400, y: 150, vx: 1.5, vy: -2.2, color: '#9b59b6' }];
         const demoShots = [];
         function updateAndDrawDemoBg() {
-            if (homeScreen.style.display === 'none') return;
+            if (!homeScreen || !demoCtx || homeScreen.style.display === 'none') return;
             demoCtx.clearRect(0, 0, 800, 600); demoCtx.strokeStyle = 'rgba(255,255,255,0.06)';
             for (let i = 0; i < 800; i += 40) { demoCtx.beginPath(); demoCtx.moveTo(i, 0); demoCtx.lineTo(i, 600); demoCtx.stroke(); demoCtx.beginPath(); demoCtx.moveTo(0, i); demoCtx.lineTo(800, i); demoCtx.stroke(); }
             demoBots.forEach((b) => {
@@ -1165,22 +1244,25 @@
                 demoCtx.beginPath(); demoCtx.arc(s.x, s.y, 6, 0, Math.PI * 2); demoCtx.fill(); if (s.life <= 0) demoShots.splice(i, 1);
             }
         }
-        function enterGameFromHome() { initAudio(); SE.click(); homeScreen.style.display = 'none'; switchStep(1); }
+        function enterGameFromHome() { clearKeys(); initAudio(); SE.click(); if (homeScreen) homeScreen.style.display = 'none'; switchStep(1); }
         function returnToHome() {
-            initAudio(); SE.click();
-            if (activeRoom && socket && socket.connected) {
-                socket.emit('leaveRoom'); activeRoom = null; roomState = 'waiting'; myReady = false; otherPlayers = {}; bossState = null; bossTrail = [];
-                player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
-                roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none'; updateLobbyUI();
-            }
-            homeScreen.style.display = 'flex'; updatePointsDisplay(); startBgm('menu', 1.0);
+            clearKeys(); initAudio(); SE.click();
+            if (activeRoom && socket && socket.connected) socket.emit('leaveRoom');
+            activeRoom = null; roomState = 'waiting'; myReady = false;
+            resetBattleTransientState();
+            if (roomInput) roomInput.disabled = false;
+            if (joinRoomBtn) joinRoomBtn.style.display = 'inline-block';
+            if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
+            updateLobbyUI();
+            if (homeScreen) homeScreen.style.display = 'flex';
+            updatePointsDisplay(); startBgm('menu', 1.0);
         }
 
         // 🎨 エディタ・判定・バトル状態
         const GRID_SIZE = 32, EDITOR_CANVAS_SIZE = 384, PIXEL_SIZE = EDITOR_CANVAS_SIZE / GRID_SIZE;
         const ARENA_WIDTH = RULES.ARENA.WIDTH, ARENA_TOP = RULES.ARENA.TOP, ARENA_HEIGHT = RULES.ARENA.HEIGHT;
         const ARENA_CENTER_X = RULES.ARENA.CENTER_X, ARENA_CENTER_Y = RULES.ARENA.PLAY_CENTER_Y;
-        const canvas = document.getElementById('pixelCanvas'), ctx = canvas.getContext('2d');
+        const canvas = document.getElementById('pixelCanvas'), ctx = canvas ? canvas.getContext('2d') : null;
         const brushStatus = document.getElementById('brushStatus'), connectionStatus = document.getElementById('connectionStatus');
         const roomInput = document.getElementById('roomInput'), joinRoomBtn = document.getElementById('joinRoomBtn'), leaveRoomBtn = document.getElementById('leaveRoomBtn');
         const lobbyWaitingArea = document.getElementById('lobbyWaitingArea'), lobbyGuideArea = document.getElementById('lobbyGuideArea');
@@ -1191,7 +1273,7 @@
 
         let gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
         let undoHistory = [], activeRoom = null, roomState = 'waiting', myReady = false, countdownBanner = '', isDraftEditing = true;
-        const gameCanvas = document.getElementById('gameCanvas'), gameCtx = gameCanvas.getContext('2d');
+        const gameCanvas = document.getElementById('gameCanvas'), gameCtx = gameCanvas ? gameCanvas.getContext('2d') : null;
         const COLOR_GROUPS = {
             power: ['#880015', '#ed1c24', '#ff7f27', '#ffaec9', '#ff2a00'],
             speed: ['#00a2e8', '#3f48cc', '#a349a4', '#00ffff', '#7df9ff', '#bf00ff', 'SPECIAL_VENOM'],
@@ -1204,7 +1286,7 @@
             x: ARENA_CENTER_X - 24, y: ARENA_CENTER_Y - 24, facing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' }, hp: 100, maxHp: 100, stocks: 1,
             isDead: false, isEliminated: false, invincibleUntil: 0, shieldUntil: 0, absoluteWallUntil: 0, counterStanceUntil: 0,
-            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowMultiplier: 1.0, attackDebuffUntil: 0, attackDebuffMultiplier: 1.0, dotUntil: 0,
+            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowDurationMs: 1800, slowMultiplier: 1.0, attackDebuffUntil: 0, attackDebuffMultiplier: 1.0, dotUntil: 0,
             lastShieldTime: -SHIELD_COOLDOWN, lastShotTime: 0, lastMeleeTime: 0,
             ultraSkillId: null, ultraRemainingUses: 0, ultraMaxUses: 0, ultraCooldownUntil: 0, ultraState: null, ultraStateUntil: 0,
             wins: 0, points: 0
@@ -1213,7 +1295,47 @@
         let staticObstacles = BOSS ? BOSS.STATIC_OBSTACLES.map((o, i) => ({ id: `obs_${i + 1}`, ...o })) : [];
         let arenaWalls = [], arenaItems = [], bossState = null, bossProjectiles = [], bossEffects = [], bossTrail = [], bossVortexUntil = 0, bossVortexPull = 1.55;
         let projectiles = [], slashEffects = [], ultraEffects = [], floatingTexts = [], confettiParticles = [];
+        let ultraRicochetBullets = [], phantomBootsTrails = {};
+        let timeStopUntil = 0, timeStopCasterId = null;
+        let matchCountdownTimer = null;
         let shakeTime = 0, shakeIntensity = 0, hitStopUntil = 0;
+        const DEFAULT_SLOW_DURATION_MS = 1800;
+        function clearMatchCountdown() {
+            if (matchCountdownTimer !== null) {
+                clearInterval(matchCountdownTimer);
+                matchCountdownTimer = null;
+            }
+        }
+        function resetBattleTransientState() {
+            clearMatchCountdown();
+            roomHostId = null;
+            otherPlayers = {};
+            arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = [];
+            ultraRicochetBullets = []; phantomBootsTrails = {};
+            bossState = null; bossProjectiles = []; bossEffects = []; bossTrail = [];
+            bossVortexUntil = 0; bossVortexPull = 1.55;
+            confettiParticles = []; floatingTexts = [];
+            timeStopUntil = 0; timeStopCasterId = null; hitStopUntil = 0; shakeTime = 0; shakeIntensity = 0;
+            countdownBanner = '';
+            player.invincibleUntil = 0; player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
+            player.speedBoostUntil = 0; player.powerBoostUntil = 0; player.slowUntil = 0;
+            player.slowDurationMs = DEFAULT_SLOW_DURATION_MS; player.slowMultiplier = 1.0;
+            player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
+            player.ultraState = null; player.ultraStateUntil = 0; player.ultraCooldownUntil = 0;
+        }
+        function clearExpiredTimeStop(now = Date.now()) {
+            if (timeStopUntil > 0 && timeStopUntil <= now) {
+                timeStopUntil = 0;
+                timeStopCasterId = null;
+            }
+            if (player.ultraState === 'time_stop' && player.ultraStateUntil <= now) {
+                player.ultraState = null;
+                player.ultraStateUntil = 0;
+            }
+        }
+        function isLocalPlayerTimeStopped(now = Date.now()) {
+            return Boolean(timeStopUntil > now && timeStopCasterId && (!socket || timeStopCasterId !== socket.id));
+        }
 
         function lerpRgb(a, b, k) { return `rgb(${Math.round(a[0] + (b[0] - a[0]) * k)}, ${Math.round(a[1] + (b[1] - a[1]) * k)}, ${Math.round(a[2] + (b[2] - a[2]) * k)})`; }
         const ANIMATED_INKS = {
@@ -1237,8 +1359,8 @@
         }
 
         const toggleTouchBtn = document.getElementById('toggleTouchBtn'), touchControls = document.getElementById('touchControls');
-        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) touchControls.classList.add('visible');
-        toggleTouchBtn.addEventListener('click', () => { initAudio(); SE.click(); touchControls.classList.toggle('visible'); requestAnimationFrame(fitBattleCanvas); });
+        if (touchControls && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) touchControls.classList.add('visible');
+        if (toggleTouchBtn && touchControls) toggleTouchBtn.addEventListener('click', () => { initAudio(); SE.click(); touchControls.classList.toggle('visible'); requestAnimationFrame(fitBattleCanvas); });
         document.querySelectorAll('.dpad button[data-code]').forEach((btn) => {
             const codeName = btn.getAttribute('data-code'), releaseKey = () => { keys[codeName] = false; };
             btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[codeName] = true; });
@@ -1247,11 +1369,15 @@
             btn.addEventListener('mousedown', () => { keys[codeName] = true; });
             btn.addEventListener('mouseup', releaseKey); btn.addEventListener('mouseleave', releaseKey);
         });
-        gameCanvas.addEventListener('mousedown', (e) => {
-            if (roomState !== 'playing' || player.isDead || player.isEliminated) return;
-            initAudio(); if (e.button === 0) triggerShot(); if (e.button === 2) triggerMelee();
-        });
-        gameCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        if (gameCanvas) {
+            if (gameCanvas) {
+                gameCanvas.addEventListener('mousedown', (e) => {
+                    if (roomState !== 'playing' || player.isDead || player.isEliminated) return;
+                    initAudio(); if (e.button === 0) triggerShot(); if (e.button === 2) triggerMelee();
+                });
+                gameCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+            }
+        }
 
         function collidesWithWall(x, y, size) {
             const pad = 6, left = x + pad, right = x + size - pad, top = y + pad, bottom = y + size - pad;
@@ -1316,20 +1442,21 @@
         function refreshEditorJudgmentUI() {
             const previewElem = BOSS ? BOSS.determineElementFromPixels(gridData) : 'neutral';
             if (isDraftEditing) {
-                charRankBadge.textContent = '未判定'; charRankBadge.className = 'rank-badge rank-UNJUDGED';
-                charTitleText.textContent = '編集中（ロビー移動時に判定）'; charTitleText.style.color = '#bdc3c7'; titleBoostBadge.style.display = 'none';
+                if (charRankBadge) { charRankBadge.textContent = '未判定'; charRankBadge.className = 'rank-badge rank-UNJUDGED'; }
+                if (charTitleText) { charTitleText.textContent = '編集中（ロビー移動時に判定）'; charTitleText.style.color = '#bdc3c7'; }
+                if (titleBoostBadge) titleBoostBadge.style.display = 'none';
                 updateElementBadgeUI(previewElem);
-                document.getElementById('statAtkVal').textContent = '--'; document.getElementById('statAtkBar').style.width = '0%';
-                document.getElementById('statSpdVal').textContent = '--'; document.getElementById('statSpdBar').style.width = '0%';
-                document.getElementById('statHpVal').textContent = '--'; document.getElementById('statHpBar').style.width = '0%';
+                jSetText('statAtkVal', '--'); jSetStyle('statAtkBar', 'width', '0%');
+                jSetText('statSpdVal', '--'); jSetStyle('statSpdBar', 'width', '0%');
+                jSetText('statHpVal', '--'); jSetStyle('statHpBar', 'width', '0%');
             } else {
-                charRankBadge.textContent = `${player.rank}ランク`; charRankBadge.className = `rank-badge rank-${player.rank}`;
-                charTitleText.textContent = player.title || '称号なし'; charTitleText.style.color = '#ffffff';
-                titleBoostBadge.style.display = player.hasTitleBoost ? 'inline-block' : 'none';
+                if (charRankBadge) { charRankBadge.textContent = `${player.rank}ランク`; charRankBadge.className = `rank-badge rank-${player.rank}`; }
+                if (charTitleText) { charTitleText.textContent = player.title || '称号なし'; charTitleText.style.color = '#ffffff'; }
+                if (titleBoostBadge) titleBoostBadge.style.display = player.hasTitleBoost ? 'inline-block' : 'none';
                 updateElementBadgeUI(player.element);
-                document.getElementById('statAtkVal').textContent = player.stats.atk; document.getElementById('statAtkBar').style.width = `${Math.min(100, (player.stats.atk / 35) * 100)}%`;
-                document.getElementById('statSpdVal').textContent = player.stats.spd.toFixed(1); document.getElementById('statSpdBar').style.width = `${Math.min(100, (player.stats.spd / 7.5) * 100)}%`;
-                document.getElementById('statHpVal').textContent = player.stats.maxHp; document.getElementById('statHpBar').style.width = `${Math.min(100, (player.stats.maxHp / 220) * 100)}%`;
+                jSetText('statAtkVal', player.stats.atk); jSetStyle('statAtkBar', 'width', `${Math.min(100, (player.stats.atk / 35) * 100)}%`);
+                jSetText('statSpdVal', player.stats.spd.toFixed(1)); jSetStyle('statSpdBar', 'width', `${Math.min(100, (player.stats.spd / 7.5) * 100)}%`);
+                jSetText('statHpVal', player.stats.maxHp); jSetStyle('statHpBar', 'width', `${Math.min(100, (player.stats.maxHp / 220) * 100)}%`);
             }
         }
         function applyJudgmentToPlayer(result, resetHpToMax = true) {
@@ -1358,18 +1485,21 @@
         window.saveCharacterSlot = function(index) {
             initAudio(); SE.click(); let slots = [];
             try { slots = JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY)) || []; } catch (e) { slots = []; }
-            const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
+            const judged = finalizeCharacterJudgment(gridData, charNameInput ? charNameInput.value : '');
             slots[index] = { name: judged.name, rank: judged.rank, title: judged.title, element: judged.element, hasTitleBoost: judged.hasTitleBoost, stats: judged.stats, gridData: JSON.parse(JSON.stringify(gridData)) };
             localStorage.setItem(SAVE_SLOTS_KEY, JSON.stringify(slots));
             applyJudgmentToPlayer(judged, true); syncCharacterUpdate(); renderSaveSlots();
         };
         window.loadCharacterSlot = function(index) {
-            if (activeRoom && roomState !== 'waiting') { alert('バトル中はキャラクターを変更できません！'); return; }
+            if (activeRoom && roomState !== 'waiting') { showToast('バトル中はキャラクターを変更できません！'); return; }
             initAudio(); SE.click(); let slots = [];
             try { slots = JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY)) || []; } catch (e) { slots = []; }
             const slot = slots[index]; if (!slot) return;
-            pushUndoHistory(); gridData = JSON.parse(JSON.stringify(slot.gridData));
-            charNameInput.value = slot.name; localStorage.setItem('pixel_character_name_v1', slot.name);
+            const before = JSON.stringify(gridData);
+            gridData = JSON.parse(JSON.stringify(slot.gridData));
+            commitUndoHistory(before);
+            if (charNameInput) charNameInput.value = slot.name;
+            localStorage.setItem('pixel_character_name_v1', slot.name);
             const loadedResult = slot.stats
                 ? { name: slot.name, rank: slot.rank || 'B', title: slot.title || '', element: slot.element || (BOSS ? BOSS.determineElementFromPixels(gridData) : 'neutral'), hasTitleBoost: Boolean(slot.hasTitleBoost), stats: { ...slot.stats } }
                 : finalizeCharacterJudgment(gridData, slot.name);
@@ -1377,10 +1507,11 @@
         };
 
         function updateLobbyUI() {
+            if (!lobbyWaitingArea || !lobbyGuideArea || !resultOverlay) return;
             updateModeButtonsUI();
             if (!activeRoom) { lobbyWaitingArea.style.display = 'none'; lobbyGuideArea.style.display = 'block'; resultOverlay.style.display = 'none'; return; }
             if (roomState === 'waiting') {
-                if (homeScreen.style.display === 'none' && currentUiStep === 3) switchStep(2);
+                if (homeScreen && homeScreen.style.display === 'none' && currentUiStep === 3) switchStep(2);
                 lobbyWaitingArea.style.display = 'flex'; lobbyGuideArea.style.display = 'none'; resultOverlay.style.display = 'none';
                 const totalMembers = 1 + Object.keys(otherPlayers).length, stage = BOSS ? BOSS.getStageByNumber(currentStageNumber) : null, lobbyBossDef = BOSS && stage ? BOSS.getBossDef(stage.bossId) : null;
                 let html = '';
@@ -1399,32 +1530,40 @@
                         html += `<div class="ready-row"><span>${hostMark}[${op.rank || 'B'}] ${op.name || '相手'}</span><span class="${op.isReady ? 'badge-ok' : 'badge-wait'}">${op.isReady ? '準備OK!' : '準備中'}</span></div>`;
                     });
                 }
-                readyList.innerHTML = html;
-                if (myReady) { readyBtn.textContent = '⏳ キャンセル（待機中に戻る）'; readyBtn.classList.add('is-ready'); }
-                else { readyBtn.textContent = currentRoomMode === 'boss' ? '🌀 準備OK！（出撃する）' : '✅ 準備OK！'; readyBtn.classList.remove('is-ready'); }
+                if (readyList) readyList.innerHTML = html;
+                if (readyBtn && myReady) { readyBtn.textContent = '⏳ キャンセル（待機中に戻る）'; readyBtn.classList.add('is-ready'); }
+                else if (readyBtn) { readyBtn.textContent = currentRoomMode === 'boss' ? '🌀 準備OK！（出撃する）' : '✅ 準備OK！'; readyBtn.classList.remove('is-ready'); }
             } else if (roomState === 'result') { switchStep(3); resultOverlay.style.display = 'flex'; }
             else { switchStep(3); resultOverlay.style.display = 'none'; }
         }
 
         function getUltraHudSyncSnapshot() {
-            const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
-            if (!skill || player.ultraMaxUses <= 0) return null;
             const now = Date.now();
+            clearExpiredTimeStop(now);
+            const skill = getUltraSkillUiDef(player.ultraSkillId);
+            if (!skill || player.ultraMaxUses <= 0) return null;
             const cooldownMs = skill.cooldownMs || RULES.ACTIONS.ultra.cooldownMs || 6000;
             const cdRemain = Math.max(0, (player.ultraCooldownUntil || 0) - now);
             const cdRatio = 1 - Math.min(1, cdRemain / cooldownMs);
             const maxUses = Math.max(1, Math.min(3, player.ultraMaxUses || 1));
             const uses = Math.max(0, Math.min(maxUses, player.ultraRemainingUses || 0));
-            const activeState = (player.ultraState && now < (player.ultraStateUntil || 0)) ? player.ultraState : null;
+            const localTimeStop = isLocalPlayerTimeStopped(now);
+            let activeState = (player.ultraState && now < (player.ultraStateUntil || 0)) ? player.ultraState : null;
+            if (activeState === 'time_stop' && (!socket || timeStopCasterId !== socket.id)) activeState = null;
             let stateText = 'READY (Space)';
             let stateColor = '#00e5ff';
             if (activeState === 'charging') { stateText = '溜め中 (0.35s)'; stateColor = '#ff4d6d'; }
             else if (activeState === 'counter_stance') { stateText = '構え中!'; stateColor = '#ffd60a'; }
             else if (activeState === 'active_wall') { stateText = '絶対防壁展開!'; stateColor = '#00f5d4'; }
             else if (activeState === 'meteor_warn') { stateText = '隕石降下中!'; stateColor = '#ff9f43'; }
+            else if (activeState === 'demon_blade' || activeState === 'ricochet_guns' || activeState === 'phantom_boots' || activeState === 'time_stop') {
+                stateText = `発動中 ${(Math.max(0, player.ultraStateUntil - now) / 1000).toFixed(1)}s`;
+                stateColor = activeState === 'time_stop' ? '#8be9fd' : activeState === 'phantom_boots' ? '#7dd3fc' : '#ffd166';
+            }
+            else if (localTimeStop) { stateText = '停止中'; stateColor = '#8be9fd'; }
             else if (uses <= 0) { stateText = '使い切り (×0)'; stateColor = '#7f8c8d'; }
             else if (cdRemain > 0) { stateText = `CD ${(cdRemain / 1000).toFixed(1)}s`; stateColor = '#f39c12'; }
-            const canTrigger = (roomState === 'playing' && !player.isDead && !player.isEliminated && uses > 0 && cdRemain === 0 && !activeState);
+            const canTrigger = (roomState === 'playing' && !player.isDead && !player.isEliminated && uses > 0 && cdRemain === 0 && !activeState && !localTimeStop);
             return { skill, uses, maxUses, cdRemain, cdRatio, activeState, stateText, stateColor, canTrigger };
         }
 
@@ -1437,6 +1576,8 @@
             else if (activeState === 'counter_stance') btn.textContent = `⚡ ${skill.name} ×${uses} [構え中]`;
             else if (activeState === 'active_wall') btn.textContent = `⚡ ${skill.name} ×${uses} [展開中]`;
             else if (activeState === 'meteor_warn') btn.textContent = `⚡ ${skill.name} ×${uses} [降下中]`;
+            else if (activeState) btn.textContent = `⚡ ${skill.icon} ${skill.name} ×${uses} [${snap.stateText}]`;
+            else if (isLocalPlayerTimeStopped()) btn.textContent = `⏳ ${skill.icon} ${skill.name} ×${uses} 停止 ${(Math.max(0, timeStopUntil - Date.now()) / 1000).toFixed(1)}s`;
             else if (uses <= 0) btn.textContent = `⚡ ${skill.name} (×0)`;
             else if (cdRemain > 0) btn.textContent = `⚡ ${skill.name} ×${uses} (${(cdRemain / 1000).toFixed(1)}s)`;
             else btn.textContent = `⚡ Space: ${skill.name} ×${uses}`;
@@ -1444,7 +1585,7 @@
         }
 
         function getDesiredBgmState() {
-            if (homeScreen.style.display !== 'none') return { track: 'menu', rate: 1.0 };
+            if (!homeScreen || homeScreen.style.display !== 'none') return { track: 'menu', rate: 1.0 };
             if (roomState === 'countdown') return { track: 'none', rate: 1.0 };
             if (roomState === 'playing') {
                 if (currentRoomMode === 'boss') return { track: 'boss', rate: (bossState && bossState.phase === 2) ? 1.12 : 1.0 };
@@ -1464,9 +1605,11 @@
             const slowRemain = Math.max(0, (Number(serverSlowUntilEpoch) || 0) - nowEpoch);
             if (slowRemain > 0) {
                 targetObj.slowUntil = nowPerf + slowRemain;
+                targetObj.slowDurationMs = slowRemain;
                 targetObj.slowMultiplier = Number(slowMult) || 0.75;
             } else {
                 targetObj.slowUntil = 0;
+                targetObj.slowDurationMs = DEFAULT_SLOW_DURATION_MS;
                 targetObj.slowMultiplier = 1.0;
             }
             const atkRemain = Math.max(0, (Number(serverAtkDebuffUntilEpoch) || 0) - nowEpoch);
@@ -1508,24 +1651,35 @@
                         gridData, stats: player.stats, profile: userProgress
                     });
                 } else {
-                    connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f';
+                    if (connectionStatus) { connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f'; }
                 }
             });
-            socket.on('disconnect', () => { connectionStatus.textContent = '🔴 切断されました'; connectionStatus.style.color = '#e74c3c'; });
+            socket.on('disconnect', () => { if (connectionStatus) { connectionStatus.textContent = '🔴 切断されました'; connectionStatus.style.color = '#e74c3c'; } });
             socket.on('profileUpdated', (prof) => applyServerProfile(prof));
             socket.on('gachaError', (err) => {
-                isPullingGacha = false; document.getElementById('pullGachaBtn').disabled = false; document.getElementById('gachaSkipBtn').style.display = 'none';
+                isPullingGacha = false;
+                const pullButton = document.getElementById('pullGachaBtn'), skipButton = document.getElementById('gachaSkipBtn');
+                if (pullButton) pullButton.disabled = false;
+                if (skipButton) skipButton.style.display = 'none';
                 if (err && err.profile) applyServerProfile(err.profile);
-                alert((err && err.message) || 'ガチャを実行できませんでした');
+                showToast((err && err.message) || 'ガチャを実行できませんでした');
             });
             socket.on('inkGachaResult', (res) => playGachaResultSequence('ink', res));
             socket.on('ultraGachaResult', (res) => playGachaResultSequence('ultra', res));
             socket.on('roomFull', (data) => {
-                alert(`ルーム [${data.roomId}] は満員（最大4人）です！`);
-                activeRoom = null; roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none'; updateLobbyUI();
+                clearMatchCountdown();
+                showToast(`ルーム [${data && data.roomId ? data.roomId : ''}] は満員（最大4人）です！`);
+                activeRoom = null;
+                roomState = 'waiting'; myReady = false;
+                resetBattleTransientState();
+                if (roomInput) roomInput.disabled = false;
+                if (joinRoomBtn) joinRoomBtn.style.display = 'inline-block';
+                if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
+                updateLobbyUI();
             });
-            socket.on('roomActionRejected', (data) => { if (data && data.message) alert(data.message); });
+            socket.on('roomActionRejected', (data) => { if (data && data.message) showToast(data.message); });
             socket.on('roomStateSync', (data) => {
+                if (data.state !== 'countdown') clearMatchCountdown();
                 roomState = data.state;
                 if (data.mode) currentRoomMode = data.mode;
                 if (data.stageNumber) currentStageNumber = data.stageNumber;
@@ -1535,6 +1689,8 @@
                 arenaWalls = data.walls || []; arenaItems = data.items || [];
                 if (Array.isArray(data.staticObstacles)) staticObstacles = data.staticObstacles;
                 bossState = syncBossAuraFromServer(data.boss || null);
+                timeStopUntil = Number(data.timeStopUntil) || 0;
+                timeStopCasterId = data.timeStopCasterId || null;
 
                 const players = data.players || {};
                 if (players[socket.id]) {
@@ -1555,9 +1711,10 @@
                 for (const oid in otherPlayers) {
                     syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
                 }
-                projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = []; bossTrail = [];
+                projectiles = []; slashEffects = []; ultraEffects = []; ultraRicochetBullets = []; phantomBootsTrails = {};
+                bossProjectiles = []; bossEffects = []; bossTrail = [];
                 bossVortexUntil = 0; confettiParticles = []; countdownBanner = '';
-                if (homeScreen.style.display === 'none') { const d = getDesiredBgmState(); startBgm(d.track, d.rate); }
+                if (homeScreen && homeScreen.style.display === 'none') { const d = getDesiredBgmState(); startBgm(d.track, d.rate); }
                 updateUltraHudButton(); updateLobbyUI();
             });
             socket.on('gimmicksUpdated', (data) => {
@@ -1592,6 +1749,9 @@
                 if (!data.blockedByBarrier && !data.reducedByScaleAura && mult >= 1.35) { label += ' WEAK!'; color = '#ff9f43'; }
                 else if (!data.blockedByBarrier && !data.reducedByScaleAura && mult <= 0.8) { label += ' RESIST'; color = '#a4b0be'; }
                 addFloatingText(bossState.x + (Math.random() - 0.5) * 36, bossState.y - 24, label, color);
+                if (data.attackType === 'ultra_ricochet') {
+                    ultraEffects.push({ kind: 'ricochet_hit', x: bossState.x, y: bossState.y, startedAt: performance.now(), durationMs: 260 });
+                }
             });
             socket.on('bossAttackEvent', (ev) => {
                 if (roomState !== 'playing' || !BOSS) return;
@@ -1625,7 +1785,8 @@
                 const targetObj = isMe ? player : otherPlayers[data.id];
                 if (!targetObj) return;
                 targetObj.slowMultiplier = Number(data.multiplier) || 0.75;
-                targetObj.slowUntil = performance.now() + (Number(data.durationMs) || 1800);
+                targetObj.slowDurationMs = Math.max(100, Number(data.durationMs) || DEFAULT_SLOW_DURATION_MS);
+                targetObj.slowUntil = performance.now() + targetObj.slowDurationMs;
                 addFloatingText(targetObj.x + 24, targetObj.y - 22, 'SLOW -25%', '#c084fc');
             });
             socket.on('playerAttackDebuffed', (data) => {
@@ -1666,22 +1827,36 @@
                 updateLobbyUI();
             });
             socket.on('matchCountdown', (data) => {
+                clearMatchCountdown();
+                data = data || {};
                 roomState = 'countdown';
+                timeStopUntil = 0; timeStopCasterId = null;
                 if (data.mode) currentRoomMode = data.mode;
                 if (data.stageNumber) currentStageNumber = data.stageNumber;
                 if (data.bossId && BOSS) currentBossId = BOSS.sanitizeBossId(data.bossId);
                 arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = [];
+                ultraRicochetBullets = []; phantomBootsTrails = {};
                 bossProjectiles = []; bossEffects = []; bossTrail = []; bossVortexUntil = 0; confettiParticles = [];
                 player.shieldUntil = 0; player.absoluteWallUntil = 0; player.counterStanceUntil = 0;
                 player.speedBoostUntil = 0; player.powerBoostUntil = 0; player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
+                player.slowDurationMs = DEFAULT_SLOW_DURATION_MS;
                 player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                 player.ultraCooldownUntil = 0; player.ultraState = null; player.ultraStateUntil = 0;
                 for (const k in keys) keys[k] = false;
                 stopBgm(); updateUltraHudButton(); updateLobbyUI();
-                let count = data.seconds || 3; countdownBanner = String(count); SE.countdown(false);
-                const timer = setInterval(() => { count--; if (count > 0) { countdownBanner = String(count); SE.countdown(false); } else clearInterval(timer); }, 1000);
+                let count = Math.max(1, Math.floor(Number(data.seconds) || 3)); countdownBanner = String(count); SE.countdown(false);
+                matchCountdownTimer = setInterval(() => {
+                    count--;
+                    if (count > 0) { countdownBanner = String(count); SE.countdown(false); }
+                    else {
+                        clearInterval(matchCountdownTimer);
+                        matchCountdownTimer = null;
+                        countdownBanner = '';
+                    }
+                }, 1000);
             });
             socket.on('matchStart', (data) => {
+                clearMatchCountdown();
                 roomState = 'playing';
                 if (data && data.mode) currentRoomMode = data.mode;
                 if (data && data.stageNumber) currentStageNumber = data.stageNumber;
@@ -1694,8 +1869,9 @@
                 setTimeout(() => { if (countdownBanner === 'FIGHT!') countdownBanner = ''; }, 900);
             });
             socket.on('matchResult', (data) => {
+                clearMatchCountdown();
                 roomState = 'result'; for (const k in keys) keys[k] = false;
-                player.slowUntil = 0; player.slowMultiplier = 1.0;
+                player.slowUntil = 0; player.slowDurationMs = DEFAULT_SLOW_DURATION_MS; player.slowMultiplier = 1.0;
                 for (const oid in otherPlayers) { otherPlayers[oid].slowUntil = 0; otherPlayers[oid].slowMultiplier = 1.0; otherPlayers[oid].attackDebuffUntil = 0; otherPlayers[oid].attackDebuffMultiplier = 1.0; otherPlayers[oid].dotUntil = 0; }
                 bossTrail = [];
                 if (bossState) { bossState.scaleAuraActive = false; bossState.scaleAuraUntil = 0; }
@@ -1707,46 +1883,51 @@
                 for (const id in otherPlayers) if (allPlayers[id]) { otherPlayers[id].wins = allPlayers[id].wins || 0; otherPlayers[id].points = allPlayers[id].points || 0; }
 
                 const resultTitle = document.getElementById('resultTitle'), winnerNameDisplay = document.getElementById('winnerNameDisplay');
-                const winnerCanvas = document.getElementById('winnerCanvas'), wCtx = winnerCanvas.getContext('2d');
-                wCtx.clearRect(0, 0, 76, 76);
+                const winnerCanvas = document.getElementById('winnerCanvas'), wCtx = winnerCanvas ? winnerCanvas.getContext('2d') : null;
+                if (wCtx) wCtx.clearRect(0, 0, 76, 76);
+                const resultScoreList = document.getElementById('resultScoreList');
 
                 if (data.mode === 'boss') {
                     const bossLabel = data.bossName || 'BOSS';
                     if (data.bossCleared) {
-                        SE.win(); resultTitle.textContent = `🌀 STAGE ${data.stageNumber || currentStageNumber} CLEAR!!`; resultTitle.style.color = '#f5b7ff';
+                        SE.win(); if (resultTitle) { resultTitle.textContent = `🌀 STAGE ${data.stageNumber || currentStageNumber} CLEAR!!`; resultTitle.style.color = '#f5b7ff'; }
                         const mvpPlayer = data.mvpId ? allPlayers[data.mvpId] : null;
                         const unlockMsg = data.nextStageNumber ? ` ｜ 🔓 STAGE ${data.nextStageNumber} 解放！` : ' ｜ 🏆 全ステージ制覇！';
-                        winnerNameDisplay.textContent = (mvpPlayer ? `${bossLabel} 討伐！ 👑MVP: ${mvpPlayer.name} (+${earnedThisMatch}Pt)` : `${bossLabel} 討伐！ (+${earnedThisMatch}Pt)`) + unlockMsg;
-                        spawnConfetti(); retryStageBtn.style.display = 'none';
-                        rematchBtn.textContent = data.nextStageNumber ? `➡️ ロビーへ（STAGE ${data.nextStageNumber} へ）` : '🔄 ロビーに戻る';
+                        if (winnerNameDisplay) winnerNameDisplay.textContent = (mvpPlayer ? `${bossLabel} 討伐！ 👑MVP: ${mvpPlayer.name} (+${earnedThisMatch}Pt)` : `${bossLabel} 討伐！ (+${earnedThisMatch}Pt)`) + unlockMsg;
+                        spawnConfetti(); if (retryStageBtn) retryStageBtn.style.display = 'none';
+                        if (rematchBtn) rematchBtn.textContent = data.nextStageNumber ? `➡️ ロビーへ（STAGE ${data.nextStageNumber} へ）` : '🔄 ロビーに戻る';
                     } else {
-                        SE.ko(); resultTitle.textContent = '💀 PARTY WIPED...'; resultTitle.style.color = '#e74c3c';
-                        winnerNameDisplay.textContent = `${bossLabel} に敗北した... 同じステージに再挑戦しよう！`;
-                        retryStageBtn.style.display = 'inline-block'; rematchBtn.textContent = '🏠 ロビーへ戻る';
+                        SE.ko(); if (resultTitle) { resultTitle.textContent = '💀 PARTY WIPED...'; resultTitle.style.color = '#e74c3c'; }
+                        if (winnerNameDisplay) winnerNameDisplay.textContent = `${bossLabel} に敗北した... 同じステージに再挑戦しよう！`;
+                        if (retryStageBtn) retryStageBtn.style.display = 'inline-block';
+                        if (rematchBtn) rematchBtn.textContent = '🏠 ロビーへ戻る';
                     }
                     const sorted = Object.values(allPlayers).sort((a, b) => (b.bossDamageDealt || 0) - (a.bossDamageDealt || 0));
-                    document.getElementById('resultScoreList').innerHTML = sorted.map((pl) => {
+                    if (resultScoreList) resultScoreList.innerHTML = sorted.map((pl) => {
                         const bd = (data.rewardsByPlayer && data.rewardsByPlayer[pl.id]) || pl.lastPointBreakdown || {};
                         const bdText = data.bossCleared ? `基本${bd.clearBonus || 0}+貢献${bd.contributionBonus || 0}${bd.mvpBonus ? `+MVP${bd.mvpBonus}` : ''}` : '獲得0Pt';
                         return `<div class="ready-row"><span>${pl.id === data.mvpId ? '👑 ' : ''}[${pl.rank}] ${pl.name} <small style="color:#a4b0be;">(${bdText})</small></span><span style="color:#f1c40f; font-weight:bold;">与ダメ:${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span></div>`;
                     }).join('');
                 } else {
-                    SE.win(); spawnConfetti(); retryStageBtn.style.display = 'none'; rematchBtn.textContent = '🔄 ロビーに戻る';
+                    SE.win(); spawnConfetti(); if (retryStageBtn) retryStageBtn.style.display = 'none'; if (rematchBtn) rematchBtn.textContent = '🔄 ロビーに戻る';
                     const winner = data.winner;
                     if (winner) {
                         const isMe = winner.id === socket.id;
-                        resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!'; resultTitle.style.color = isMe ? '#f1c40f' : '#3498db';
-                        winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！${isMe ? ` (+${earnedThisMatch}Pt獲得)` : ''}`;
+                        if (resultTitle) { resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!'; resultTitle.style.color = isMe ? '#f1c40f' : '#3498db'; }
+                        if (winnerNameDisplay) winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！${isMe ? ` (+${earnedThisMatch}Pt獲得)` : ''}`;
                         const wGrid = isMe ? gridData : winner.characterData;
-                        if (wGrid) {
+                        if (wGrid && wCtx) {
                             const pScale = 76 / GRID_SIZE;
                             for (let dy = 0; dy < GRID_SIZE; dy++) for (let dx = 0; dx < GRID_SIZE; dx++) if (wGrid[dy] && wGrid[dy][dx]) {
                                 wCtx.fillStyle = resolvePixelColor(wGrid[dy][dx], performance.now()); wCtx.fillRect(dx * pScale, dy * pScale, pScale, pScale);
                             }
                         }
-                    } else { resultTitle.textContent = '🤝 DRAW!'; resultTitle.style.color = '#bdc3c7'; winnerNameDisplay.textContent = '引き分け！'; }
+                    } else {
+                        if (resultTitle) { resultTitle.textContent = '🤝 DRAW!'; resultTitle.style.color = '#bdc3c7'; }
+                        if (winnerNameDisplay) winnerNameDisplay.textContent = '引き分け！';
+                    }
                     const sorted = Object.values(allPlayers).sort((a, b) => (b.points || 0) - (a.points || 0));
-                    document.getElementById('resultScoreList').innerHTML = sorted.map((pl, idx) => `<div class="ready-row"><span>${idx + 1}位: [${pl.rank}] ${pl.name}</span><span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span></div>`).join('');
+                    if (resultScoreList) resultScoreList.innerHTML = sorted.map((pl, idx) => `<div class="ready-row"><span>${idx + 1}位: [${pl.rank}] ${pl.name}</span><span style="color:#f1c40f; font-weight:bold;">${pl.wins || 0}勝 / ${pl.points || 0}pt</span></div>`).join('');
                 }
                 updateLobbyUI();
             });
@@ -1787,7 +1968,7 @@
                 let rx = 0, ry = 0;
                 if (data.knockbackDir === 'left') rx = 20; if (data.knockbackDir === 'right') rx = -20;
                 if (data.knockbackDir === 'up') ry = 20; if (data.knockbackDir === 'down') ry = -20;
-                if (data.attackerId === socket.id && data.type === 'melee') {
+                if (data.attackerId === socket.id && data.type === 'melee' && !isLocalPlayerTimeStopped()) {
                     const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + rx)), nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + ry));
                     if (!collidesWithWall(nextX, nextY, 48)) { player.x = nextX; player.y = nextY; socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing }); }
                 }
@@ -1809,12 +1990,31 @@
             socket.on('remoteAttack', (data) => { if (data.type === 'shot') spawnProjectile(data.attackerId, data.x, data.y, data.facing, data.color, data.spd, false); });
             socket.on('slashMotionEvent', (ev) => {
                 if (roomState !== 'playing' || ev.attackerId === socket.id) return;
-                spawnSlashMotion(ev.attackerId, ev.x, ev.y, ev.facing, ev.element, ev.specialInkType, ev.isPowered);
+                spawnSlashMotion(ev.attackerId, ev.x, ev.y, ev.facing, ev.element, ev.specialInkType, ev.isPowered, ev.demonBladeActive, ev.range);
+            });
+            socket.on('ultraRicochetBounce', (ev) => {
+                if (!ev || !ev.bulletId) return;
+                const bullet = ultraRicochetBullets.find((item) => item.id === ev.bulletId);
+                if (!bullet) return;
+                bullet.x = Number(ev.x) || bullet.x;
+                bullet.y = Number(ev.y) || bullet.y;
+                bullet.vx = Number(ev.vx) || bullet.vx;
+                bullet.vy = Number(ev.vy) || bullet.vy;
+                bullet.bounceCount = Math.max(0, Number(ev.bounceCount) || 0);
+                bullet.trail = [];
+                ultraEffects.push({ kind: 'ricochet_bounce', x: bullet.x, y: bullet.y, startedAt: performance.now(), durationMs: 220 });
             });
             socket.on('ultraSkillEvent', (ev) => {
                 if (!ev || roomState !== 'playing') return;
                 const isMe = ev.playerId === socket.id, targetObj = isMe ? player : otherPlayers[ev.playerId];
                 const nowPerf = performance.now(), nowEpoch = Date.now();
+                if (ev.skillId === 'time_stop' && ev.phase === 'active') {
+                    timeStopUntil = Number(ev.timeStopUntil) || (nowEpoch + (Number(ev.durationMs) || 2500));
+                    timeStopCasterId = ev.timeStopCasterId || ev.playerId;
+                } else if (ev.skillId === 'time_stop' && ev.phase === 'end' && (Number(ev.timeStopUntil) === 0 || timeStopUntil <= nowEpoch)) {
+                    timeStopUntil = 0;
+                    timeStopCasterId = null;
+                }
                 if (isMe) {
                     if (typeof ev.remainingUses === 'number') player.ultraRemainingUses = Math.max(0, Math.min(3, ev.remainingUses));
                     if (typeof ev.maxUses === 'number') player.ultraMaxUses = Math.max(0, Math.min(3, ev.maxUses));
@@ -1916,7 +2116,60 @@
                             addFloatingText(centerImp.x, centerImp.y - 46, `METEOR CHAIN ${totalHits} HITS!!`, '#fff3b0');
                         }
                     }
+                } else if (ev.skillId === 'demon_blade' && targetObj) {
+                    if (ev.phase === 'active') {
+                        const until = Number(ev.demonBladeUntil) || nowEpoch + (Number(ev.durationMs) || 5000);
+                        targetObj.ultraState = 'demon_blade';
+                        targetObj.ultraStateUntil = until;
+                        if (isMe) addFloatingText(targetObj.x + 24, targetObj.y - 22, '聖魔の覇剣 発動!', '#ff6b81');
+                    } else if (ev.phase === 'end' && targetObj.ultraState === 'demon_blade') {
+                        targetObj.ultraState = null;
+                        targetObj.ultraStateUntil = 0;
+                    }
+                } else if (ev.skillId === 'ricochet_guns' && targetObj) {
+                    if (ev.phase === 'active') {
+                        const until = nowEpoch + (Number(ev.durationMs) || 5000);
+                        targetObj.ultraState = 'ricochet_guns';
+                        targetObj.ultraStateUntil = until;
+                        if (isMe) addFloatingText(targetObj.x + 24, targetObj.y - 22, '全方位跳弾銃 展開!', '#ffd166');
+                    } else if (ev.phase === 'volley' && Array.isArray(ev.bullets)) {
+                        ev.bullets.forEach((bullet) => {
+                            ultraRicochetBullets.push({
+                                ...bullet, lifeMs: 4000, trail: [], lastTrailAt: nowPerf
+                            });
+                        });
+                    } else if (ev.phase === 'end' && targetObj.ultraState === 'ricochet_guns') {
+                        targetObj.ultraState = null;
+                        targetObj.ultraStateUntil = 0;
+                    }
+                } else if (ev.skillId === 'phantom_boots' && targetObj) {
+                    if (ev.phase === 'active') {
+                        const until = Number(ev.phantomBootsUntil) || nowEpoch + (Number(ev.durationMs) || 4000);
+                        targetObj.ultraState = 'phantom_boots';
+                        targetObj.ultraStateUntil = until;
+                        if (isMe) addFloatingText(targetObj.x + 24, targetObj.y - 22, '疾風幻影靴 発動!', '#7dd3fc');
+                    } else if (ev.phase === 'end') {
+                        if (Number.isFinite(Number(ev.x)) && Number.isFinite(Number(ev.y))) {
+                            targetObj.x = Number(ev.x);
+                            targetObj.y = Number(ev.y);
+                        }
+                        if (targetObj.ultraState === 'phantom_boots') {
+                            targetObj.ultraState = null;
+                            targetObj.ultraStateUntil = 0;
+                        }
+                        phantomBootsTrails[ev.playerId] = [];
+                    }
+                } else if (ev.skillId === 'time_stop' && isMe) {
+                    if (ev.phase === 'active') {
+                        player.ultraState = 'time_stop';
+                        player.ultraStateUntil = timeStopUntil;
+                    } else if (ev.phase === 'end') {
+                        player.ultraState = null;
+                        player.ultraStateUntil = 0;
+                    }
                 }
+                clearExpiredTimeStop(nowEpoch);
+                updateUltraHudButton();
             });
             socket.on('playerDamaged', (data) => {
                 if (data.type === 'magma' || data.type === 'roar_pulse') SE.zoneHit();
@@ -1937,6 +2190,13 @@
                     shakeIntensity = Math.max(shakeIntensity, 3);
                 }
                 const mult = Number(data.elementMultiplier || 1);
+                if (data.type === 'ultra_ricochet') {
+                    const hitTarget = data.targetId === socket.id ? player : otherPlayers[data.targetId];
+                    if (hitTarget) ultraEffects.push({
+                        kind: 'ricochet_hit', x: hitTarget.x + 24, y: hitTarget.y + 24,
+                        startedAt: performance.now(), durationMs: 260
+                    });
+                }
                 let dmgLabel = `-${data.damage}`;
                 if (mult >= 1.35) dmgLabel += '!'; else if (mult <= 0.8) dmgLabel += '↓';
                 if (data.targetId === socket.id) {
@@ -1944,7 +2204,7 @@
                     if (!data.skipInvincible) {
                         player.invincibleUntil = performance.now() + 350;
                     }
-                    if (dx !== 0 || dy !== 0) {
+                    if ((dx !== 0 || dy !== 0) && !isLocalPlayerTimeStopped()) {
                         const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + dx)), nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + dy));
                         if (!collidesWithWall(nextX, nextY, 48)) { player.x = nextX; player.y = nextY; }
                         socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
@@ -1995,50 +2255,55 @@
         }
 
         // ロビー操作
-        joinRoomBtn.addEventListener('click', () => {
+        if (joinRoomBtn) joinRoomBtn.addEventListener('click', () => {
             initAudio(); SE.click();
+            if (!roomInput) { showToast('ルーム名入力欄を読み込めませんでした。'); return; }
             let roomName = roomInput.value.trim();
             if (!roomName) {
                 if (currentRoomMode === 'boss') { roomName = 'SOLO_' + Math.floor(1000 + Math.random() * 9000); roomInput.value = roomName; }
-                else { alert('合言葉（ルーム名）を入力してください！'); roomInput.focus(); return; }
+                else { showToast('合言葉（ルーム名）を入力してください！'); roomInput.focus(); return; }
             }
-            if (!socket || !socket.connected) { alert('サーバーに接続されていません。少し待ってから再度お試しください。'); return; }
+            if (!socket || !socket.connected) { showToast('サーバーに接続されていません。少し待ってから再度お試しください。'); return; }
             activeRoom = roomName; myReady = false;
-            const judged = finalizeCharacterJudgment(gridData, charNameInput.value); applyJudgmentToPlayer(judged, true);
+            const judged = finalizeCharacterJudgment(gridData, charNameInput ? charNameInput.value : ''); applyJudgmentToPlayer(judged, true);
             socket.emit('joinRoom', {
                 roomId: activeRoom, mode: currentRoomMode, stageNumber: currentStageNumber, bossId: currentBossId,
                 clientKey: MY_CLIENT_KEY, name: player.name, rank: player.rank, title: player.title, element: player.element,
                 gridData, stats: player.stats, profile: userProgress
             });
-            connectionStatus.textContent = `🟢 ルーム [${activeRoom}] 入室中`; connectionStatus.style.color = '#2ecc71';
-            roomInput.disabled = true; joinRoomBtn.style.display = 'none'; leaveRoomBtn.style.display = 'inline-block'; updateLobbyUI();
+            if (connectionStatus) { connectionStatus.textContent = `🟢 ルーム [${activeRoom}] 入室中`; connectionStatus.style.color = '#2ecc71'; }
+            if (roomInput) roomInput.disabled = true;
+            if (joinRoomBtn) joinRoomBtn.style.display = 'none';
+            if (leaveRoomBtn) leaveRoomBtn.style.display = 'inline-block';
+            updateLobbyUI();
         });
-        roomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); joinRoomBtn.click(); } });
-        charNameInput.addEventListener('input', () => { player.name = charNameInput.value.trim() || 'ファイター'; localStorage.setItem('pixel_character_name_v1', player.name); if (!isDraftEditing) syncCharacterUpdate(); });
-        readyBtn.addEventListener('click', () => {
+        if (roomInput) roomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && joinRoomBtn) { e.preventDefault(); joinRoomBtn.click(); } });
+        if (charNameInput) charNameInput.addEventListener('input', () => { player.name = charNameInput.value.trim() || 'ファイター'; localStorage.setItem('pixel_character_name_v1', player.name); if (!isDraftEditing) syncCharacterUpdate(); });
+        if (readyBtn) readyBtn.addEventListener('click', () => {
             initAudio(); SE.click();
             if (!socket || !socket.connected || !activeRoom || roomState !== 'waiting') return;
-            if (isDraftEditing) { const judged = finalizeCharacterJudgment(gridData, charNameInput.value); applyJudgmentToPlayer(judged, true); }
+            if (isDraftEditing) { const judged = finalizeCharacterJudgment(gridData, charNameInput ? charNameInput.value : ''); applyJudgmentToPlayer(judged, true); }
             syncCharacterUpdate(); myReady = !myReady; socket.emit('toggleReady', myReady); updateLobbyUI();
         });
-        rematchBtn.addEventListener('click', () => { initAudio(); SE.click(); if (socket && socket.connected && activeRoom) socket.emit('returnToLobby'); });
-        retryStageBtn.addEventListener('click', () => { initAudio(); SE.click(); if (socket && socket.connected && activeRoom) socket.emit('retryStage'); });
-        leaveRoomBtn.addEventListener('click', () => {
+        if (rematchBtn) rematchBtn.addEventListener('click', () => { initAudio(); SE.click(); if (socket && socket.connected && activeRoom) socket.emit('returnToLobby'); });
+        if (retryStageBtn) retryStageBtn.addEventListener('click', () => { initAudio(); SE.click(); if (socket && socket.connected && activeRoom) socket.emit('retryStage'); });
+        if (leaveRoomBtn) leaveRoomBtn.addEventListener('click', () => {
             initAudio(); SE.click();
             if (socket && socket.connected) socket.emit('leaveRoom');
-            activeRoom = null; roomState = 'waiting'; roomHostId = null; myReady = false; otherPlayers = {}; bossState = null;
-            arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = []; bossProjectiles = []; bossEffects = []; bossTrail = []; confettiParticles = []; countdownBanner = '';
-            player.slowUntil = 0; player.slowMultiplier = 1.0;
-            connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f';
-            roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none';
+            clearKeys(); activeRoom = null; roomState = 'waiting'; myReady = false;
+            resetBattleTransientState();
+            if (connectionStatus) { connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f'; }
+            if (roomInput) roomInput.disabled = false;
+            if (joinRoomBtn) joinRoomBtn.style.display = 'inline-block';
+            if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
             const d = getDesiredBgmState(); startBgm(d.track, d.rate); updateLobbyUI();
         });
 
         // 🎨 エディタ機能
         const colors = ['#000000', '#ffffff', '#7f7f7f', '#c3c3c3', '#880015', '#ed1c24', '#ff7f27', '#ffc90e', '#fff200', '#22b14c', '#00a2e8', '#3f48cc', '#a349a4', '#b97a57', '#ffaec9'];
-        let currentColor = colors[0], isDrawing = false, toolMode = 'brush', brushSize = 1, isMirrorMode = false;
+        let currentColor = colors[0], isDrawing = false, drawingUndoSnapshot = null, toolMode = 'brush', brushSize = 1, isMirrorMode = false;
         const paletteContainer = document.getElementById('palette');
-        colors.forEach((color, index) => {
+        if (paletteContainer) colors.forEach((color, index) => {
             const btn = document.createElement('div'); btn.className = `color-btn ${index === 0 ? 'active' : ''}`; btn.style.backgroundColor = color;
             btn.addEventListener('click', () => {
                 initAudio(); SE.click(); document.querySelectorAll('.color-btn').forEach((b) => b.classList.remove('active'));
@@ -2067,36 +2332,50 @@
                 spContainer.appendChild(btn);
             });
         }
-        function clearToolHighlight() { [1, 2, 4].forEach((s) => document.getElementById(`brush${s}`).classList.remove('active-tool')); document.getElementById('eraserBtn').classList.remove('active-tool'); document.getElementById('bucketBtn').classList.remove('active-tool'); }
-        function setBrushSize(size) { initAudio(); SE.click(); brushSize = size; toolMode = 'brush'; clearToolHighlight(); document.getElementById(`brush${size}`).classList.add('active-tool'); brushStatus.textContent = `Brush: ${size}x${size}`; }
-        function setBucket() { initAudio(); SE.click(); toolMode = 'bucket'; clearToolHighlight(); document.getElementById('bucketBtn').classList.add('active-tool'); brushStatus.textContent = 'Bucket Fill'; }
-        function setEraser() { initAudio(); SE.click(); toolMode = 'eraser'; clearToolHighlight(); document.getElementById('eraserBtn').classList.add('active-tool'); brushStatus.textContent = 'Eraser'; }
+        function clearToolHighlight() {
+            [1, 2, 4].forEach((s) => { const btn = document.getElementById(`brush${s}`); if (btn) btn.classList.remove('active-tool'); });
+            const eraser = document.getElementById('eraserBtn'), bucket = document.getElementById('bucketBtn');
+            if (eraser) eraser.classList.remove('active-tool');
+            if (bucket) bucket.classList.remove('active-tool');
+        }
+        function setBrushSize(size) { initAudio(); SE.click(); brushSize = size; toolMode = 'brush'; clearToolHighlight(); const btn = document.getElementById(`brush${size}`); if (btn) btn.classList.add('active-tool'); if (brushStatus) brushStatus.textContent = `Brush: ${size}x${size}`; }
+        function setBucket() { initAudio(); SE.click(); toolMode = 'bucket'; clearToolHighlight(); const btn = document.getElementById('bucketBtn'); if (btn) btn.classList.add('active-tool'); if (brushStatus) brushStatus.textContent = 'Bucket Fill'; }
+        function setEraser() { initAudio(); SE.click(); toolMode = 'eraser'; clearToolHighlight(); const btn = document.getElementById('eraserBtn'); if (btn) btn.classList.add('active-tool'); if (brushStatus) brushStatus.textContent = 'Eraser'; }
         function toggleMirror() {
             initAudio(); SE.click(); isMirrorMode = !isMirrorMode; const btn = document.getElementById('mirrorBtn');
-            btn.textContent = isMirrorMode ? '🪞 対称ON' : '🪞 対称OFF'; btn.classList.toggle('active-mirror', isMirrorMode); drawEditorGrid();
+            if (btn) { btn.textContent = isMirrorMode ? '🪞 対称ON' : '🪞 対称OFF'; btn.classList.toggle('active-mirror', isMirrorMode); }
+            drawEditorGrid();
         }
-        function pushUndoHistory() { undoHistory.push(JSON.stringify(gridData)); if (undoHistory.length > 20) undoHistory.shift(); }
+        function commitUndoHistory(snapshot) {
+            if (snapshot === null || snapshot === undefined) return;
+            const current = JSON.stringify(gridData);
+            if (snapshot === current || undoHistory[undoHistory.length - 1] === snapshot) return;
+            undoHistory.push(snapshot);
+            if (undoHistory.length > 20) undoHistory.shift();
+        }
         function markDraftUnjudged() { isDraftEditing = true; refreshEditorJudgmentUI(); }
         function undoCanvas() {
             if ((activeRoom && roomState !== 'waiting') || undoHistory.length === 0) return;
             initAudio(); SE.undo(); gridData = JSON.parse(undoHistory.pop()); markDraftUnjudged(); drawEditorGrid(); autoSave();
         }
         function floodFill(startX, startY, fillColor) {
-            if (startX < 0 || startX >= GRID_SIZE || startY < 0 || startY >= GRID_SIZE) return;
-            const targetColor = gridData[startY][startX]; if (targetColor === fillColor) return;
+            if (startX < 0 || startX >= GRID_SIZE || startY < 0 || startY >= GRID_SIZE) return false;
+            const targetColor = gridData[startY][startX]; if (targetColor === fillColor) return false;
             const queue = [[startX, startY]], visited = new Set();
+            let changed = false;
             while (queue.length > 0) {
                 const [cx, cy] = queue.shift(), key = `${cx},${cy}`;
                 if (visited.has(key)) continue; visited.add(key);
                 if (gridData[cy][cx] === targetColor) {
-                    gridData[cy][cx] = fillColor;
+                    gridData[cy][cx] = fillColor; changed = true;
                     if (cx > 0) queue.push([cx - 1, cy]); if (cx < GRID_SIZE - 1) queue.push([cx + 1, cy]);
                     if (cy > 0) queue.push([cx, cy - 1]); if (cy < GRID_SIZE - 1) queue.push([cx, cy + 1]);
                 }
             }
+            return changed;
         }
         function syncCharacterUpdate() {
-            player.name = charNameInput.value.trim() || 'ファイター';
+            player.name = charNameInput ? (charNameInput.value.trim() || 'ファイター') : 'ファイター';
             if (socket && socket.connected && activeRoom && roomState === 'waiting') {
                 socket.emit('updateCharacter', { name: player.name, rank: player.rank, title: player.title, element: player.element, gridData, stats: player.stats });
             }
@@ -2105,11 +2384,14 @@
             if (activeRoom && roomState !== 'waiting') return;
             initAudio();
             if (confirm('キャンバスをクリアしますか？')) {
-                SE.undo(); pushUndoHistory(); gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
+                const before = JSON.stringify(gridData);
+                SE.undo(); gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
+                commitUndoHistory(before);
                 markDraftUnjudged(); drawEditorGrid(); autoSave();
             }
         }
         function drawEditorGrid() {
+            if (!ctx) return;
             const now = performance.now(); ctx.clearRect(0, 0, EDITOR_CANVAS_SIZE, EDITOR_CANVAS_SIZE);
             for (let y = 0; y < GRID_SIZE; y++) for (let x = 0; x < GRID_SIZE; x++) {
                 ctx.fillStyle = (x + y) % 2 === 0 ? '#f0f0f0' : '#e0e0e0'; ctx.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
@@ -2141,29 +2423,52 @@
             if (activeRoom && roomState !== 'waiting') return;
             initAudio(); const pos = getGridPos(e);
             if (toolMode === 'bucket') {
-                SE.bucket(); floodFill(pos.x, pos.y, currentColor); if (isMirrorMode) floodFill((GRID_SIZE - 1) - pos.x, pos.y, currentColor);
-                markDraftUnjudged(); drawEditorGrid(); autoSave(); return;
+                let changed = floodFill(pos.x, pos.y, currentColor);
+                if (isMirrorMode) {
+                    const mirrorX = (GRID_SIZE - 1) - pos.x;
+                    const mirrorTargetColor = pos.y >= 0 && pos.y < GRID_SIZE && mirrorX >= 0 && mirrorX < GRID_SIZE
+                        ? gridData[pos.y][mirrorX]
+                        : null;
+                    if (mirrorTargetColor !== currentColor) changed = floodFill(mirrorX, pos.y, currentColor) || changed;
+                }
+                if (changed) { SE.bucket(); markDraftUnjudged(); drawEditorGrid(); autoSave(); }
+                return;
             }
             const newColor = toolMode === 'eraser' ? '' : currentColor;
             if (applyBrushAt(pos.x, pos.y, newColor)) { if (toolMode === 'eraser') SE.erase(); else SE.draw(); markDraftUnjudged(); drawEditorGrid(); }
         }
-        canvas.addEventListener('mousedown', (e) => { if (activeRoom && roomState !== 'waiting') return; pushUndoHistory(); isDrawing = true; paint(e); });
+        function beginDrawing(e) {
+            if (activeRoom && roomState !== 'waiting') return;
+            drawingUndoSnapshot = JSON.stringify(gridData);
+            isDrawing = true;
+            paint(e);
+        }
+        function finishDrawing() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            commitUndoHistory(drawingUndoSnapshot);
+            drawingUndoSnapshot = null;
+            autoSave();
+        }
+        if (canvas) canvas.addEventListener('mousedown', beginDrawing);
         window.addEventListener('mousemove', (e) => { if (isDrawing && toolMode !== 'bucket') paint(e); });
-        window.addEventListener('mouseup', () => { if (isDrawing) { isDrawing = false; autoSave(); } });
-        canvas.addEventListener('touchstart', (e) => { if (activeRoom && roomState !== 'waiting') return; e.preventDefault(); pushUndoHistory(); isDrawing = true; paint(e); });
-        canvas.addEventListener('touchmove', (e) => { if (isDrawing && toolMode !== 'bucket') { e.preventDefault(); paint(e); } });
-        canvas.addEventListener('touchend', () => { if (isDrawing) { isDrawing = false; autoSave(); } });
+        window.addEventListener('mouseup', finishDrawing);
+        if (canvas) {
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); beginDrawing(e); });
+            canvas.addEventListener('touchmove', (e) => { if (isDrawing && toolMode !== 'bucket') { e.preventDefault(); paint(e); } });
+            canvas.addEventListener('touchend', finishDrawing);
+            canvas.addEventListener('touchcancel', finishDrawing);
+        }
         function autoSave() { localStorage.setItem('pixel_character_32x32_data', JSON.stringify(gridData)); }
         function loadSavedData() {
             const saved = localStorage.getItem('pixel_character_32x32_data');
             if (saved) { try { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length === GRID_SIZE) gridData = parsed; } catch (e) {} }
             const savedName = localStorage.getItem('pixel_character_name_v1');
-            if (savedName) { charNameInput.value = savedName; player.name = savedName; }
+            if (savedName) { if (charNameInput) charNameInput.value = savedName; player.name = savedName; }
             drawEditorGrid(); isDraftEditing = true; refreshEditorJudgmentUI(); renderSaveSlots();
         }
 
         // ⌨️ 入力＆アクション
-        const keys = {};
         window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
         window.addEventListener('keydown', (e) => {
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
@@ -2184,6 +2489,7 @@
             if (socket && socket.connected && activeRoom) socket.emit('activateShield');
         }
         function triggerShot() {
+            if (isLocalPlayerTimeStopped()) return;
             const now = performance.now(); if (now - player.lastShotTime < SHOT_COOLDOWN) return;
             initAudio(); SE.shot(); player.lastShotTime = now;
             const cx = player.x + 24, cy = player.y + 24;
@@ -2200,14 +2506,17 @@
             return best;
         }
         function triggerMelee() {
+            if (isLocalPlayerTimeStopped()) return;
             const now = performance.now(); if (now - player.lastMeleeTime < SLASH_COOLDOWN) return;
             initAudio(); SE.melee(); player.lastMeleeTime = now;
             const cx = player.x + 24, cy = player.y + 24;
-            spawnSlashMotion(socket ? socket.id : 'local', cx, cy, player.facing, player.element, getDominantSpecialInkFromGrid(gridData), now < player.powerBoostUntil);
+            const demonBladeActive = player.ultraState === 'demon_blade' && Date.now() < player.ultraStateUntil;
+            spawnSlashMotion(socket ? socket.id : 'local', cx, cy, player.facing, player.element, getDominantSpecialInkFromGrid(gridData), now < player.powerBoostUntil, demonBladeActive);
             if (socket && socket.connected && activeRoom) socket.emit('playerAttack', { type: 'melee', x: cx, y: cy, facing: player.facing });
         }
         function triggerUltra() {
             if (roomState !== 'playing' || player.isDead || player.isEliminated || !player.ultraSkillId || player.ultraRemainingUses <= 0) return;
+            if (isLocalPlayerTimeStopped()) return;
             const now = Date.now(); if (now < player.ultraCooldownUntil || (player.ultraState !== null && now < player.ultraStateUntil)) return;
             initAudio();
             if (socket && socket.connected && activeRoom) socket.emit('activateUltra', { facing: player.facing });
@@ -2218,21 +2527,22 @@
             if (facing === 'up') vy = -bulletSpeed; if (facing === 'down') vy = bulletSpeed;
             projectiles.push({ ownerId, x, y, vx, vy, facing, color, isMine, life: 85 });
         }
-        function spawnSlashMotion(ownerId, x, y, facing, element, specialInkType, isPowered) {
+        function spawnSlashMotion(ownerId, x, y, facing, element, specialInkType, isPowered, isDemonBlade = false, range = 0) {
             let baseAngle = 0;
             if (facing === 'down') baseAngle = Math.PI / 2;
             else if (facing === 'left') baseAngle = Math.PI;
             else if (facing === 'up') baseAngle = -Math.PI / 2;
-            const sparks = Array.from({ length: 7 }, (_, idx) => ({ ang: baseAngle - 0.85 + (1.7 * idx) / 6 + (Math.random() - 0.5) * 0.15, r: 46 + Math.random() * 26, size: 2 + Math.random() * 2.5 }));
-            slashEffects.push({ ownerId, x, y, baseAngle, element: element || 'neutral', specialInkType: specialInkType || null, isPowered: Boolean(isPowered), startedAt: performance.now(), durationMs: 220, sparks });
+            const reach = isDemonBlade ? 84 : 56;
+            const sparks = Array.from({ length: 7 }, (_, idx) => ({ ang: baseAngle - 0.85 + (1.7 * idx) / 6 + (Math.random() - 0.5) * 0.15, r: (reach - 10) + Math.random() * 26, size: 2 + Math.random() * 2.5 }));
+            slashEffects.push({ ownerId, x, y, baseAngle, element: element || 'neutral', specialInkType: specialInkType || null, isPowered: Boolean(isPowered), isDemonBlade: Boolean(isDemonBlade), reach: Number(range) > 0 ? Math.max(reach, Number(range) * 0.72) : reach, startedAt: performance.now(), durationMs: 220, sparks });
         }
         function addFloatingText(x, y, text, color) { floatingTexts.push({ x, y, text, color, life: 45 }); }
 
         function updateGame() {
             updateAndDrawDemoBg();
             if (isAnimatedInk(currentColor) || gridData.some((row) => row.some(isAnimatedInk))) {
-                if (homeScreen.style.display === 'none' && currentUiStep === 1) drawEditorGrid();
-                else if (homeScreen.style.display === 'none' && currentUiStep === 2) renderLobbyPreview();
+                if (homeScreen && homeScreen.style.display === 'none' && currentUiStep === 1) drawEditorGrid();
+                else if (homeScreen && homeScreen.style.display === 'none' && currentUiStep === 2) renderLobbyPreview();
             }
             for (const c of confettiParticles) {
                 c.x += c.vx; c.y += c.vy;
@@ -2261,13 +2571,15 @@
                 if (bossTrail[i].life <= 0) bossTrail.splice(i, 1);
             }
 
-            if (!player.isDead && !player.isEliminated && !isTyping) {
+            if (!player.isDead && !player.isEliminated && !isTyping && !isLocalPlayerTimeStopped()) {
                 const isShielding = now < player.shieldUntil;
                 const isAbsoluteWall = now < player.absoluteWallUntil;
                 const isBoosted = now < player.speedBoostUntil;
+                const isPhantomBoots = player.ultraState === 'phantom_boots' && Date.now() < player.ultraStateUntil;
                 const isSlowed = now < (player.slowUntil || 0);
                 let spd = player.stats.spd;
                 if (isBoosted) spd *= RULES.ITEMS.speed.speedMultiplier;
+                if (isPhantomBoots) spd *= 2.0;
                 if (isSlowed) spd *= (player.slowMultiplier || 0.75);
                 if (isShielding) spd *= 0.7;
 
@@ -2292,7 +2604,7 @@
                     nextX = Math.min(ARENA_WIDTH - charDisplaySize, Math.max(0, nextX));
                     nextY = Math.min(ARENA_HEIGHT - charDisplaySize, Math.max(ARENA_TOP, nextY));
                     const facingChanged = (player.facing !== nextFacing); player.facing = nextFacing;
-                    const canMove = !collidesWithWall(nextX, nextY, charDisplaySize);
+                    const canMove = isPhantomBoots || !collidesWithWall(nextX, nextY, charDisplaySize);
                     const posChanged = canMove && (Math.abs(player.x - nextX) > 0.01 || Math.abs(player.y - nextY) > 0.01);
                     if (posChanged) { player.x = nextX; player.y = nextY; }
                     if ((posChanged || facingChanged) && socket && socket.connected && activeRoom) socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
@@ -2330,6 +2642,29 @@
                 }
                 if (p.life <= 0 || p.x < 0 || p.x > ARENA_WIDTH || p.y < ARENA_TOP || p.y > ARENA_HEIGHT) projectiles.splice(i, 1);
             }
+            const nowEpoch = Date.now();
+            const activeTrailPlayers = [[socket && socket.id, player], ...Object.entries(otherPlayers)];
+            activeTrailPlayers.forEach(([id, p]) => {
+                if (!id || p.ultraState !== 'phantom_boots' || nowEpoch >= (p.ultraStateUntil || 0)) return;
+                const trail = phantomBootsTrails[id] || (phantomBootsTrails[id] = []);
+                const last = trail[trail.length - 1];
+                if (!last || now - last.startedAt >= 55 || Math.hypot(p.x - last.x, p.y - last.y) >= 5) {
+                    trail.push({ x: p.x + 24, y: p.y + 24, startedAt: now });
+                }
+                phantomBootsTrails[id] = trail.filter((point) => now - point.startedAt < 500);
+            });
+            for (let i = ultraRicochetBullets.length - 1; i >= 0; i--) {
+                const bullet = ultraRicochetBullets[i];
+                bullet.x += Number(bullet.vx) || 0;
+                bullet.y += Number(bullet.vy) || 0;
+                bullet.lifeMs -= FIXED_STEP_MS;
+                if (now - bullet.lastTrailAt >= 45) {
+                    bullet.trail.push({ x: bullet.x, y: bullet.y });
+                    if (bullet.trail.length > 9) bullet.trail.shift();
+                    bullet.lastTrailAt = now;
+                }
+                if (bullet.lifeMs <= 0) ultraRicochetBullets.splice(i, 1);
+            }
             for (let i = slashEffects.length - 1; i >= 0; i--) if (now - slashEffects[i].startedAt >= slashEffects[i].durationMs) slashEffects.splice(i, 1);
             for (let i = ultraEffects.length - 1; i >= 0; i--) if (now - ultraEffects[i].startedAt >= ultraEffects[i].durationMs) ultraEffects.splice(i, 1);
 
@@ -2358,19 +2693,21 @@
                 const t = Math.min(1, (now - s.startedAt) / s.durationMs), alpha = 1 - t;
                 const colors = getElementVisualColors(s.element, s.specialInkType, now);
                 const sweepStart = s.baseAngle - 0.95, sweepEnd = s.baseAngle + 0.95, curEnd = sweepStart + (sweepEnd - sweepStart) * Math.min(1, t * 1.65);
+                const reach = s.reach || 56;
                 c.save(); c.translate(s.x, s.y);
                 for (let ghost = 2; ghost >= 1; ghost--) {
-                    c.beginPath(); c.arc(0, 0, 52 - ghost * 6, sweepStart, curEnd);
-                    c.strokeStyle = s.isPowered ? '#ff2a00' : colors.primary; c.globalAlpha = alpha * (ghost === 1 ? 0.38 : 0.18);
-                    c.lineWidth = 14 - ghost * 3; c.lineCap = 'round'; c.stroke();
+                    c.beginPath(); c.arc(0, 0, reach * (0.93 - ghost * 0.1), sweepStart, curEnd);
+                    c.strokeStyle = s.isDemonBlade ? (ghost === 1 ? '#ff496c' : '#f8a5ff') : (s.isPowered ? '#ff2a00' : colors.primary);
+                    c.globalAlpha = alpha * (ghost === 1 ? 0.48 : 0.22);
+                    c.lineWidth = (s.isDemonBlade ? 18 : 14) - ghost * 3; c.lineCap = 'round'; c.stroke();
                 }
                 c.globalAlpha = alpha;
-                c.beginPath(); c.arc(0, 0, 56, sweepStart, curEnd, false);
-                c.arc(Math.cos(s.baseAngle) * -8, Math.sin(s.baseAngle) * -8, 44, curEnd, sweepStart, true);
+                c.beginPath(); c.arc(0, 0, reach, sweepStart, curEnd, false);
+                c.arc(Math.cos(s.baseAngle) * -8, Math.sin(s.baseAngle) * -8, reach * 0.78, curEnd, sweepStart, true);
                 c.closePath(); c.fillStyle = s.isPowered ? '#ff4d4d' : colors.primary; c.fill();
-                c.beginPath(); c.arc(0, 0, 54, sweepStart + 0.12, curEnd);
-                c.strokeStyle = colors.glow; c.lineWidth = 3.5; c.lineCap = 'round'; c.stroke();
-                const tipX = Math.cos(curEnd) * 56, tipY = Math.sin(curEnd) * 56;
+                c.beginPath(); c.arc(0, 0, reach * 0.96, sweepStart + 0.12, curEnd);
+                c.strokeStyle = s.isDemonBlade ? '#fff1f2' : colors.glow; c.lineWidth = s.isDemonBlade ? 5 : 3.5; c.lineCap = 'round'; c.stroke();
+                const tipX = Math.cos(curEnd) * reach, tipY = Math.sin(curEnd) * reach;
                 c.fillStyle = '#fff'; c.beginPath(); c.arc(tipX, tipY, 4.5 * alpha + 1, 0, Math.PI * 2); c.fill();
                 for (const sp of s.sparks) if (sp.ang <= curEnd) {
                     const dist = sp.r + t * 14; c.fillStyle = colors.spark;
@@ -2381,10 +2718,76 @@
         }
 
         function drawUltraEffects(c, now) {
+            const epochNow = Date.now();
+            const ultraPlayers = [[socket && socket.id, player], ...Object.entries(otherPlayers)];
+            ultraPlayers.forEach(([id, p]) => {
+                if (!id || !p || epochNow >= (p.ultraStateUntil || 0)) return;
+                const cx = p.x + 24, cy = p.y + 24;
+                if (p.ultraState === 'demon_blade') {
+                    c.save(); c.translate(cx, cy);
+                    c.globalAlpha = 0.68 + Math.sin(now / 70) * 0.16;
+                    c.beginPath(); c.arc(0, 0, 34 + Math.sin(now / 95) * 3, 0, Math.PI * 2);
+                    c.strokeStyle = '#ff4d6d'; c.lineWidth = 3.5; c.stroke();
+                    c.beginPath(); c.arc(0, 0, 42, now / 180, now / 180 + Math.PI * 1.35);
+                    c.strokeStyle = '#ffd166'; c.lineWidth = 2; c.stroke();
+                    const angle = p.facing === 'left' ? Math.PI : p.facing === 'up' ? -Math.PI / 2 : p.facing === 'down' ? Math.PI / 2 : 0;
+                    c.rotate(angle + Math.sin(now / 110) * 0.18);
+                    c.fillStyle = '#fff1f2'; c.strokeStyle = '#ff496c'; c.lineWidth = 2.5;
+                    c.beginPath(); c.moveTo(20, -5); c.lineTo(66, 0); c.lineTo(20, 5); c.closePath(); c.fill(); c.stroke();
+                    c.restore();
+                } else if (p.ultraState === 'ricochet_guns') {
+                    c.save(); c.translate(cx, cy);
+                    c.globalAlpha = 0.85;
+                    for (let i = 0; i < 2; i++) {
+                        c.save(); c.rotate(now / 260 * (i ? -1 : 1) + i * Math.PI);
+                        c.fillStyle = '#dbeafe'; c.strokeStyle = '#60a5fa'; c.lineWidth = 2;
+                        c.fillRect(30, -5, 20, 10); c.strokeRect(30, -5, 20, 10);
+                        c.fillStyle = '#93c5fd'; c.fillRect(46, -2, 9, 4); c.restore();
+                    }
+                    c.beginPath(); c.arc(0, 0, 29, 0, Math.PI * 2);
+                    c.strokeStyle = 'rgba(96,165,250,0.65)'; c.lineWidth = 2; c.stroke();
+                    c.restore();
+                } else if (p.ultraState === 'phantom_boots') {
+                    c.save(); c.globalAlpha = 0.24;
+                    c.fillStyle = '#7dd3fc'; c.beginPath(); c.ellipse(cx, cy, 29, 33, 0, 0, Math.PI * 2); c.fill();
+                    c.globalAlpha = 0.9; c.fillStyle = '#bae6fd';
+                    c.font = 'bold 15px sans-serif'; c.textAlign = 'center'; c.fillText('〰', cx, cy + 5);
+                    c.restore();
+                }
+            });
+            Object.values(phantomBootsTrails).forEach((trail) => trail.forEach((point) => {
+                const alpha = Math.max(0, 0.26 * (1 - (now - point.startedAt) / 500));
+                if (alpha <= 0) return;
+                c.save(); c.globalAlpha = alpha; c.fillStyle = '#7dd3fc';
+                c.beginPath(); c.ellipse(point.x, point.y, 23, 28, 0, 0, Math.PI * 2); c.fill(); c.restore();
+            }));
+            ultraRicochetBullets.forEach((bullet) => {
+                c.save();
+                if (bullet.trail.length > 1) {
+                    c.beginPath(); c.moveTo(bullet.trail[0].x, bullet.trail[0].y);
+                    bullet.trail.slice(1).forEach((point) => c.lineTo(point.x, point.y));
+                    c.lineTo(bullet.x, bullet.y); c.strokeStyle = 'rgba(96,165,250,0.72)'; c.lineWidth = 3; c.lineCap = 'round'; c.stroke();
+                }
+                c.beginPath(); c.arc(bullet.x, bullet.y, 7, 0, Math.PI * 2);
+                c.fillStyle = '#60a5fa'; c.fill(); c.strokeStyle = '#e0f2fe'; c.lineWidth = 2; c.stroke();
+                c.restore();
+            });
             for (const ef of ultraEffects) {
                 const t = Math.min(1, (now - ef.startedAt) / ef.durationMs), colors = getElementVisualColors(ef.element, null, now);
                 c.save();
-                if (ef.kind === 'end_charge') {
+                if (ef.kind === 'ricochet_bounce' || ef.kind === 'ricochet_hit') {
+                    const fade = 1 - t, radius = ef.kind === 'ricochet_hit' ? 22 + t * 28 : 12 + t * 24;
+                    c.globalAlpha = fade;
+                    c.beginPath(); c.arc(ef.x, ef.y, radius, 0, Math.PI * 2);
+                    c.strokeStyle = ef.kind === 'ricochet_hit' ? '#fff1a8' : '#93c5fd';
+                    c.lineWidth = ef.kind === 'ricochet_hit' ? 4 : 3; c.stroke();
+                    c.beginPath(); c.arc(ef.x, ef.y, radius * 0.58, 0, Math.PI * 2);
+                    c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.stroke();
+                    if (ef.kind === 'ricochet_hit') {
+                        c.beginPath(); c.moveTo(ef.x - 12, ef.y); c.lineTo(ef.x + 12, ef.y);
+                        c.moveTo(ef.x, ef.y - 12); c.lineTo(ef.x, ef.y + 12); c.stroke();
+                    }
+                } else if (ef.kind === 'end_charge') {
                     const target = ef.playerId === (socket && socket.id) ? player : otherPlayers[ef.playerId];
                     const cx = target ? target.x + 24 : ef.x, cy = target ? target.y + 24 : ef.y;
                     const facing = (target && target.facing) || ef.facing || 'right';
@@ -2502,6 +2905,22 @@
                         c.strokeStyle = '#ffffff'; c.lineWidth = 3.5; c.stroke();
                     }
                 }
+                c.restore();
+            }
+            if (timeStopUntil > epochNow) {
+                const remainingMs = timeStopUntil - epochNow;
+                const caster = timeStopCasterId === (socket && socket.id) ? player : otherPlayers[timeStopCasterId];
+                const cx = caster ? caster.x + 24 : ARENA_CENTER_X, cy = caster ? caster.y + 24 : ARENA_CENTER_Y;
+                c.save();
+                c.fillStyle = 'rgba(100, 190, 255, 0.14)'; c.fillRect(0, ARENA_TOP, ARENA_WIDTH, ARENA_HEIGHT - ARENA_TOP);
+                c.fillStyle = 'rgba(120, 110, 255, 0.08)'; c.fillRect(0, ARENA_TOP, ARENA_WIDTH, ARENA_HEIGHT - ARENA_TOP);
+                c.beginPath(); c.arc(cx, cy, 66, 0, Math.PI * 2);
+                c.strokeStyle = 'rgba(157, 224, 255, 0.9)'; c.lineWidth = 3; c.stroke();
+                c.beginPath(); c.arc(cx, cy, 78, 0, Math.PI * 2);
+                c.setLineDash([6, 7]); c.strokeStyle = 'rgba(192, 132, 252, 0.85)'; c.lineWidth = 2; c.stroke(); c.setLineDash([]);
+                c.textAlign = 'center'; c.font = 'bold 17px sans-serif'; c.fillStyle = '#e0f2fe';
+                c.shadowColor = '#38bdf8'; c.shadowBlur = 12;
+                c.fillText(`⏳ 時間停止 ${(remainingMs / 1000).toFixed(1)}s`, cx, cy - 94);
                 c.restore();
             }
         }
@@ -2664,7 +3083,7 @@
             const items = [];
             const slowRemainMs = Math.max(0, (player.slowUntil || 0) - nowPerf);
             if (slowRemainMs > 0) {
-                items.push({ label: '🐢 移動速度低下 (0.75x)', remainMs: slowRemainMs, maxMs: 2000, bg: 'rgba(38, 12, 68, 0.88)', border: '#c084fc', text: '#f5d0fe', barBg: '#2e1065', barFill: '#c084fc' });
+                items.push({ label: '🐢 移動速度低下 (0.75x)', remainMs: slowRemainMs, maxMs: Math.max(slowRemainMs, Number(player.slowDurationMs) || DEFAULT_SLOW_DURATION_MS), bg: 'rgba(38, 12, 68, 0.88)', border: '#c084fc', text: '#f5d0fe', barBg: '#2e1065', barFill: '#c084fc' });
             }
             const atkRemainMs = Math.max(0, (player.attackDebuffUntil || 0) - nowPerf);
             if (atkRemainMs > 0) {
@@ -2714,8 +3133,8 @@
             gameCtx.fillStyle = 'rgba(11, 14, 29, 0.88)';
             gameCtx.strokeStyle = activeState ? '#ffd60a' : (cdRemain === 0 && uses > 0 ? '#00e5ff' : '#415294');
             gameCtx.lineWidth = 1.5;
-            gameCtx.fillRect(10, ARENA_HEIGHT - 46, 256, 36);
-            gameCtx.strokeRect(10, ARENA_HEIGHT - 46, 256, 36);
+            gameCtx.fillRect(10, ARENA_HEIGHT - 46, 300, 36);
+            gameCtx.strokeRect(10, ARENA_HEIGHT - 46, 300, 36);
 
             // スキル名と残り回数 (×1〜×3)
             gameCtx.font = 'bold 12px sans-serif';
@@ -2726,7 +3145,7 @@
             // 右側ステータス表示
             gameCtx.textAlign = 'right';
             gameCtx.fillStyle = stateColor;
-            gameCtx.fillText(stateText, 258, ARENA_HEIGHT - 29);
+            gameCtx.fillText(stateText, 302, ARENA_HEIGHT - 29);
 
             // ストックピップ (×1〜×3)
             for (let i = 0; i < maxUses; i++) {
@@ -2738,7 +3157,7 @@
 
             // 6000ms クールダウン進行バー
             const barX = 18 + maxUses * 14 + 4;
-            const barW = 258 - barX;
+            const barW = 302 - barX;
             gameCtx.fillStyle = '#1f2847';
             gameCtx.fillRect(barX, ARENA_HEIGHT - 20, barW, 5);
             gameCtx.fillStyle = activeState ? '#ffd60a' : (cdRatio >= 1 && uses > 0 ? '#00e5ff' : '#f39c12');
@@ -2747,6 +3166,7 @@
         }
 
         function drawGame() {
+            if (!gameCtx || !gameCanvas) return;
             const now = performance.now();
             gameCtx.save();
             if (shakeTime > 0) { gameCtx.translate((Math.random() - 0.5) * shakeIntensity, (Math.random() - 0.5) * shakeIntensity); shakeTime--; }
