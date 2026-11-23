@@ -3065,7 +3065,7 @@
                 }
             }
             if (skill.id === 'sky_meteor') {
-                if (skill.warnMs !== 650 || skill.durationMs !== 320) {
+                if (skill.warnMs !== 650 || skill.durationMs !== 700) {
                     errors.push(`sky_meteor timing mismatch (warnMs=${skill.warnMs}, durationMs=${skill.durationMs})`);
                 }
                 if (
