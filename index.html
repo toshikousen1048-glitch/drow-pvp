@@ -279,8 +279,40 @@
         .ultra-action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
         .kbd { background: #090b16; border: 1px solid #555; padding: 1px 5px; border-radius: 4px; font-family: monospace; color: #f1c40f; font-weight: bold; }
         #resultOverlay {
-            position: absolute; inset: 0; background: rgba(9,11,22,0.92); border-radius: 8px; display: none;
-            flex-direction: column; align-items: center; justify-content: center; padding: 16px; text-align: center; z-index: 20;
+            position: fixed; inset: 0; background: rgba(9,11,22,0.97); display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            padding: 12px 16px; text-align: center; z-index: 120; overflow-y: auto;
+        }
+        @media (orientation: landscape) and (max-height: 540px) {
+            #resultOverlay {
+                justify-content: flex-start;
+                padding: 8px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+            }
+            #resultOverlay #resultTitle {
+                font-size: 1.3rem !important;
+                margin: 2px 0 4px !important;
+            }
+            #resultOverlay #winnerCanvas {
+                width: 48px !important;
+                height: 48px !important;
+                margin: 2px 0 !important;
+            }
+            #resultOverlay #winnerNameDisplay {
+                font-size: 0.85rem !important;
+                margin-bottom: 4px !important;
+            }
+            #resultOverlay #resultScoreList {
+                margin: 4px 0 !important;
+                padding: 5px 8px !important;
+            }
+            #resultOverlay .ready-row {
+                padding: 2px 4px;
+                font-size: 0.78rem;
+            }
+            #resultOverlay button {
+                padding: 7px 16px !important;
+                font-size: 0.86rem !important;
+            }
         }
         #touchControls { display: none; flex-shrink: 0; width: 100%; max-width: 720px; justify-content: space-between; align-items: center; padding: 2px 8px; user-select: none; }
         #touchControls.visible { display: flex; }
@@ -2447,6 +2479,7 @@
                 const resultTitle = document.getElementById('resultTitle'), winnerNameDisplay = document.getElementById('winnerNameDisplay');
                 const winnerCanvas = document.getElementById('winnerCanvas'), wCtx = winnerCanvas.getContext('2d');
                 wCtx.clearRect(0, 0, 76, 76);
+                winnerCanvas.style.display = 'none';
 
                 if (data.mode === 'boss') {
                     const bossLabel = data.bossName || 'BOSS';
@@ -2455,6 +2488,17 @@
                         const mvpPlayer = data.mvpId ? allPlayers[data.mvpId] : null;
                         const unlockMsg = data.nextStageNumber ? ` ｜ 🔓 STAGE ${data.nextStageNumber} 解放！` : ' ｜ 🏆 全ステージ制覇！';
                         winnerNameDisplay.textContent = (mvpPlayer ? `${bossLabel} 討伐！ 👑MVP: ${mvpPlayer.name} (+${earnedThisMatch}Pt)` : `${bossLabel} 討伐！ (+${earnedThisMatch}Pt)`) + unlockMsg;
+                        if (mvpPlayer) {
+                            const mvpGrid = mvpPlayer.id === socket.id ? gridData : mvpPlayer.characterData;
+                            if (Array.isArray(mvpGrid) && mvpGrid.length > 0) {
+                                winnerCanvas.style.display = 'block';
+                                const gSize = mvpGrid.length, pScale = 76 / gSize;
+                                for (let dy = 0; dy < gSize; dy++) for (let dx = 0; dx < gSize; dx++) if (mvpGrid[dy] && mvpGrid[dy][dx]) {
+                                    wCtx.fillStyle = resolvePixelColor(mvpGrid[dy][dx], performance.now());
+                                    wCtx.fillRect(dx * pScale, dy * pScale, pScale + 0.25, pScale + 0.25);
+                                }
+                            }
+                        }
                         spawnConfetti(); retryStageBtn.style.display = 'none';
                         rematchBtn.textContent = data.nextStageNumber ? `➡️ ロビーへ（STAGE ${data.nextStageNumber} へ）` : '🔄 ロビーに戻る';
                     } else {
@@ -2473,6 +2517,7 @@
                     const winner = data.winner;
                     if (winner) {
                         const isMe = winner.id === socket.id;
+                        winnerCanvas.style.display = 'block';
                         resultTitle.textContent = isMe ? '🏆 YOU WIN!!' : '👑 CHAMPION!'; resultTitle.style.color = isMe ? '#f1c40f' : '#3498db';
                         winnerNameDisplay.textContent = `[${winner.rank}] ${winner.name} の勝利！${isMe ? ` (+${earnedThisMatch}Pt獲得)` : ''}`;
                         const wGrid = isMe ? gridData : winner.characterData;
