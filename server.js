@@ -469,21 +469,32 @@ function isTimeStoppedForActor(room, actorId, now) {
 }
 
 function clearRoomTimeStopIfOwner(roomId, ownerId) {
-    const room = rooms[roomId];
-    if (!room) return;
-    if (room.timeStopOwnerId === ownerId) {
-        if (room.timeStopTimer) {
-            clearTimeout(room.timeStopTimer);
-            room.timeStopTimer = null;
-        }
-        room.timeStopOwnerId = null;
-        room.timeStopUntil = 0;
-        io.to(roomId).emit('ultraSkillEvent', {
-            playerId: ownerId,
-            skillId: 'time_stop',
-            phase: 'end'
-        });
-    }
+const room = rooms[roomId];
+if (!room) return;
+if (room.timeStopOwnerId === ownerId) {
+const now = Date.now();
+const unspentMs = Math.max(0, (room.timeStopUntil || 0) - now);
+if (room.timeStopTimer) {
+clearTimeout(room.timeStopTimer);
+room.timeStopTimer = null;
+}
+room.timeStopOwnerId = null;
+room.timeStopUntil = 0;
+if (unspentMs > 0) {
+if (room.boss && room.boss.scaleAuraActive && room.boss.scaleAuraUntil > now) {
+room.boss.scaleAuraUntil = Math.max(now, room.boss.scaleAuraUntil - unspentMs);
+io.to(roomId).emit('bossStateUpdated', room.boss);
+}
+if (room.bossRoarPullUntil > now) {
+room.bossRoarPullUntil = Math.max(now, room.bossRoarPullUntil - unspentMs);
+}
+}
+io.to(roomId).emit('ultraSkillEvent', {
+playerId: ownerId,
+skillId: 'time_stop',
+phase: 'end'
+});
+}
 }
 
 function clearPlayerUltraStateAndTimers(p) {
@@ -1106,125 +1117,131 @@ function stepUltraProjectiles(roomId, matchId, dtMs) {
     const now = Date.now();
     const stepFrames = Math.min(4, Math.max(0.5, dtMs / (1000 / 60)));
 
-    for (let i = room.ultraProjectiles.length - 1; i >= 0; i--) {
+        for (let i = room.ultraProjectiles.length - 1; i >= 0; i--) {
+        if (room.state !== 'playing' || room.matchId !== matchId) return;
         const up = room.ultraProjectiles[i];
+        if (!up) continue;
         if (isTimeStoppedForActor(room, up.ownerId, now)) continue;
-
         up.life -= stepFrames;
-        if (up.life <= 0) {
-            io.to(roomId).emit('ultraSkillEvent', {
-                playerId: up.ownerId,
-                skillId: 'ricochet_guns',
-                phase: 'despawn',
-                bulletId: up.id
-            });
-            room.ultraProjectiles.splice(i, 1);
-            continue;
-        }
+            if (up.life <= 0) {
+                io.to(roomId).emit('ultraSkillEvent', {
+                    playerId: up.ownerId,
+                    skillId: 'ricochet_guns',
+                    phase: 'despawn',
+                    bulletId: up.id
+                });
+                room.ultraProjectiles.splice(i, 1);
+                continue;
+            }
 
-        const totalDx = up.vx * stepFrames;
-        const totalDy = up.vy * stepFrames;
-        const subSteps = Math.max(1, Math.ceil(Math.hypot(totalDx, totalDy) / 4.5));
-        const subDx = totalDx / subSteps;
-        const subDy = totalDy / subSteps;
-        const r = up.radius || 6;
+            const totalDx = up.vx * stepFrames;
+            const totalDy = up.vy * stepFrames;
+            const subSteps = Math.max(1, Math.ceil(Math.hypot(totalDx, totalDy) / 4.5));
+            let subDx = totalDx / subSteps;
+            let subDy = totalDy / subSteps;
+            const r = up.radius || 6;
 
-        let destroyed = false;
-        let bouncedThisTick = false;
+            let destroyed = false;
+            let bouncedThisTick = false;
 
-        for (let s = 0; s < subSteps; s++) {
-            let nextX = up.x + subDx;
-            let hitX = false;
-            if (nextX - r <= 0 || nextX + r >= ARENA_WIDTH) {
-                hitX = true;
-            } else {
-                const colX = findWallOrObstacleAtPoint(room, nextX, up.y, r);
-                if (colX) {
+            for (let s = 0; s < subSteps; s++) {
+                let nextX = up.x + subDx;
+                let hitX = false;
+                if (nextX - r <= 0 || nextX + r >= ARENA_WIDTH) {
                     hitX = true;
-                    if (colX.kind === 'wall') {
-                        colX.obj.hp -= 10;
-                        if (colX.obj.hp <= 0) {
-                            room.walls.splice(colX.index, 1);
+                } else {
+                    const colX = findWallOrObstacleAtPoint(room, nextX, up.y, r);
+                    if (colX) {
+                        hitX = true;
+                        if (colX.kind === 'wall') {
+                            colX.obj.hp -= 10;
+                            if (colX.obj.hp <= 0) {
+                                room.walls.splice(colX.index, 1);
+                            }
+                            io.to(roomId).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
                         }
-                        io.to(roomId).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
                     }
                 }
-            }
-            if (hitX) {
-                if (up.bouncesLeft > 0) {
-                    up.vx = -up.vx;
-                    up.bouncesLeft -= 1;
-                    bouncedThisTick = true;
-                    nextX = Math.max(r + 1, Math.min(ARENA_WIDTH - r - 1, up.x));
-                } else {
-                    destroyed = true;
-                    break;
-                }
-            }
-            up.x = nextX;
-
-            let nextY = up.y + subDy;
-            let hitY = false;
-            if (nextY - r <= ARENA_TOP || nextY + r >= ARENA_HEIGHT) {
-                hitY = true;
-            } else {
-                const colY = findWallOrObstacleAtPoint(room, up.x, nextY, r);
-                if (colY) {
-                    hitY = true;
-                    if (colY.kind === 'wall') {
-                        colY.obj.hp -= 10;
-                        if (colY.obj.hp <= 0) {
-                            room.walls.splice(colY.index, 1);
-                        }
-                        io.to(roomId).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
-                    }
-                }
-            }
-            if (hitY) {
-                if (up.bouncesLeft > 0) {
-                    up.vy = -up.vy;
-                    up.bouncesLeft -= 1;
-                    bouncedThisTick = true;
-                    nextY = Math.max(ARENA_TOP + r + 1, Math.min(ARENA_HEIGHT - r - 1, up.y));
-                } else {
-                    destroyed = true;
-                    break;
-                }
-            }
-            up.y = nextY;
-
-            const owner = room.players[up.ownerId];
-            if (owner) {
-                const powerMult = now < (owner.powerBoostUntil || 0) ? 1.5 : 1.0;
-                const rawDamage = up.fixedDamage * powerMult;
-
-                if (room.mode === 'boss' && room.boss && room.boss.hp > 0 && !room.boss.isStealthed) {
-                    if (Math.hypot(up.x - room.boss.x, up.y - room.boss.y) <= room.boss.radius + r + 4) {
-                        applyDamageToBossInternal(roomId, owner, rawDamage, 'ultra_ricochet', 'ultra');
+                if (hitX) {
+                    if (up.bouncesLeft > 0) {
+                        up.vx = -up.vx;
+                        subDx = -subDx;
+                        up.bouncesLeft -= 1;
+                        bouncedThisTick = true;
+                        nextX = Math.max(r + 1, Math.min(ARENA_WIDTH - r - 1, up.x));
+                    } else {
                         destroyed = true;
                         break;
                     }
-                } else if (room.mode === 'pvp') {
-                    for (const tid in room.players) {
-                        if (tid === up.ownerId) continue;
-                        const target = room.players[tid];
-                        if (!target || target.isDead || target.isEliminated) continue;
-                        const tc = playerCenter(target);
-                        if (Math.hypot(up.x - tc.x, up.y - tc.y) <= 22 + r) {
-                            const knockDir = Math.abs(up.vx) >= Math.abs(up.vy)
-                                ? (up.vx >= 0 ? 'right' : 'left')
-                                : (up.vy >= 0 ? 'down' : 'up');
-                            applyDamageToPlayerInternal(roomId, target, owner, rawDamage, knockDir, 'ultra_ricochet', matchId, owner.element);
+                }
+                up.x = nextX;
+
+                let nextY = up.y + subDy;
+                let hitY = false;
+                if (nextY - r <= ARENA_TOP || nextY + r >= ARENA_HEIGHT) {
+                    hitY = true;
+                } else {
+                    const colY = findWallOrObstacleAtPoint(room, up.x, nextY, r);
+                    if (colY) {
+                        hitY = true;
+                        if (colY.kind === 'wall') {
+                            colY.obj.hp -= 10;
+                            if (colY.obj.hp <= 0) {
+                                room.walls.splice(colY.index, 1);
+                            }
+                            io.to(roomId).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
+                        }
+                    }
+                }
+                if (hitY) {
+                    if (up.bouncesLeft > 0) {
+                        up.vy = -up.vy;
+                        subDy = -subDy;
+                        up.bouncesLeft -= 1;
+                        bouncedThisTick = true;
+                        nextY = Math.max(ARENA_TOP + r + 1, Math.min(ARENA_HEIGHT - r - 1, up.y));
+                    } else {
+                        destroyed = true;
+                        break;
+                    }
+                }
+                up.y = nextY;
+
+                const owner = room.players[up.ownerId];
+                if (owner) {
+                    const powerMult = now < (owner.powerBoostUntil || 0) ? 1.5 : 1.0;
+                    const rawDamage = up.fixedDamage * powerMult;
+
+                    if (room.mode === 'boss' && room.boss && room.boss.hp > 0 && !room.boss.isStealthed) {
+                        if (Math.hypot(up.x - room.boss.x, up.y - room.boss.y) <= room.boss.radius + r + 4) {
+                            applyDamageToBossInternal(roomId, owner, rawDamage, 'ultra_ricochet', 'ultra');
+                            if (room.state !== 'playing' || room.matchId !== matchId) return;
                             destroyed = true;
                             break;
                         }
+                    } else if (room.mode === 'pvp') {
+                        for (const tid in room.players) {
+                            if (tid === up.ownerId) continue;
+                            const target = room.players[tid];
+                            if (!target || target.isDead || target.isEliminated) continue;
+                            const tc = playerCenter(target);
+                            if (Math.hypot(up.x - tc.x, up.y - tc.y) <= 22 + r) {
+                                const knockDir = Math.abs(up.vx) >= Math.abs(up.vy)
+                                    ? (up.vx >= 0 ? 'right' : 'left')
+                                    : (up.vy >= 0 ? 'down' : 'up');
+                                applyDamageToPlayerInternal(roomId, target, owner, rawDamage, knockDir, 'ultra_ricochet', matchId, owner.element);
+                                if (room.state !== 'playing' || room.matchId !== matchId) return;
+                                destroyed = true;
+                                break;
+                            }
+                        }
+                        if (destroyed) break;
                     }
-                    if (destroyed) break;
                 }
             }
-        }
 
-        if (destroyed) {
+    if (room.state !== 'playing' || room.matchId !== matchId) return;
+    if (destroyed) {
             io.to(roomId).emit('ultraSkillEvent', {
                 playerId: up.ownerId,
                 skillId: 'ricochet_guns',
@@ -3049,24 +3066,22 @@ io.on('connection', (socket) => {
             const hasBoots = now < (p.bootsBuffUntil || 0) + 200;
             const slowed = now < (p.slowUntil || 0);
             const slowMult = slowed ? (p.slowMultiplier || 0.75) : 1.0;
-            const bootsMult = hasBoots ? 2.0 : 1.0;
+            const bootsMult = hasBoots ? 1.5 : 1.0;
             const effSpd = p.stats.spd * (boosted ? GAME_RULES.ITEMS.speed.speedMultiplier : 1) * slowMult * bootsMult;
             const perSec = (effSpd + (room.mode === 'boss' ? 2.2 : 0)) * 60;
             const budget = perSec * (dt / 1000) * 1.3 + 64;
             const dist = Math.hypot(nx - p.x, ny - p.y);
             if (dist > budget) {
-                const ratio = budget / dist;
-                nx = p.x + (nx - p.x) * ratio;
-                ny = p.y + (ny - p.y) * ratio;
+            const ratio = budget / dist;
+            nx = p.x + (nx - p.x) * ratio;
+            ny = p.y + (ny - p.y) * ratio;
             }
 
-            if (!hasBoots) {
-                const wasInWall = overlapsBreakableWall(room, p.x, p.y, CHAR_SIZE, 6);
-                if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12) || (!wasInWall && overlapsBreakableWall(room, nx, ny, CHAR_SIZE, 6))) {
-                    nx = p.x;
-                    ny = p.y;
-                }
-            }
+            const wasInWall = overlapsBreakableWall(room, p.x, p.y, CHAR_SIZE, 6);
+        if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12) || (!wasInWall && overlapsBreakableWall(room, nx, ny, CHAR_SIZE, 6))) {
+            nx = p.x;
+            ny = p.y;
+        }
 
             const moveDx = nx - p.x;
             const moveDy = ny - p.y;
@@ -3227,9 +3242,12 @@ io.on('connection', (socket) => {
         const hitType = sanitizeHitType(attackData.type);
         if (!p || p.isDead || p.isEliminated || !hitType) return;
 
-        const refillMs = hitType === 'melee'
+        const now = Date.now();
+        const baseRefillMs = hitType === 'melee'
             ? GAME_RULES.ACTIONS.slash.cooldownMs
             : GAME_RULES.ACTIONS.shot.cooldownMs;
+        const atkSpeedMult = now < (p.bootsBuffUntil || 0) ? 1.5 : 1.0;
+        const refillMs = Math.floor(baseRefillMs / atkSpeedMult);
         const allowed = takeToken(p, hitType, refillMs, 1);
         if (!allowed) return;
 
@@ -3241,9 +3259,7 @@ io.on('connection', (socket) => {
             oy = c.y;
         }
         const facing = VALID_FACING.includes(attackData.facing) ? attackData.facing : p.facing;
-        p.facing = facing;
-
-        const now = Date.now();
+    p.facing = facing;
         const boostedSpd = now < p.speedBoostUntil ? p.stats.spd * GAME_RULES.ITEMS.speed.speedMultiplier : p.stats.spd;
         const isPowered = now < p.powerBoostUntil;
 
@@ -3678,8 +3694,12 @@ io.on('connection', (socket) => {
                     phase: 'end'
                 });
             }, durationMs);
-        } else if (skill.id === 'phantom_boots') {
-            const durationMs = Number(skill.durationMs) || 4000;
+            } else if (skill.id === 'phantom_boots') {
+            const durationMs = Number(skill.durationMs) || 5000;
+            const healIntervalMs = Number(skill.healTickIntervalMs) || 1000;
+            const healAmount = Number(skill.healTickAmount) || 10;
+            const healTicks = Math.max(1, Math.floor(durationMs / healIntervalMs));
+
             p.ultraState = 'boots_active';
             p.ultraStateUntil = activatedAt + durationMs;
             p.bootsBuffUntil = activatedAt + durationMs;
@@ -3696,38 +3716,39 @@ io.on('connection', (socket) => {
                 cooldownUntil: p.ultraCooldownUntil
             });
 
+            const applyBootsHealTick = () => {
+                const cur = rooms[roomId];
+                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
+                const holder = cur.players[p.id];
+                if (!holder || holder.isDead || holder.isEliminated) return;
+                holder.hp = Math.min(holder.maxHp, holder.hp + healAmount);
+                io.to(roomId).emit('ultraSkillEvent', {
+                    playerId: holder.id,
+                    skillId: skill.id,
+                    phase: 'heal_tick',
+                    hp: holder.hp,
+                    maxHp: holder.maxHp,
+                    healAmount
+                });
+            };
+
+            for (let t = 1; t < healTicks; t++) {
+                registerPlayerUltraTimeout(room, p, applyBootsHealTick, t * healIntervalMs);
+            }
+
             registerPlayerUltraTimeout(room, p, () => {
                 const cur = rooms[roomId];
                 if (!cur || cur.state !== 'playing' || cur.matchId !== matchId) return;
                 const holder = cur.players[p.id];
                 if (!holder) return;
+                applyBootsHealTick();
                 holder.ultraState = null;
                 holder.ultraStateUntil = 0;
                 holder.bootsBuffUntil = 0;
-
-                const ejected = ejectPlayerFromObstacles(cur, holder);
-                if (ejected) {
-                    io.to(roomId).emit('playerKnockback', {
-                        id: holder.id,
-                        x: holder.x,
-                        y: holder.y,
-                        facing: holder.facing,
-                        source: 'phantom_boots_eject'
-                    });
-                    io.to(roomId).emit('playerMoved', {
-                        id: holder.id,
-                        x: holder.x,
-                        y: holder.y,
-                        facing: holder.facing
-                    });
-                }
                 io.to(roomId).emit('ultraSkillEvent', {
                     playerId: holder.id,
                     skillId: skill.id,
-                    phase: 'end',
-                    ejected,
-                    x: holder.x,
-                    y: holder.y
+                    phase: 'end'
                 });
             }, durationMs);
         } else if (skill.id === 'ricochet_guns') {

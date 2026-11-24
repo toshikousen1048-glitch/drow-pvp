@@ -496,28 +496,31 @@
             slashRangeMultiplier: 1.5,
             guardableByBarrier: true
         }),
-        phantom_boots: Object.freeze({
+         phantom_boots: Object.freeze({
             id: 'phantom_boots',
             name: '疾風幻影靴',
             type: 'equip_boots',
             rarity: 'A',
             gachaWeight: 15,
-            tag: '装備覚醒・機動',
+            tag: '装備覚醒・疾風再生',
             icon: '👢',
             color: '#00d2d3',
-            description: '4000msの間、移動速度2.0倍＆壁貫通（終了時に壁内の場合は安全な空き位置へ自動押し戻し）',
+            description: '5000msの間、移動速度1.5倍・攻撃速度1.5倍＆1秒毎にHPを10回復（壁貫通なし）',
             chargeMs: 0,
             stanceMs: 0,
             warnMs: 0,
-            durationMs: 4000,
+            durationMs: 5000,
             cooldownMs: ACTIONS.ultra.cooldownMs,
             maxStock: GACHA.ULTRA_MAX_STOCK,
             damageMultiplier: 0,
-            speedMultiplier: 2.0,
-            passWalls: true,
+            speedMultiplier: 1.5,
+            attackSpeedMultiplier: 1.5,
+            healTickIntervalMs: 1000,
+            healTickAmount: 10,
+            passWalls: false,
             guardableByBarrier: false
-        })
-    });
+            })
+        });
 
     const ULTRA_SKILL_ORDER = Object.freeze([
         'end_of_days',
@@ -3205,9 +3208,16 @@
                 }
             }
             if (skill.id === 'phantom_boots') {
-                if (skill.durationMs !== 4000 || skill.speedMultiplier !== 2.0 || skill.passWalls !== true) {
-                    errors.push('phantom_boots parameter mismatch');
-                }
+            if (
+            skill.durationMs !== 5000 ||
+            skill.speedMultiplier !== 1.5 ||
+            skill.attackSpeedMultiplier !== 1.5 ||
+            skill.healTickIntervalMs !== 1000 ||
+            skill.healTickAmount !== 10 ||
+            skill.passWalls !== false
+            ) {
+            errors.push('phantom_boots parameter mismatch');
+            }
             }
             if (skill.id === 'time_stop') {
                 if (skill.durationMs !== 2500) {
