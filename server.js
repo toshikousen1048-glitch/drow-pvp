@@ -69,7 +69,7 @@ const REWARD_PVP_KO = 100;
 const REWARD_BOSS_CONTRIBUTION_POOL = 200;
 const REWARD_BOSS_MVP = 150;
 
-const VALID_FACING = ['up', 'down', 'left', 'right'];
+const VALID_FACING = ['up', 'down', 'left', 'right', 'up_left', 'up_right', 'down_left', 'down_right'];
 const CREDIT_TTL_MS = { shot: 4000, melee: 1500 };
 
 // サーバー側ティックで直接当たり判定を行うBOSS弾種（二重ダメージ防止用）
@@ -301,10 +301,15 @@ function playerCenter(p) {
 }
 
 function facingToVector(facing) {
+    const D = Math.SQRT1_2; // 1 / √2
     switch (facing) {
         case 'up': return { dx: 0, dy: -1 };
         case 'down': return { dx: 0, dy: 1 };
         case 'left': return { dx: -1, dy: 0 };
+        case 'up_left': return { dx: -D, dy: -D };
+        case 'up_right': return { dx: D, dy: -D };
+        case 'down_left': return { dx: -D, dy: D };
+        case 'down_right': return { dx: D, dy: D };
         case 'right':
         default: return { dx: 1, dy: 0 };
     }

@@ -1590,9 +1590,29 @@
         };
         const SHIELD_COOLDOWN = RULES.ACTIONS.shield.cooldownMs, SLASH_COOLDOWN = RULES.ACTIONS.slash.cooldownMs, SHOT_COOLDOWN = RULES.ACTIONS.shot.cooldownMs;
 
+        function facingToVectorClient(facing) {
+            const D = Math.SQRT1_2;
+            switch (facing) {
+                case 'up': return { dx: 0, dy: -1 };
+                case 'down': return { dx: 0, dy: 1 };
+                case 'left': return { dx: -1, dy: 0 };
+                case 'up_left': return { dx: -D, dy: -D };
+                case 'up_right': return { dx: D, dy: -D };
+                case 'down_left': return { dx: -D, dy: D };
+                case 'down_right': return { dx: D, dy: D };
+                case 'right':
+                default: return { dx: 1, dy: 0 };
+            }
+        }
+        function updateHorizontalFacingMemory(entity, facing) {
+            if (!entity || !facing) return;
+            if (facing.includes('left')) entity.lastHorizontalFacing = 'left';
+            else if (facing.includes('right')) entity.lastHorizontalFacing = 'right';
+        }
+
         let player = {
             name: 'ファイター', rank: 'B', title: '駆け出し戦士', element: 'neutral', hasTitleBoost: false,
-            x: ARENA_CENTER_X - 24, y: ARENA_CENTER_Y - 24, facing: 'right',
+            x: ARENA_CENTER_X - 24, y: ARENA_CENTER_Y - 24, facing: 'right', lastHorizontalFacing: 'right',
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' }, hp: 100, maxHp: 100, stocks: 1,
             isDead: false, isEliminated: false, invincibleUntil: 0, shieldUntil: 0, absoluteWallUntil: 0, counterStanceUntil: 0,
             bladeBuffUntil: 0, bootsBuffUntil: 0, gunBuffUntil: 0,
@@ -3123,16 +3143,13 @@
             if (socket && socket.connected && activeRoom) socket.emit('activateUltra', { facing: player.facing });
         }
         function spawnProjectile(ownerId, x, y, facing, color, spd, isMine) {
-            const bulletSpeed = 6 + spd * 0.9; let vx = 0, vy = 0;
-            if (facing === 'left') vx = -bulletSpeed; if (facing === 'right') vx = bulletSpeed;
-            if (facing === 'up') vy = -bulletSpeed; if (facing === 'down') vy = bulletSpeed;
-            projectiles.push({ ownerId, x, y, vx, vy, facing, color, isMine, life: 85 });
+            const bulletSpeed = 6 + spd * 0.9;
+            const vec = facingToVectorClient(facing);
+            projectiles.push({ ownerId, x, y, vx: vec.dx * bulletSpeed, vy: vec.dy * bulletSpeed, facing, color, isMine, life: 85 });
         }
         function spawnSlashMotion(ownerId, x, y, facing, element, specialInkType, isPowered, rangeScale = 1.0, isDemonBlade = false) {
-            let baseAngle = 0;
-            if (facing === 'down') baseAngle = Math.PI / 2;
-            else if (facing === 'left') baseAngle = Math.PI;
-            else if (facing === 'up') baseAngle = -Math.PI / 2;
+            const vec = facingToVectorClient(facing);
+            const baseAngle = Math.atan2(vec.dy, vec.dx);
             const sparks = Array.from({ length: isDemonBlade ? 11 : 7 }, (_, idx) => ({ ang: baseAngle - 0.85 + (1.7 * idx) / (isDemonBlade ? 10 : 6) + (Math.random() - 0.5) * 0.15, r: (46 + Math.random() * 26) * rangeScale, size: 2 + Math.random() * 2.5 }));
             slashEffects.push({ ownerId, x, y, baseAngle, element: element || 'neutral', specialInkType: specialInkType || null, isPowered: Boolean(isPowered), rangeScale, isDemonBlade, startedAt: performance.now(), durationMs: 220, sparks });
         }
@@ -3199,12 +3216,35 @@
                 if (isSlowed) spd *= (player.slowMultiplier || 0.75);
                 if (isShielding) spd *= 0.7;
 
-                let nextX = player.x, nextY = player.y, nextFacing = player.facing, inputPressed = false;
-                if (keys['ArrowUp'] || keys['KeyW']) { nextY -= spd; nextFacing = 'up'; inputPressed = true; }
-                else if (keys['ArrowDown'] || keys['KeyS']) { nextY += spd; nextFacing = 'down'; inputPressed = true; }
-                else if (keys['ArrowLeft'] || keys['KeyA']) { nextX -= spd; nextFacing = 'left'; inputPressed = true; }
-                else if (keys['ArrowRight'] || keys['KeyD']) { nextX += spd; nextFacing = 'right'; inputPressed = true; }
+              let nextX = player.x, nextY = player.y, nextFacing = player.facing;
+                const moveUp = Boolean(keys['ArrowUp'] || keys['KeyW']);
+                const moveDown = Boolean(keys['ArrowDown'] || keys['KeyS']);
+                const moveLeft = Boolean(keys['ArrowLeft'] || keys['KeyA']);
+                const moveRight = Boolean(keys['ArrowRight'] || keys['KeyD']);
 
+                let dirX = (moveRight ? 1 : 0) - (moveLeft ? 1 : 0);
+                let dirY = (moveDown ? 1 : 0) - (moveUp ? 1 : 0);
+                const inputPressed = (dirX !== 0 || dirY !== 0);
+
+                if (inputPressed) {
+                    if (dirX !== 0 && dirY !== 0) {
+                        dirX *= Math.SQRT1_2;
+                        dirY *= Math.SQRT1_2;
+                    }
+                    nextX += dirX * spd;
+                    nextY += dirY * spd;
+
+                    if (dirY < 0 && dirX < 0) nextFacing = 'up_left';
+                    else if (dirY < 0 && dirX > 0) nextFacing = 'up_right';
+                    else if (dirY > 0 && dirX < 0) nextFacing = 'down_left';
+                    else if (dirY > 0 && dirX > 0) nextFacing = 'down_right';
+                    else if (dirY < 0) nextFacing = 'up';
+                    else if (dirY > 0) nextFacing = 'down';
+                    else if (dirX < 0) nextFacing = 'left';
+                    else if (dirX > 0) nextFacing = 'right';
+
+                    updateHorizontalFacingMemory(player, nextFacing);
+                }
                 let pulled = false;
                 if (!worldStopped && currentRoomMode === 'boss' && bossState && now < bossVortexUntil) {
                     const pcx = nextX + 24, pcy = nextY + 24, distToBoss = Math.hypot(bossState.x - pcx, bossState.y - pcy);
@@ -3599,11 +3639,28 @@
             c.globalAlpha = baseAlpha;
             if (isSpeedBoosted) { c.save(); c.beginPath(); c.arc(x + 24, y + 24, 28 + Math.sin(now / 60) * 3, 0, Math.PI * 2); c.fillStyle = 'rgba(255,242,0,0.22)'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#fff200'; c.stroke(); c.restore(); }
             if (isPowerBoosted) { c.save(); c.beginPath(); c.arc(x + 24, y + 24, 31 + Math.cos(now / 50) * 3, 0, Math.PI * 2); c.fillStyle = 'rgba(255,50,50,0.22)'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#ff3333'; c.stroke(); c.restore(); }
-            const hasPixels = drawCachedPixelSprite(c, x, y, 48, charData, now, isMe ? 'self' : cacheKey, isMe ? localGridVersion : 0);
-            if (!hasPixels) {
-                c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.beginPath(); c.arc(x + 24, y + 12, 6, 0, Math.PI * 2); c.stroke();
-                c.beginPath(); c.moveTo(x + 24, y + 18); c.lineTo(x + 24, y + 34); c.moveTo(x + 14, y + 24); c.lineTo(x + 34, y + 24); c.moveTo(x + 24, y + 34); c.lineTo(x + 16, y + 44); c.moveTo(x + 24, y + 34); c.lineTo(x + 32, y + 44); c.stroke();
+           const entityRef = isMe ? player : otherPlayers[cacheKey];
+            const horizFacing = (facing && facing.includes('left'))
+                ? 'left'
+                : ((facing && facing.includes('right'))
+                    ? 'right'
+                    : ((entityRef && entityRef.lastHorizontalFacing) || 'right'));
+            const flipLeft = (horizFacing === 'left');
+
+            c.save();
+            if (flipLeft) {
+                c.translate(x + 48, y);
+                c.scale(-1, 1);
+            } else {
+                c.translate(x, y);
             }
+            const hasPixels = drawCachedPixelSprite(c, 0, 0, 48, charData, now, isMe ? 'self' : cacheKey, isMe ? localGridVersion : 0);
+            if (!hasPixels) {
+                c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.beginPath(); c.arc(24, 12, 6, 0, Math.PI * 2); c.stroke();
+                c.beginPath(); c.moveTo(24, 18); c.lineTo(24, 34); c.moveTo(14, 24); c.lineTo(34, 24); c.moveTo(24, 34); c.lineTo(16, 44); c.moveTo(24, 34); c.lineTo(32, 44); c.stroke();
+            }
+            c.restore();
+
             c.globalAlpha = 1.0;
             if (isShielding) { c.save(); c.beginPath(); c.arc(x + 24, y + 24, 30, 0, Math.PI * 2); c.fillStyle = 'rgba(0,229,255,0.25)'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = '#00e5ff'; c.stroke(); c.restore(); }
             if (isAbsoluteWall) {
@@ -3612,12 +3669,21 @@
                 c.closePath(); c.fillStyle = 'rgba(0,229,255,0.22)'; c.fill(); c.lineWidth = 3; c.strokeStyle = '#00f5d4'; c.stroke(); c.restore();
             }
             if (isCounterStance) { c.save(); c.translate(x + 24, y + 24); c.rotate(now / 180); c.strokeStyle = '#ffd60a'; c.lineWidth = 2.5; c.strokeRect(-26, -26, 52, 52); c.restore(); }
-            c.fillStyle = 'rgba(255,255,255,0.75)'; c.beginPath();
-            if (facing === 'right') { c.moveTo(x + 52, y + 24); c.lineTo(x + 47, y + 20); c.lineTo(x + 47, y + 28); }
-            if (facing === 'left') { c.moveTo(x - 4, y + 24); c.lineTo(x + 1, y + 20); c.lineTo(x + 1, y + 28); }
-            if (facing === 'up') { c.moveTo(x + 24, y - 4); c.lineTo(x + 20, y + 1); c.lineTo(x + 28, y + 1); }
-            if (facing === 'down') { c.moveTo(x + 24, y + 52); c.lineTo(x + 20, y + 47); c.lineTo(x + 28, y + 47); }
+
+            // 8方向対応エイムインジケーター
+            const fVec = facingToVectorClient(facing);
+            const fAng = Math.atan2(fVec.dy, fVec.dx);
+            c.save();
+            c.translate(x + 24 + fVec.dx * 28, y + 24 + fVec.dy * 28);
+            c.rotate(fAng);
+            c.fillStyle = 'rgba(255,255,255,0.85)';
+            c.beginPath();
+            c.moveTo(5, 0);
+            c.lineTo(-2, -4);
+            c.lineTo(-2, 4);
+            c.closePath();
             c.fill();
+            c.restore();
             const elemIcon = BOSS ? BOSS.getElementInfo(elementId).icon : '';
             c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.fillStyle = isMe ? '#2ecc71' : '#ffffff';
             const debuffIcons = (isSlowed ? ' 🐢' : '') + (isAtkDebuffed ? ' ⚔️↓' : '') + (isDotActive ? ' ☠️' : '');
