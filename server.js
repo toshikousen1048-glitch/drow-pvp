@@ -583,11 +583,17 @@ function stopGimmickLoop(roomId) {
     if (room.bossProjectileTimer) { clearInterval(room.bossProjectileTimer); room.bossProjectileTimer = null; }
     if (room.bossAttackTimer) { clearTimeout(room.bossAttackTimer); room.bossAttackTimer = null; }
     if (room.timeStopTimer) { clearTimeout(room.timeStopTimer); room.timeStopTimer = null; }
-    if (Array.isArray(room.bossPendingTimeouts)) {
+if (Array.isArray(room.bossPendingTimeouts)) {
         for (const tid of room.bossPendingTimeouts) {
             clearTimeout(tid);
         }
         room.bossPendingTimeouts = [];
+    }
+    if (Array.isArray(room.respawnTimers)) {
+        for (const rtid of room.respawnTimers) {
+            clearTimeout(rtid);
+        }
+        room.respawnTimers = [];
     }
     room.bossProjectiles = [];
     room.bossMagmaZones = [];
@@ -2079,8 +2085,12 @@ function handlePlayerKO(roomId, target, attacker, matchIdAtKO) {
             targetPoints: target.points
         });
 
-        setTimeout(() => {
+        if (!Array.isArray(room.respawnTimers)) room.respawnTimers = [];
+        const respawnTimerId = setTimeout(() => {
             const currentR = rooms[roomId];
+            if (currentR && Array.isArray(currentR.respawnTimers)) {
+                currentR.respawnTimers = currentR.respawnTimers.filter((id) => id !== respawnTimerId);
+            }
             if (currentR && currentR.state === 'playing' && currentR.matchId === matchIdAtKO && currentR.players[targetId]) {
                 const respawnTarget = currentR.players[targetId];
                 if (!respawnTarget.isEliminated && respawnTarget.isDead) {
@@ -2099,6 +2109,7 @@ function handlePlayerKO(roomId, target, attacker, matchIdAtKO) {
                 }
             }
         }, 2000);
+        room.respawnTimers.push(respawnTimerId);
     }
 }
 
@@ -3103,11 +3114,21 @@ io.on('connection', (socket) => {
             ny = p.y + (ny - p.y) * ratio;
             }
 
-            const wasInWall = overlapsBreakableWall(room, p.x, p.y, CHAR_SIZE, 6);
-        if (overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12) || (!wasInWall && overlapsBreakableWall(room, nx, ny, CHAR_SIZE, 6))) {
-            nx = p.x;
-            ny = p.y;
-        }
+            const hitsStatic = overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12);
+            const hitsWall = overlapsBreakableWall(room, nx, ny, CHAR_SIZE, 6);
+            if (hitsStatic || hitsWall) {
+                // X方向のみ・Y方向のみのスライド移動を試行して引っかかりを軽減
+                const canMoveX = !overlapsStaticObstacle(nx, p.y, CHAR_SIZE, 12) && !overlapsBreakableWall(room, nx, p.y, CHAR_SIZE, 6);
+                const canMoveY = !overlapsStaticObstacle(p.x, ny, CHAR_SIZE, 12) && !overlapsBreakableWall(room, p.x, ny, CHAR_SIZE, 6);
+                if (canMoveX) {
+                    ny = p.y;
+                } else if (canMoveY) {
+                    nx = p.x;
+                } else {
+                    nx = p.x;
+                    ny = p.y;
+                }
+            }
 
             const moveDx = nx - p.x;
             const moveDy = ny - p.y;
@@ -3134,7 +3155,7 @@ io.on('connection', (socket) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
         if (room.state !== 'playing') return;
-
+        if (isTimeStoppedForActor(room, socket.id, Date.now())) return;
         const p = room.players[socket.id];
         const hitType = sanitizeHitType(data && data.type);
         if (!p || p.isDead || p.isEliminated || !hitType) return;
@@ -3666,7 +3687,7 @@ io.on('connection', (socket) => {
                     element: caster.element,
                     zones: meteors,
                     radius,
-                    expiresAt: magmaNow + magmaDurationMs + 250,
+                    expiresAt: magmaNow + magmaDurationMs,
                     tickIntervalMs: magmaTickIntervalMs,
                     tickDamage: magmaTickDamage,
                     lastHitAtByTarget: initialCooldownMap
