@@ -1149,8 +1149,8 @@ function stepUltraProjectiles(roomId, matchId, dtMs) {
             let destroyed = false;
             let bouncedThisTick = false;
 
-            for (let s = 0; s < subSteps; s++) {
-                let nextX = up.x + subDx;
+for (let s = 0; s < subSteps; s++) {
+                const nextX = up.x + subDx;
                 let hitX = false;
                 if (nextX - r <= 0 || nextX + r >= ARENA_WIDTH) {
                     hitX = true;
@@ -1173,15 +1173,19 @@ function stepUltraProjectiles(roomId, matchId, dtMs) {
                         subDx = -subDx;
                         up.bouncesLeft -= 1;
                         bouncedThisTick = true;
-                        nextX = Math.max(r + 1, Math.min(ARENA_WIDTH - r - 1, up.x));
+                        const bounceX = Math.max(r + 1, Math.min(ARENA_WIDTH - r - 1, up.x + subDx));
+                        if (!findWallOrObstacleAtPoint(room, bounceX, up.y, r)) {
+                            up.x = bounceX;
+                        }
                     } else {
                         destroyed = true;
                         break;
                     }
+                } else {
+                    up.x = nextX;
                 }
-                up.x = nextX;
 
-                let nextY = up.y + subDy;
+                const nextY = up.y + subDy;
                 let hitY = false;
                 if (nextY - r <= ARENA_TOP || nextY + r >= ARENA_HEIGHT) {
                     hitY = true;
@@ -1204,13 +1208,17 @@ function stepUltraProjectiles(roomId, matchId, dtMs) {
                         subDy = -subDy;
                         up.bouncesLeft -= 1;
                         bouncedThisTick = true;
-                        nextY = Math.max(ARENA_TOP + r + 1, Math.min(ARENA_HEIGHT - r - 1, up.y));
+                        const bounceY = Math.max(ARENA_TOP + r + 1, Math.min(ARENA_HEIGHT - r - 1, up.y + subDy));
+                        if (!findWallOrObstacleAtPoint(room, up.x, bounceY, r)) {
+                            up.y = bounceY;
+                        }
                     } else {
                         destroyed = true;
                         break;
                     }
+                } else {
+                    up.y = nextY;
                 }
-                up.y = nextY;
 
                 const owner = room.players[up.ownerId];
                 if (owner) {
@@ -1482,7 +1490,20 @@ function executeBossAttack(roomId, count, matchId) {
     const wrappedIo = {
         to: (targetRoomId) => ({
             emit: (eventName, eventPayload) => {
-                if (eventName === 'bossAttackEvent') {
+                if (eventName === 'bossAttackEvent' && eventPayload) {
+                    const targetRoom = rooms[targetRoomId];
+                    if (targetRoom) {
+                        if (!targetRoom.lastBossAttackAt) targetRoom.lastBossAttackAt = {};
+                        const attackStamp = Date.now();
+                        if (eventPayload.type) {
+                            targetRoom.lastBossAttackAt[eventPayload.type] = attackStamp;
+                        }
+                        if (Array.isArray(def.attackProjectiles)) {
+                            for (const projKind of def.attackProjectiles) {
+                                targetRoom.lastBossAttackAt[projKind] = attackStamp;
+                            }
+                        }
+                    }
                     registerServerBossProjectilesFromEvent(targetRoomId, matchId, eventPayload);
                 }
                 io.to(targetRoomId).emit(eventName, eventPayload);
