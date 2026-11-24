@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>64x64 Pixel PvP &amp; BOSS Battle</title>
     <style>
         * { box-sizing: border-box; }
@@ -291,6 +291,222 @@
             .editor-right-panel { max-width: 100%; overflow-y: visible; }
             .boss-selector { grid-template-columns: 1fr; }
         }
+        /* 📱 横画面（ランドスケープ）専用バトルUI */
+    #landscapeVirtualControls {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 15;
+        pointer-events: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+    }
+    body.mobile-landscape-battle {
+        width: 100dvw;
+        height: 100dvh;
+        overflow: hidden;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    body.mobile-landscape-battle .top-nav-bar,
+    body.mobile-landscape-battle #controlsHintBar,
+    body.mobile-landscape-battle #touchControls {
+        display: none !important;
+    }
+    body.mobile-landscape-battle #step3Screen {
+        width: 100dvw;
+        max-width: 100dvw;
+        height: 100dvh;
+        padding: 0;
+        margin: 0;
+    }
+    body.mobile-landscape-battle .arena-wrapper {
+        width: 100dvw;
+        height: 100dvh;
+        gap: 0;
+        background: #090b16;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    body.mobile-landscape-battle .arena-canvas-stage {
+        width: 100dvw;
+        height: 100dvh;
+        touch-action: none;
+    }
+    body.mobile-landscape-battle #gameCanvas {
+        border-radius: 0;
+        border-width: 0;
+        box-shadow: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    body.mobile-landscape-battle #landscapeVirtualControls {
+        display: block;
+    }
+
+    /* 左下：8方向スライド対応仮想十字キー（直径140px） */
+    .lvc-dpad-zone {
+        position: fixed;
+        left: max(16px, calc(env(safe-area-inset-left, 0px) + 12px));
+        bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+        width: 140px;
+        height: 140px;
+        border-radius: 50%;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border: 2px solid rgba(148, 163, 184, 0.35);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), inset 0 0 16px rgba(255, 255, 255, 0.06);
+        pointer-events: auto;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    .lvc-dpad-cross-h,
+    .lvc-dpad-cross-v {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        pointer-events: none;
+    }
+    .lvc-dpad-cross-h { width: 104px; height: 34px; }
+    .lvc-dpad-cross-v { width: 34px; height: 104px; }
+    .lvc-dir-arrow {
+        position: absolute;
+        width: 34px;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        color: rgba(226, 232, 240, 0.6);
+        border-radius: 50%;
+        pointer-events: none;
+        transition: color 0.06s, text-shadow 0.06s, transform 0.06s;
+    }
+    .lvc-dir-arrow.up { top: 6px; left: 50%; transform: translateX(-50%); }
+    .lvc-dir-arrow.down { bottom: 6px; left: 50%; transform: translateX(-50%); }
+    .lvc-dir-arrow.left { left: 6px; top: 50%; transform: translateY(-50%); }
+    .lvc-dir-arrow.right { right: 6px; top: 50%; transform: translateY(-50%); }
+    .lvc-dir-arrow.active {
+        color: #00e5ff;
+        text-shadow: 0 0 10px #00e5ff, 0 0 18px rgba(0, 229, 255, 0.8);
+        background: rgba(0, 229, 255, 0.16);
+    }
+    .lvc-stick-knob {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 38px;
+        height: 38px;
+        margin-left: -19px;
+        margin-top: -19px;
+        border-radius: 50%;
+        background: rgba(241, 245, 249, 0.25);
+        border: 1.5px solid rgba(255, 255, 255, 0.45);
+        pointer-events: none;
+        transition: transform 0.04s linear, background 0.08s;
+    }
+    .lvc-dpad-zone.engaging .lvc-stick-knob {
+        background: rgba(0, 229, 255, 0.42);
+        border-color: #00e5ff;
+    }
+
+    /* 右下：アクションボタン群（親指アーク配置） */
+    .lvc-action-arc {
+        position: fixed;
+        right: max(16px, calc(env(safe-area-inset-right, 0px) + 12px));
+        bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+        width: 186px;
+        height: 178px;
+        pointer-events: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    .lvc-btn {
+        position: absolute;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.55);
+        background: rgba(15, 23, 42, 0.65);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        color: #ffffff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        line-height: 1.05;
+        opacity: 0.65;
+        overflow: hidden;
+        pointer-events: auto;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        padding: 0;
+        transition: opacity 0.06s, transform 0.06s;
+    }
+    .lvc-btn.pressed {
+        opacity: 0.95;
+        transform: scale(0.93);
+    }
+    .lvc-btn:disabled {
+        opacity: 0.30 !important;
+        filter: grayscale(70%);
+        transform: none !important;
+    }
+    .lvc-btn-x {
+        width: 64px; height: 64px; right: 54px; bottom: 10px;
+        border-color: #ff4d4d; box-shadow: 0 0 12px rgba(255, 77, 77, 0.35); font-size: 0.88rem;
+    }
+    .lvc-btn-c {
+        width: 58px; height: 58px; right: 0px; bottom: 52px;
+        border-color: #f1c40f; box-shadow: 0 0 12px rgba(241, 196, 15, 0.35); font-size: 0.82rem;
+    }
+    .lvc-btn-z {
+        width: 56px; height: 56px; right: 126px; bottom: 4px;
+        border-color: #00e5ff; box-shadow: 0 0 12px rgba(0, 229, 255, 0.35); font-size: 0.78rem;
+    }
+    .lvc-btn-ultra {
+        width: 56px; height: 56px; right: 12px; bottom: 118px;
+        border-color: #a29bfe; background: rgba(45, 27, 92, 0.72);
+        box-shadow: 0 0 14px rgba(162, 155, 254, 0.45); font-size: 0.76rem;
+    }
+    .lvc-btn-icon { font-size: 1.05em; pointer-events: none; }
+    .lvc-btn-sub { font-size: 0.62rem; opacity: 0.92; pointer-events: none; margin-top: 1px; }
+    .lvc-cd-mask {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        height: 0%;
+        background: rgba(2, 6, 23, 0.78);
+        pointer-events: none;
+    }
+    .lvc-cd-text {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 900;
+        color: #ffd166;
+        text-shadow: 0 1px 3px #000;
+        pointer-events: none;
+    }
+    .lvc-btn.on-cooldown .lvc-cd-text { display: flex; }
+    .lvc-btn.on-cooldown .lvc-btn-icon,
+    .lvc-btn.on-cooldown .lvc-btn-sub { opacity: 0.35; }
+</style>
     </style>
 </head>
 <body>
@@ -589,8 +805,45 @@
                     <button style="border-color:#a29bfe;" onclick="triggerUltra()">⚡技</button>
                 </div>
             </div>
+<div id="landscapeVirtualControls" aria-hidden="true">
+            <div id="lvcDpadZone" class="lvc-dpad-zone">
+                <div class="lvc-dpad-cross-h"></div>
+                <div class="lvc-dpad-cross-v"></div>
+                <div id="lvcArrowUp" class="lvc-dir-arrow up">▲</div>
+                <div id="lvcArrowDown" class="lvc-dir-arrow down">▼</div>
+                <div id="lvcArrowLeft" class="lvc-dir-arrow left">◀</div>
+                <div id="lvcArrowRight" class="lvc-dir-arrow right">▶</div>
+                <div id="lvcStickKnob" class="lvc-stick-knob"></div>
+            </div>
+            <div class="lvc-action-arc">
+                <button id="lvcBtnZ" type="button" class="lvc-btn lvc-btn-z">
+                    <span class="lvc-btn-icon">🛡️</span>
+                    <span class="lvc-btn-sub">Z</span>
+                    <span id="lvcCdMaskZ" class="lvc-cd-mask"></span>
+                    <span id="lvcCdTextZ" class="lvc-cd-text"></span>
+                </button>
+                <button id="lvcBtnX" type="button" class="lvc-btn lvc-btn-x">
+                    <span class="lvc-btn-icon">⚔️</span>
+                    <span class="lvc-btn-sub">斬 X</span>
+                    <span id="lvcCdMaskX" class="lvc-cd-mask"></span>
+                    <span id="lvcCdTextX" class="lvc-cd-text"></span>
+                </button>
+                <button id="lvcBtnC" type="button" class="lvc-btn lvc-btn-c">
+                    <span class="lvc-btn-icon">🔮</span>
+                    <span class="lvc-btn-sub">玉 C</span>
+                    <span id="lvcCdMaskC" class="lvc-cd-mask"></span>
+                    <span id="lvcCdTextC" class="lvc-cd-text"></span>
+                </button>
+                <button id="lvcBtnUltra" type="button" class="lvc-btn lvc-btn-ultra" disabled>
+                    <span id="lvcUltraIcon" class="lvc-btn-icon">⚡</span>
+                    <span id="lvcUltraSub" class="lvc-btn-sub">技</span>
+                    <span id="lvcCdMaskUltra" class="lvc-cd-mask"></span>
+                    <span id="lvcCdTextUltra" class="lvc-cd-text"></span>
+                </button>
+            </div>
         </div>
     </div>
+</div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/bosses.js"></script>
@@ -662,32 +915,60 @@
         let roomHostId = null;
         let hostMaxUnlockedStage = 1;
 
-        function fitBattleCanvas() {
-            const stage = document.getElementById('arenaCanvasStage');
-            const cv = document.getElementById('gameCanvas');
-            if (!stage || !cv) return;
-            const rect = stage.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) return;
-            let w = rect.width;
-            let h = w / (4 / 3);
-            if (h > rect.height) { h = rect.height; w = h * (4 / 3); }
-            cv.style.width = `${Math.floor(w)}px`;
-            cv.style.height = `${Math.floor(h)}px`;
+        function isLandscapeBattleViewport() {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        if (vw <= vh) return false;
+        const isTouchCapable = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+        const matchesCompactLandscape = window.matchMedia ? window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches : (vh <= 600);
+        return matchesCompactLandscape || isTouchCapable;
         }
-        window.addEventListener('resize', fitBattleCanvas);
+        function updateLandscapeBattleMode() {
+        const homeEl = document.getElementById('homeScreen');
+        const isHomeClosed = !homeEl || homeEl.style.display === 'none';
+        const isBattleScreen = (currentUiStep === 3);
+        const isCombatActive = (roomState === 'countdown' || roomState === 'playing');
+        const shouldEnable = Boolean(isHomeClosed && isBattleScreen && isCombatActive && isLandscapeBattleViewport());
+        const wasEnabled = document.body.classList.contains('mobile-landscape-battle');
+        document.body.classList.toggle('mobile-landscape-battle', shouldEnable);
+        const lvc = document.getElementById('landscapeVirtualControls');
+        if (lvc) lvc.setAttribute('aria-hidden', shouldEnable ? 'false' : 'true');
+        if (!shouldEnable && typeof resetLandscapeVirtualControls === 'function') {
+        resetLandscapeVirtualControls();
+        }
+        if (wasEnabled !== shouldEnable || currentUiStep === 3) {
+        requestAnimationFrame(fitBattleCanvas);
+        }
+        }
+        function fitBattleCanvas() {
+        const stage = document.getElementById('arenaCanvasStage');
+        const cv = document.getElementById('gameCanvas');
+        if (!stage || !cv) return;
+        const rect = stage.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        let w = rect.width;
+        let h = w / (4 / 3);
+        if (h > rect.height) { h = rect.height; w = h * (4 / 3); }
+        cv.style.width = `${Math.floor(w)}px`;
+        cv.style.height = `${Math.floor(h)}px`;
+        }
+        window.addEventListener('resize', () => { updateLandscapeBattleMode(); fitBattleCanvas(); });
+        window.addEventListener('orientationchange', () => { setTimeout(() => { updateLandscapeBattleMode(); fitBattleCanvas(); }, 80); });
+        Code
 
         function switchStep(stepNum) {
-            if (stepNum === 2 && isDraftEditing) { enterJudgmentRoom(); return; }
-            leaveJudgmentRoom();
-            currentUiStep = stepNum;
-            [1, 2, 3].forEach((n) => {
-                document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
-                document.getElementById(`tabStep${n}`).classList.toggle('active', n === stepNum);
-            });
-            if (stepNum === 1) startBgm('drawing', 1.0);
-            else if (stepNum === 2) { renderLobbyPreview(); startBgm('menu', 1.0); }
-            else if (stepNum === 3) requestAnimationFrame(fitBattleCanvas);
-        }
+                if (stepNum === 2 && isDraftEditing) { enterJudgmentRoom(); return; }
+                leaveJudgmentRoom();
+                currentUiStep = stepNum;
+                [1, 2, 3].forEach((n) => {
+                    document.getElementById(`step${n}Screen`).classList.toggle('active', n === stepNum);
+                    document.getElementById(`tabStep${n}`).classList.toggle('active', n === stepNum);
+                });
+                updateLandscapeBattleMode();
+                if (stepNum === 1) startBgm('drawing', 1.0);
+                else if (stepNum === 2) { renderLobbyPreview(); startBgm('menu', 1.0); }
+                else if (stepNum === 3) requestAnimationFrame(fitBattleCanvas);
+            }
         function proceedToLobby() { initAudio(); SE.click(); enterJudgmentRoom(); }
 
         // 🔮 判定の間
@@ -1207,7 +1488,7 @@
                 timeStopUntil = 0; timeStopOwnerId = null; ricochetBullets = []; playerMagmaFloors = []; windParticles = [];
                 roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none'; updateLobbyUI();
             }
-            homeScreen.style.display = 'flex'; updatePointsDisplay(); startBgm('menu', 1.0);
+        homeScreen.style.display = 'flex'; updateLandscapeBattleMode(); updatePointsDisplay(); startBgm('menu', 1.0);
         }
 
         // 🎨 エディタ・判定・バトル状態（64x64 規格）
@@ -1293,6 +1574,235 @@
             btn.addEventListener('mousedown', () => { keys[codeName] = true; });
             btn.addEventListener('mouseup', releaseKey); btn.addEventListener('mouseleave', releaseKey);
         });
+        // 📱 横画面専用：8方向スライド対応仮想十字キー＆アークアクション制御（マルチタッチ対応）
+    let lvcDpadTouchId = null;
+    let lvcDpadMouseDown = false;
+    const lvcActionTouches = new Map();
+
+    function applyVirtualDpadDirs(up, down, left, right, offsetX, offsetY) {
+        keys['ArrowUp'] = up;
+        keys['ArrowDown'] = down;
+        keys['ArrowLeft'] = left;
+        keys['ArrowRight'] = right;
+        const elUp = document.getElementById('lvcArrowUp');
+        const elDown = document.getElementById('lvcArrowDown');
+        const elLeft = document.getElementById('lvcArrowLeft');
+        const elRight = document.getElementById('lvcArrowRight');
+        const knob = document.getElementById('lvcStickKnob');
+        const zone = document.getElementById('lvcDpadZone');
+        if (elUp) elUp.classList.toggle('active', up);
+        if (elDown) elDown.classList.toggle('active', down);
+        if (elLeft) elLeft.classList.toggle('active', left);
+        if (elRight) elRight.classList.toggle('active', right);
+        if (zone) zone.classList.toggle('engaging', up || down || left || right);
+        if (knob) knob.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+    }
+
+    function resetLandscapeVirtualControls() {
+        lvcDpadTouchId = null;
+        lvcDpadMouseDown = false;
+        applyVirtualDpadDirs(false, false, false, false, 0, 0);
+        for (const btnId of lvcActionTouches.values()) {
+            const b = document.getElementById(btnId);
+            if (b) b.classList.remove('pressed');
+        }
+        lvcActionTouches.clear();
+        ['lvcBtnZ', 'lvcBtnX', 'lvcBtnC', 'lvcBtnUltra'].forEach((id) => {
+            const b = document.getElementById(id);
+            if (b) b.classList.remove('pressed');
+        });
+    }
+
+    function updateVirtualDpadFromPoint(clientX, clientY) {
+        const zone = document.getElementById('lvcDpadZone');
+        if (!zone) return;
+        const rect = zone.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = clientX - cx;
+        const dy = clientY - cy;
+        const dist = Math.hypot(dx, dy);
+        const maxShift = 38;
+        const clampScale = dist > maxShift ? (maxShift / dist) : 1;
+        const knobX = Math.round(dx * clampScale);
+        const knobY = Math.round(dy * clampScale);
+
+        if (dist <= 15) {
+            applyVirtualDpadDirs(false, false, false, false, knobX, knobY);
+            return;
+        }
+        const deg = Math.atan2(dy, dx) * (180 / Math.PI);
+        let up = false, down = false, left = false, right = false;
+        if (deg >= -22.5 && deg < 22.5) { right = true; }
+        else if (deg >= 22.5 && deg < 67.5) { right = true; down = true; }
+        else if (deg >= 67.5 && deg < 112.5) { down = true; }
+        else if (deg >= 112.5 && deg < 157.5) { left = true; down = true; }
+        else if (deg >= 157.5 || deg < -157.5) { left = true; }
+        else if (deg >= -157.5 && deg < -112.5) { left = true; up = true; }
+        else if (deg >= -112.5 && deg < -67.5) { up = true; }
+        else { right = true; up = true; }
+        applyVirtualDpadDirs(up, down, left, right, knobX, knobY);
+    }
+
+    (function initLandscapeVirtualControls() {
+        const dpadZone = document.getElementById('lvcDpadZone');
+        if (dpadZone) {
+            dpadZone.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (lvcDpadTouchId === null && e.changedTouches.length > 0) {
+                    const t = e.changedTouches[0];
+                    lvcDpadTouchId = t.identifier;
+                    updateVirtualDpadFromPoint(t.clientX, t.clientY);
+                }
+            }, { passive: false });
+
+            dpadZone.addEventListener('touchmove', (e) => {
+                if (lvcDpadTouchId === null) return;
+                e.preventDefault();
+                e.stopPropagation();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    if (t.identifier === lvcDpadTouchId) {
+                        updateVirtualDpadFromPoint(t.clientX, t.clientY);
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            const endDpadTouch = (e) => {
+                if (lvcDpadTouchId === null) return;
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === lvcDpadTouchId) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        lvcDpadTouchId = null;
+                        applyVirtualDpadDirs(false, false, false, false, 0, 0);
+                        break;
+                    }
+                }
+            };
+            dpadZone.addEventListener('touchend', endDpadTouch, { passive: false });
+            dpadZone.addEventListener('touchcancel', endDpadTouch, { passive: false });
+
+            // PCブラウザのモバイルエミュレーション確認用マウス対応
+            dpadZone.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                lvcDpadMouseDown = true;
+                updateVirtualDpadFromPoint(e.clientX, e.clientY);
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!lvcDpadMouseDown) return;
+                updateVirtualDpadFromPoint(e.clientX, e.clientY);
+            });
+            window.addEventListener('mouseup', () => {
+                if (!lvcDpadMouseDown) return;
+                lvcDpadMouseDown = false;
+                applyVirtualDpadDirs(false, false, false, false, 0, 0);
+            });
+        }
+
+        const bindActionBtn = (btnId, handler) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (btn.disabled) return;
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    lvcActionTouches.set(e.changedTouches[i].identifier, btnId);
+                }
+                btn.classList.add('pressed');
+                handler();
+            }, { passive: false });
+
+            const releaseBtn = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    lvcActionTouches.delete(e.changedTouches[i].identifier);
+                }
+                let stillHeld = false;
+                for (const heldId of lvcActionTouches.values()) {
+                    if (heldId === btnId) { stillHeld = true; break; }
+                }
+                if (!stillHeld) btn.classList.remove('pressed');
+            };
+            btn.addEventListener('touchend', releaseBtn, { passive: false });
+            btn.addEventListener('touchcancel', releaseBtn, { passive: false });
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (btn.disabled) return;
+                btn.classList.add('pressed');
+                handler();
+            });
+            btn.addEventListener('mouseup', () => btn.classList.remove('pressed'));
+            btn.addEventListener('mouseleave', () => btn.classList.remove('pressed'));
+        };
+
+        bindActionBtn('lvcBtnZ', triggerShield);
+        bindActionBtn('lvcBtnX', triggerMelee);
+        bindActionBtn('lvcBtnC', triggerShot);
+        bindActionBtn('lvcBtnUltra', triggerUltra);
+    })();
+
+    function setLvcCooldownState(btnId, maskId, textId, remainMs, maxMs) {
+        const btn = document.getElementById(btnId);
+        const mask = document.getElementById(maskId);
+        const txt = document.getElementById(textId);
+        if (!btn || !mask || !txt) return;
+        if (remainMs > 40 && maxMs > 0) {
+            const ratio = Math.min(1, Math.max(0, remainMs / maxMs));
+            const secText = (remainMs / 1000).toFixed(1);
+            btn.classList.add('on-cooldown');
+            mask.style.height = `${Math.round(ratio * 100)}%`;
+            if (txt.textContent !== secText) txt.textContent = secText;
+        } else {
+            btn.classList.remove('on-cooldown');
+            mask.style.height = '0%';
+            if (txt.textContent !== '') txt.textContent = '';
+        }
+    }
+
+    function updateLandscapeActionButtons() {
+        if (!document.body.classList.contains('mobile-landscape-battle')) return;
+        const nowPerf = performance.now();
+        const nowEpoch = Date.now();
+        const cdSpeedMult = (nowPerf < (player.bootsBuffUntil || 0)) ? (1 / 1.5) : 1.0;
+
+        const zRem = Math.max(0, SHIELD_COOLDOWN - (nowPerf - player.lastShieldTime));
+        const xRem = Math.max(0, (SLASH_COOLDOWN * cdSpeedMult) - (nowPerf - player.lastMeleeTime));
+        const cRem = Math.max(0, (SHOT_COOLDOWN * cdSpeedMult) - (nowPerf - player.lastShotTime));
+
+        setLvcCooldownState('lvcBtnZ', 'lvcCdMaskZ', 'lvcCdTextZ', zRem, SHIELD_COOLDOWN);
+        setLvcCooldownState('lvcBtnX', 'lvcCdMaskX', 'lvcCdTextX', xRem, SLASH_COOLDOWN * cdSpeedMult);
+        setLvcCooldownState('lvcBtnC', 'lvcCdMaskC', 'lvcCdTextC', cRem, SHOT_COOLDOWN * cdSpeedMult);
+
+        const ultraBtn = document.getElementById('lvcBtnUltra');
+        const ultraIcon = document.getElementById('lvcUltraIcon');
+        const ultraSub = document.getElementById('lvcUltraSub');
+        if (!ultraBtn || !ultraIcon || !ultraSub) return;
+
+        const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
+        if (!skill || player.ultraMaxUses <= 0) {
+            ultraBtn.disabled = true;
+            if (ultraIcon.textContent !== '⚡') ultraIcon.textContent = '⚡';
+            if (ultraSub.textContent !== '未装備') ultraSub.textContent = '未装備';
+            setLvcCooldownState('lvcBtnUltra', 'lvcCdMaskUltra', 'lvcCdTextUltra', 0, 1);
+            return;
+        }
+
+        const uses = player.ultraRemainingUses;
+        const cdRemain = Math.max(0, player.ultraCooldownUntil - nowEpoch);
+        if (ultraIcon.textContent !== skill.icon) ultraIcon.textContent = skill.icon;
+        const subText = `×${uses}`;
+        if (ultraSub.textContent !== subText) ultraSub.textContent = subText;
+
+        ultraBtn.disabled = (uses <= 0 || roomState !== 'playing' || player.isDead || player.isEliminated);
+        setLvcCooldownState('lvcBtnUltra', 'lvcCdMaskUltra', 'lvcCdTextUltra', uses > 0 ? cdRemain : 0, skill.cooldownMs || 6000);
+    }
         gameCanvas.addEventListener('mousedown', (e) => {
             if (roomState !== 'playing' || player.isDead || player.isEliminated) return;
             initAudio(); if (e.button === 0) triggerShot(); if (e.button === 2) triggerMelee();
@@ -1552,18 +2062,20 @@
                 readyList.innerHTML = html;
                 if (myReady) { readyBtn.textContent = '⏳ キャンセル（待機中に戻る）'; readyBtn.classList.add('is-ready'); }
                 else { readyBtn.textContent = currentRoomMode === 'boss' ? '🌀 準備OK！（出撃する）' : '✅ 準備OK！'; readyBtn.classList.remove('is-ready'); }
-            } else if (roomState === 'result') { switchStep(3); resultOverlay.style.display = 'flex'; }
-            else { switchStep(3); resultOverlay.style.display = 'none'; }
+           } else if (roomState === 'result') { switchStep(3); resultOverlay.style.display = 'flex'; }
+        else { switchStep(3); resultOverlay.style.display = 'none'; }
+        updateLandscapeBattleMode();
         }
 
         function updateUltraHudButton() {
-            const btn = document.getElementById('hudUltraBtn'); if (!btn) return;
-            const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
-            if (!skill || player.ultraMaxUses <= 0) { btn.textContent = '⚡ Space: 未装備'; btn.disabled = true; return; }
-            const now = Date.now(), cdRemain = Math.max(0, player.ultraCooldownUntil - now), uses = player.ultraRemainingUses;
-            if (uses <= 0) { btn.textContent = `⚡ ${skill.name} (×0)`; btn.disabled = true; }
-            else if (cdRemain > 0) { btn.textContent = `⚡ ${skill.name} ×${uses} (${(cdRemain / 1000).toFixed(1)}s)`; btn.disabled = true; }
-            else { btn.textContent = `⚡ Space: ${skill.name} ×${uses}`; btn.disabled = (roomState !== 'playing' || player.isDead || player.isEliminated); }
+        const btn = document.getElementById('hudUltraBtn'); if (!btn) return;
+        const skill = BOSS && player.ultraSkillId ? BOSS.getUltraSkillDef(player.ultraSkillId) : null;
+        if (!skill || player.ultraMaxUses <= 0) { btn.textContent = '⚡ Space: 未装備'; btn.disabled = true; return; }
+        const now = Date.now(), cdRemain = Math.max(0, player.ultraCooldownUntil - now), uses = player.ultraRemainingUses;
+        if (uses <= 0) { btn.textContent = `⚡ ${skill.name} (×0)`; btn.disabled = true; }
+        else if (cdRemain > 0) { btn.textContent = `⚡ ${skill.name} ×${uses} (${(cdRemain / 1000).toFixed(1)}s)`; btn.disabled = true; }
+        else { btn.textContent = `⚡ Space: ${skill.name} ×${uses}`; btn.disabled = (roomState !== 'playing' || player.isDead || player.isEliminated); }
+        updateLandscapeActionButtons();
         }
 
         function getDesiredBgmState() {
@@ -2459,7 +2971,10 @@
 
         // ⌨️ 入力＆アクション
         const keys = {};
-        window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+        window.addEventListener('blur', () => {
+        for (const k in keys) keys[k] = false;
+        if (typeof resetLandscapeVirtualControls === 'function') resetLandscapeVirtualControls();
+        });
         window.addEventListener('keydown', (e) => {
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
             if (!isTyping && roomState !== 'playing' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undoCanvas(); return; }
@@ -2546,6 +3061,7 @@
             }
             if (roomState !== 'playing') return;
             updateUltraHudButton();
+            updateLandscapeActionButtons();
             const now = performance.now(); if (now < hitStopUntil) return;
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
             const myId = socket ? socket.id : 'local';
