@@ -561,7 +561,7 @@
     const BOSS_DRAGON_ROAR_PULSE_DAMAGE = 4;     // 覇竜の咆哮リング1パルスダメージ
     const BOSS_DRAGON_ROAR_PULSE_COUNT = 4;      // 多段パルス回数（合計16）
     const BOSS_DRAGON_ROAR_PULSE_INTERVAL_MS = 160;// 多段パルス間隔
-    const BOSS_ABYSS_SIGIL_DAMAGE = 24;          // 闇の刻印陣
+const BOSS_ABYSS_SIGIL_DAMAGE = 24;          // 闇の刻印陣
     const BOSS_ABYSS_SNAKE_DAMAGE = 14;          // 双蛇の闇弾
     const BOSS_ABYSS_RING_DAMAGE = 28;           // 深淵の拘束リング
     const BOSS_ABYSS_SHADOW_DAMAGE = 10;          // 呪詛の影波
@@ -570,6 +570,12 @@
     const BOSS_PHANTOM_CURSE_DAMAGE = 20;        // 呪詛のランダム状態異常弾
     const BOSS_PHANTOM_FEINT_P1_DAMAGE = 8;      // 牽制弾幕 P1
     const BOSS_PHANTOM_FEINT_P2_DAMAGE = 12;      // 牽制弾幕 P2
+    const BOSS_END_CYCLONE_SPIRAL_DAMAGE = 18;   // LAST BOSS 渦巻き弾幕
+    const BOSS_END_CYCLONE_AMBUSH_DAMAGE = 28;   // LAST BOSS 潜伏〜真下出現奇襲
+    const BOSS_END_CYCLONE_VORTEX_TICK_DAMAGE = 5;// LAST BOSS 強化吸引中持続ダメージ
+    const BOSS_END_CYCLONE_LASER_DAMAGE = 36;    // LAST BOSS 薙ぎ払いレーザー
+    const BOSS_END_CYCLONE_AWAKEN_DAMAGE = 22;   // LAST BOSS P2覚醒衝撃波
+    const BOSS_END_CYCLONE_MEGA_TORNADO_DAMAGE = 6;// LAST BOSS P2巨大竜巻持続ダメージ
 
     function resolvePredictedDirection(pl) {
         if (!pl) return { dx: 0, dy: 1 };
@@ -2094,6 +2100,612 @@
                 ctx.closePath();
                 ctx.fill();
 
+ctx.restore();
+            }
+        },
+
+        end_cyclone: {
+            id: 'end_cyclone',
+            stageNumber: 6,
+            stageId: 'stage_6',
+            name: 'END CYCLONE',
+            tag: '🌪️ LAST BOSS・終焉嵐型',
+            element: 'neutral',
+            summary: '3秒潜伏からの真下奇襲・強化吸引＆持続ダメ・薙ぎ払いレーザー・P2覚醒＆巨大竜巻を操る最終嵐',
+            radius: 46,
+            spawnX: ARENA_CENTER_X,
+            spawnY: 165,
+            maxHp: 1300,
+            hpByPlayers: { 1: 1300, 2: 2200, 3: 3100, 4: 4000 },
+            speed: 3.4,
+            moveSpeed: {
+                soloP1: 3.4,
+                multiP1: 4.0,
+                soloP2: 5.4,
+                multiP2: 6.4
+            },
+            attackIntervalMs: {
+                p1: 1950,
+                p2: 1250
+            },
+            randomActionSelection: true,
+            phase2Awaken: Object.freeze({
+                knockbackRadius: 250,
+                knockbackDistance: 130,
+                damage: BOSS_END_CYCLONE_AWAKEN_DAMAGE,
+                megaTornadoDurationMs: 8000,
+                megaTornadoRadius: 150,
+                megaTornadoTickIntervalMs: 500,
+                megaTornadoTickDamage: BOSS_END_CYCLONE_MEGA_TORNADO_DAMAGE
+            }),
+            attackProjectiles: ['spiral'],
+            projectileDamage: {
+                spiral: BOSS_END_CYCLONE_SPIRAL_DAMAGE
+            },
+            attackPatterns: [
+                { id: 'end_stealth_ambush', name: '潜伏〜魔法陣予兆〜真下出現', damage: BOSS_END_CYCLONE_AMBUSH_DAMAGE },
+                { id: 'end_vortex_drain', name: '強化吸引＆持続ダメージ', damage: BOSS_END_CYCLONE_VORTEX_TICK_DAMAGE },
+                { id: 'end_sweep_laser', name: '薙ぎ払いレーザー', damage: BOSS_END_CYCLONE_LASER_DAMAGE },
+                { id: 'end_spiral_storm', name: '終焉渦巻き弾幕', damage: BOSS_END_CYCLONE_SPIRAL_DAMAGE }
+            ],
+            patternCount: 4,
+            executeAttack(ctx) {
+                const {
+                    room, roomId, matchId, boss, allPlayerCount, alivePlayers, targetCx, targetCy,
+                    io, registerTimeout, pointToSegmentDistance, applyDamageToPlayer, knockbackPlayerFromPoint
+                } = ctx;
+
+                if (boss.isStealthed) return;
+
+                const patternIdx = Math.floor(Math.random() * 4);
+                const isP2 = boss.phase === 2;
+
+                if (patternIdx === 0) {
+                    const stealthMs = 3000;
+                    const warnDuration = 750;
+                    const ambushRadius = 105;
+
+                    boss.isStealthed = true;
+                    io.to(roomId).emit('bossStateUpdated', boss);
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'end_stealth_start',
+                        x: boss.x,
+                        y: boss.y,
+                        durationMs: stealthMs
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+                        const liveList = Object.values(cur.players).filter((pl) => pl && !pl.isDead && !pl.isEliminated);
+                        const anchor = liveList.length > 0
+                            ? liveList[Math.floor(Math.random() * liveList.length)]
+                            : { x: targetCx - 24, y: targetCy - 24 };
+
+                        const targetPos = clampArenaPoint(anchor.x + 24, anchor.y + 24, ambushRadius + 10);
+                        const sigils = [{ x: targetPos.x, y: targetPos.y, radius: ambushRadius }];
+
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'end_ambush_warn',
+                            sigils,
+                            warnDuration
+                        });
+
+                        registerTimeout(cur, () => {
+                            const cur2 = ctx.getRoom();
+                            if (!cur2 || cur2.state !== 'playing' || cur2.matchId !== matchId || !cur2.boss) return;
+
+                            cur2.boss.x = targetPos.x;
+                            cur2.boss.y = targetPos.y;
+                            cur2.boss.isStealthed = false;
+                            io.to(roomId).emit('bossStateUpdated', cur2.boss);
+
+                            io.to(roomId).emit('bossAttackEvent', {
+                                bossId: cur2.boss.id,
+                                element: cur2.boss.element,
+                                type: 'end_ambush_fire',
+                                x: targetPos.x,
+                                y: targetPos.y,
+                                radius: ambushRadius,
+                                damage: BOSS_END_CYCLONE_AMBUSH_DAMAGE
+                            });
+
+                            for (const id in cur2.players) {
+                                const p = cur2.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                const pcx = p.x + 24;
+                                const pcy = p.y + 24;
+                                if (Math.hypot(pcx - targetPos.x, pcy - targetPos.y) <= ambushRadius) {
+                                    applyDamageToPlayer(roomId, p, BOSS_END_CYCLONE_AMBUSH_DAMAGE, 'end_stealth_ambush', matchId, cur2.boss.element);
+                                    if (typeof knockbackPlayerFromPoint === 'function') {
+                                        knockbackPlayerFromPoint(roomId, p, targetPos.x, targetPos.y, ambushRadius + 24, matchId, 'end_stealth_ambush');
+                                    }
+                                }
+                            }
+                        }, warnDuration);
+                    }, Math.max(0, stealthMs - warnDuration));
+                } else if (patternIdx === 1) {
+                    const duration = isP2 ? 4000 : 3600;
+                    const pullStrength = isP2 ? 2.65 : 2.2;
+                    const pullRadius = 260;
+                    const tickIntervalMs = 600;
+                    const tickDamage = BOSS_END_CYCLONE_VORTEX_TICK_DAMAGE;
+
+                    boss.vortexActive = true;
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'vortex',
+                        active: true,
+                        duration,
+                        pullStrength,
+                        pullRadius,
+                        tickIntervalMs,
+                        tickDamage
+                    });
+
+                    const totalTicks = Math.floor(duration / tickIntervalMs);
+                    for (let t = 1; t <= totalTicks; t++) {
+                        registerTimeout(room, () => {
+                            const cur = ctx.getRoom();
+                            if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                            for (const id in cur.players) {
+                                const p = cur.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                const dist = Math.hypot((p.x + 24) - cur.boss.x, (p.y + 24) - cur.boss.y);
+                                if (dist <= pullRadius) {
+                                    applyDamageToPlayer(roomId, p, tickDamage, 'end_vortex_drain', matchId, cur.boss.element);
+                                }
+                            }
+                        }, t * tickIntervalMs);
+                    }
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (cur && cur.matchId === matchId && cur.boss) {
+                            cur.boss.vortexActive = false;
+                        }
+                    }, duration);
+                } else if (patternIdx === 2) {
+                    const originX = boss.x;
+                    const originY = boss.y;
+                    const centerAngle = Math.atan2(targetCy - originY, targetCx - originX);
+                    const sweepHalfAngle = isP2 ? 0.76 : 0.58;
+                    const startAngle = centerAngle - sweepHalfAngle;
+                    const endAngle = centerAngle + sweepHalfAngle;
+                    const length = 520;
+                    const warnDuration = isP2 ? 640 : 780;
+
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'laser_warn',
+                        x: originX,
+                        y: originY,
+                        startAngle,
+                        endAngle,
+                        length,
+                        warnDuration
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+                        const fireX = cur.boss.x;
+                        const fireY = cur.boss.y;
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'laser_fire',
+                            x: fireX,
+                            y: fireY,
+                            startAngle,
+                            endAngle,
+                            length,
+                            damage: BOSS_END_CYCLONE_LASER_DAMAGE
+                        });
+
+                        const steps = 6;
+                        for (const id in cur.players) {
+                            const p = cur.players[id];
+                            if (p.isDead || p.isEliminated) continue;
+                            const px = p.x + 24;
+                            const py = p.y + 24;
+                            let hitLaser = false;
+                            for (let s = 0; s <= steps; s++) {
+                                const a = startAngle + ((endAngle - startAngle) * s) / steps;
+                                const lx = fireX + Math.cos(a) * length;
+                                const ly = fireY + Math.sin(a) * length;
+                                if (pointToSegmentDistance(px, py, fireX, fireY, lx, ly) < 26) {
+                                    hitLaser = true;
+                                    break;
+                                }
+                            }
+                            if (hitLaser) {
+                                applyDamageToPlayer(roomId, p, BOSS_END_CYCLONE_LASER_DAMAGE, 'end_sweep_laser', matchId, cur.boss.element);
+                            }
+                        }
+                    }, warnDuration);
+                } else {
+                    const baseCount = isP2 ? 12 : 10;
+                    const extraBulletsByPlayers = Math.max(0, (allPlayerCount || alivePlayers.length || 1) - 1) * 3;
+                    const bulletCount = baseCount + extraBulletsByPlayers;
+
+                    boss.spiralAngle = (boss.spiralAngle + 0.45) % (Math.PI * 2);
+                    room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { spiral: Date.now() });
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'spiral',
+                        x: boss.x,
+                        y: boss.y,
+                        count: bulletCount,
+                        baseAngle: boss.spiralAngle,
+                        speed: isP2 ? 5.3 : 4.4,
+                        damage: BOSS_END_CYCLONE_SPIRAL_DAMAGE
+                    });
+                }
+            },
+            drawEntity(ctx, boss, now, helpers) {
+                if (boss.isStealthed) return;
+                const isRage = boss.phase === 2;
+                const bx = boss.x;
+                const by = boss.y;
+
+                ctx.save();
+                if (helpers && now < helpers.vortexUntil) {
+                    const spin = now / 150;
+                    for (let ring = 1; ring <= 4; ring++) {
+                        ctx.beginPath();
+                        ctx.arc(bx, by, 65 * ring, spin + ring, spin + ring + Math.PI * 1.45);
+                        ctx.strokeStyle = isRage ? 'rgba(244, 63, 94, 0.34)' : 'rgba(226, 232, 240, 0.28)';
+                        ctx.lineWidth = 6;
+                        ctx.stroke();
+                    }
+                }
+
+                const armCount = isRage ? 6 : 4;
+                const rot = now / (isRage ? 190 : 300);
+                for (let a = 0; a < armCount; a++) {
+                    const startAng = rot + (Math.PI * 2 / armCount) * a;
+                    ctx.beginPath();
+                    ctx.arc(bx, by, boss.radius + 16, startAng, startAng + 1.05);
+                    ctx.strokeStyle = isRage ? 'rgba(251, 113, 133, 0.85)' : 'rgba(226, 232, 240, 0.78)';
+                    ctx.lineWidth = 7;
+                    ctx.stroke();
+                }
+
+                ctx.beginPath();
+                ctx.ellipse(bx, by, boss.radius + 14, 20, Math.sin(now / 420) * 0.25, 0, Math.PI * 2);
+                ctx.strokeStyle = isRage ? '#fb7185' : '#94a3b8';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                const grad = ctx.createRadialGradient(bx, by, 10, bx, by, boss.radius);
+                grad.addColorStop(0, '#090d16');
+                grad.addColorStop(0.68, isRage ? '#4c0519' : '#1e293b');
+                grad.addColorStop(1, isRage ? '#e11d48' : '#cbd5e1');
+
+                ctx.beginPath();
+                ctx.arc(bx, by, boss.radius, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.lineWidth = 3.5;
+                ctx.strokeStyle = isRage ? '#fda4af' : '#f8fafc';
+                ctx.stroke();
+
+                ctx.fillStyle = isRage ? '#fda4af' : '#f8fafc';
+                ctx.fillRect(bx - 19, by - 8, 12, 6);
+                ctx.fillRect(bx + 7, by - 8, 12, 6);
+ctx.restore();
+            }
+        },
+
+        end_cyclone: {
+            id: 'end_cyclone',
+            stageNumber: 6,
+            stageId: 'stage_6',
+            name: 'END CYCLONE',
+            tag: '🌪️ LAST BOSS・終焉嵐型',
+            element: 'neutral',
+            summary: '3秒潜伏からの真下奇襲・強化吸引＆持続ダメ・薙ぎ払いレーザー・P2覚醒＆巨大竜巻を操る最終嵐',
+            radius: 46,
+            spawnX: ARENA_CENTER_X,
+            spawnY: 165,
+            maxHp: 1300,
+            hpByPlayers: { 1: 1300, 2: 2200, 3: 3100, 4: 4000 },
+            speed: 3.4,
+            moveSpeed: {
+                soloP1: 3.4,
+                multiP1: 4.0,
+                soloP2: 5.4,
+                multiP2: 6.4
+            },
+            attackIntervalMs: {
+                p1: 1950,
+                p2: 1250
+            },
+            randomActionSelection: true,
+            phase2Awaken: Object.freeze({
+                knockbackRadius: 250,
+                knockbackDistance: 130,
+                damage: BOSS_END_CYCLONE_AWAKEN_DAMAGE,
+                megaTornadoDurationMs: 8000,
+                megaTornadoRadius: 150,
+                megaTornadoTickIntervalMs: 500,
+                megaTornadoTickDamage: BOSS_END_CYCLONE_MEGA_TORNADO_DAMAGE
+            }),
+            attackProjectiles: ['spiral'],
+            projectileDamage: {
+                spiral: BOSS_END_CYCLONE_SPIRAL_DAMAGE
+            },
+            attackPatterns: [
+                { id: 'end_stealth_ambush', name: '潜伏〜魔法陣予兆〜真下出現', damage: BOSS_END_CYCLONE_AMBUSH_DAMAGE },
+                { id: 'end_vortex_drain', name: '強化吸引＆持続ダメージ', damage: BOSS_END_CYCLONE_VORTEX_TICK_DAMAGE },
+                { id: 'end_sweep_laser', name: '薙ぎ払いレーザー', damage: BOSS_END_CYCLONE_LASER_DAMAGE },
+                { id: 'end_spiral_storm', name: '終焉渦巻き弾幕', damage: BOSS_END_CYCLONE_SPIRAL_DAMAGE }
+            ],
+            patternCount: 4,
+            executeAttack(ctx) {
+                const {
+                    room, roomId, matchId, boss, allPlayerCount, alivePlayers, targetCx, targetCy,
+                    io, registerTimeout, pointToSegmentDistance, applyDamageToPlayer, knockbackPlayerFromPoint
+                } = ctx;
+
+                if (boss.isStealthed) return;
+
+                const patternIdx = Math.floor(Math.random() * 4);
+                const isP2 = boss.phase === 2;
+
+                if (patternIdx === 0) {
+                    const stealthMs = 3000;
+                    const warnDuration = 750;
+                    const ambushRadius = 105;
+
+                    boss.isStealthed = true;
+                    io.to(roomId).emit('bossStateUpdated', boss);
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'end_stealth_start',
+                        x: boss.x,
+                        y: boss.y,
+                        durationMs: stealthMs
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+                        const liveList = Object.values(cur.players).filter((pl) => pl && !pl.isDead && !pl.isEliminated);
+                        const anchor = liveList.length > 0
+                            ? liveList[Math.floor(Math.random() * liveList.length)]
+                            : { x: targetCx - 24, y: targetCy - 24 };
+
+                        const targetPos = clampArenaPoint(anchor.x + 24, anchor.y + 24, ambushRadius + 10);
+                        const sigils = [{ x: targetPos.x, y: targetPos.y, radius: ambushRadius }];
+
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'end_ambush_warn',
+                            sigils,
+                            warnDuration
+                        });
+
+                        registerTimeout(cur, () => {
+                            const cur2 = ctx.getRoom();
+                            if (!cur2 || cur2.state !== 'playing' || cur2.matchId !== matchId || !cur2.boss) return;
+
+                            cur2.boss.x = targetPos.x;
+                            cur2.boss.y = targetPos.y;
+                            cur2.boss.isStealthed = false;
+                            io.to(roomId).emit('bossStateUpdated', cur2.boss);
+
+                            io.to(roomId).emit('bossAttackEvent', {
+                                bossId: cur2.boss.id,
+                                element: cur2.boss.element,
+                                type: 'end_ambush_fire',
+                                x: targetPos.x,
+                                y: targetPos.y,
+                                radius: ambushRadius,
+                                damage: BOSS_END_CYCLONE_AMBUSH_DAMAGE
+                            });
+
+                            for (const id in cur2.players) {
+                                const p = cur2.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                const pcx = p.x + 24;
+                                const pcy = p.y + 24;
+                                if (Math.hypot(pcx - targetPos.x, pcy - targetPos.y) <= ambushRadius) {
+                                    applyDamageToPlayer(roomId, p, BOSS_END_CYCLONE_AMBUSH_DAMAGE, 'end_stealth_ambush', matchId, cur2.boss.element);
+                                    if (typeof knockbackPlayerFromPoint === 'function') {
+                                        knockbackPlayerFromPoint(roomId, p, targetPos.x, targetPos.y, ambushRadius + 24, matchId, 'end_stealth_ambush');
+                                    }
+                                }
+                            }
+                        }, warnDuration);
+                    }, Math.max(0, stealthMs - warnDuration));
+                } else if (patternIdx === 1) {
+                    const duration = isP2 ? 4000 : 3600;
+                    const pullStrength = isP2 ? 2.65 : 2.2;
+                    const pullRadius = 260;
+                    const tickIntervalMs = 600;
+                    const tickDamage = BOSS_END_CYCLONE_VORTEX_TICK_DAMAGE;
+
+                    boss.vortexActive = true;
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'vortex',
+                        active: true,
+                        duration,
+                        pullStrength,
+                        pullRadius,
+                        tickIntervalMs,
+                        tickDamage
+                    });
+
+                    const totalTicks = Math.floor(duration / tickIntervalMs);
+                    for (let t = 1; t <= totalTicks; t++) {
+                        registerTimeout(room, () => {
+                            const cur = ctx.getRoom();
+                            if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                            for (const id in cur.players) {
+                                const p = cur.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                const dist = Math.hypot((p.x + 24) - cur.boss.x, (p.y + 24) - cur.boss.y);
+                                if (dist <= pullRadius) {
+                                    applyDamageToPlayer(roomId, p, tickDamage, 'end_vortex_drain', matchId, cur.boss.element);
+                                }
+                            }
+                        }, t * tickIntervalMs);
+                    }
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (cur && cur.matchId === matchId && cur.boss) {
+                            cur.boss.vortexActive = false;
+                        }
+                    }, duration);
+                } else if (patternIdx === 2) {
+                    const originX = boss.x;
+                    const originY = boss.y;
+                    const centerAngle = Math.atan2(targetCy - originY, targetCx - originX);
+                    const sweepHalfAngle = isP2 ? 0.76 : 0.58;
+                    const startAngle = centerAngle - sweepHalfAngle;
+                    const endAngle = centerAngle + sweepHalfAngle;
+                    const length = 520;
+                    const warnDuration = isP2 ? 640 : 780;
+
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'laser_warn',
+                        x: originX,
+                        y: originY,
+                        startAngle,
+                        endAngle,
+                        length,
+                        warnDuration
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+
+                        const fireX = cur.boss.x;
+                        const fireY = cur.boss.y;
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'laser_fire',
+                            x: fireX,
+                            y: fireY,
+                            startAngle,
+                            endAngle,
+                            length,
+                            damage: BOSS_END_CYCLONE_LASER_DAMAGE
+                        });
+
+                        const steps = 6;
+                        for (const id in cur.players) {
+                            const p = cur.players[id];
+                            if (p.isDead || p.isEliminated) continue;
+                            const px = p.x + 24;
+                            const py = p.y + 24;
+                            let hitLaser = false;
+                            for (let s = 0; s <= steps; s++) {
+                                const a = startAngle + ((endAngle - startAngle) * s) / steps;
+                                const lx = fireX + Math.cos(a) * length;
+                                const ly = fireY + Math.sin(a) * length;
+                                if (pointToSegmentDistance(px, py, fireX, fireY, lx, ly) < 26) {
+                                    hitLaser = true;
+                                    break;
+                                }
+                            }
+                            if (hitLaser) {
+                                applyDamageToPlayer(roomId, p, BOSS_END_CYCLONE_LASER_DAMAGE, 'end_sweep_laser', matchId, cur.boss.element);
+                            }
+                        }
+                    }, warnDuration);
+                } else {
+                    const baseCount = isP2 ? 12 : 10;
+                    const extraBulletsByPlayers = Math.max(0, (allPlayerCount || alivePlayers.length || 1) - 1) * 3;
+                    const bulletCount = baseCount + extraBulletsByPlayers;
+
+                    boss.spiralAngle = (boss.spiralAngle + 0.45) % (Math.PI * 2);
+                    room.lastBossAttackAt = Object.assign({}, room.lastBossAttackAt, { spiral: Date.now() });
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'spiral',
+                        x: boss.x,
+                        y: boss.y,
+                        count: bulletCount,
+                        baseAngle: boss.spiralAngle,
+                        speed: isP2 ? 5.3 : 4.4,
+                        damage: BOSS_END_CYCLONE_SPIRAL_DAMAGE
+                    });
+                }
+            },
+            drawEntity(ctx, boss, now, helpers) {
+                if (boss.isStealthed) return;
+                const isRage = boss.phase === 2;
+                const bx = boss.x;
+                const by = boss.y;
+
+                ctx.save();
+                if (helpers && now < helpers.vortexUntil) {
+                    const spin = now / 150;
+                    for (let ring = 1; ring <= 4; ring++) {
+                        ctx.beginPath();
+                        ctx.arc(bx, by, 65 * ring, spin + ring, spin + ring + Math.PI * 1.45);
+                        ctx.strokeStyle = isRage ? 'rgba(244, 63, 94, 0.34)' : 'rgba(226, 232, 240, 0.28)';
+                        ctx.lineWidth = 6;
+                        ctx.stroke();
+                    }
+                }
+
+                const armCount = isRage ? 6 : 4;
+                const rot = now / (isRage ? 190 : 300);
+                for (let a = 0; a < armCount; a++) {
+                    const startAng = rot + (Math.PI * 2 / armCount) * a;
+                    ctx.beginPath();
+                    ctx.arc(bx, by, boss.radius + 16, startAng, startAng + 1.05);
+                    ctx.strokeStyle = isRage ? 'rgba(251, 113, 133, 0.85)' : 'rgba(226, 232, 240, 0.78)';
+                    ctx.lineWidth = 7;
+                    ctx.stroke();
+                }
+
+                ctx.beginPath();
+                ctx.ellipse(bx, by, boss.radius + 14, 20, Math.sin(now / 420) * 0.25, 0, Math.PI * 2);
+                ctx.strokeStyle = isRage ? '#fb7185' : '#94a3b8';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                const grad = ctx.createRadialGradient(bx, by, 10, bx, by, boss.radius);
+                grad.addColorStop(0, '#090d16');
+                grad.addColorStop(0.68, isRage ? '#4c0519' : '#1e293b');
+                grad.addColorStop(1, isRage ? '#e11d48' : '#cbd5e1');
+
+                ctx.beginPath();
+                ctx.arc(bx, by, boss.radius, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.lineWidth = 3.5;
+                ctx.strokeStyle = isRage ? '#fda4af' : '#f8fafc';
+                ctx.stroke();
+
+                ctx.fillStyle = isRage ? '#fda4af' : '#f8fafc';
+                ctx.fillRect(bx - 19, by - 8, 12, 6);
+                ctx.fillRect(bx + 7, by - 8, 12, 6);
                 ctx.restore();
             }
         }
@@ -2132,13 +2744,21 @@
             unlockedByDefault: false,
             clearRewardPt: 2000
         }),
-        Object.freeze({
+Object.freeze({
             stageNumber: 5,
             stageId: 'stage_5',
             title: '幻惑の蜃気楼',
             bossId: 'phantom_mirage',
             unlockedByDefault: false,
             clearRewardPt: 2500
+        }),
+        Object.freeze({
+            stageNumber: 6,
+            stageId: 'stage_6',
+            title: 'STAGE 6 : LAST BOSS - END CYCLONE',
+            bossId: 'end_cyclone',
+            unlockedByDefault: false,
+            clearRewardPt: 5000
         })
     ]);
 
@@ -3015,6 +3635,51 @@
                 gameCtx.strokeStyle = '#fff3b0';
                 gameCtx.lineWidth = 4;
                 gameCtx.stroke();
+            } else if (ef.type === 'end_ambush_warn') {
+                for (const s of (ef.sigils || [])) {
+                    gameCtx.beginPath();
+                    gameCtx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                    gameCtx.fillStyle = 'rgba(226, 232, 240, 0.16)';
+                    gameCtx.fill();
+                    gameCtx.strokeStyle = '#f8fafc';
+                    gameCtx.lineWidth = 2.5;
+                    gameCtx.setLineDash([8, 5]);
+                    gameCtx.stroke();
+                    gameCtx.setLineDash([]);
+
+                    gameCtx.beginPath();
+                    gameCtx.arc(s.x, s.y, s.radius * 0.5, 0, Math.PI * 2);
+                    gameCtx.strokeStyle = 'rgba(251, 113, 133, 0.72)';
+                    gameCtx.lineWidth = 2;
+                    gameCtx.stroke();
+                }
+            } else if (ef.type === 'end_ambush_fire') {
+                const progress = 1 - (ef.timer / (ef.maxTimer || 24));
+                gameCtx.globalAlpha = Math.max(0, 1 - progress);
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(241, 245, 249, 0.45)';
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#fb7185';
+                gameCtx.lineWidth = 6;
+                gameCtx.stroke();
+            } else if (ef.type === 'end_mega_tornado') {
+                const fade = ef.maxTimer ? Math.min(1, ef.timer / 24) : 1;
+                gameCtx.globalAlpha = fade;
+                const r = ef.radius || 150;
+                const spin = now / 120;
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, r, 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(30, 41, 59, 0.28)';
+                gameCtx.fill();
+                for (let arm = 0; arm < 5; arm++) {
+                    const ang = spin + (Math.PI * 2 / 5) * arm;
+                    gameCtx.beginPath();
+                    gameCtx.arc(ef.x, ef.y, r * 0.75, ang, ang + 0.9);
+                    gameCtx.strokeStyle = '#fda4af';
+                    gameCtx.lineWidth = 5;
+                    gameCtx.stroke();
+                }
             }
             gameCtx.restore();
         }
