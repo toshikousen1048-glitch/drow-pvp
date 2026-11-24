@@ -1870,6 +1870,7 @@
             socket.on('matchResult', (data) => {
                 roomState = 'result'; for (const k in keys) keys[k] = false;
                 player.slowUntil = 0; player.slowMultiplier = 1.0;
+                player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                 player.bladeBuffUntil = 0; player.bootsBuffUntil = 0; player.gunBuffUntil = 0;
                 for (const oid in otherPlayers) {
                     otherPlayers[oid].slowUntil = 0; otherPlayers[oid].slowMultiplier = 1.0;

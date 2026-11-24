@@ -877,6 +877,7 @@ function stepServerMagmaZones(roomId, matchId) {
     const tickDmg = magmaCfg.tickDamage || 6;
 
     for (const pid in room.players) {
+        if (room.state !== 'playing' || room.matchId !== matchId) return;
         const p = room.players[pid];
         if (!p || p.isDead || p.isEliminated) continue;
         if (now < (p.lastMagmaHitAt || 0) + tickInterval) continue;
@@ -887,6 +888,7 @@ function stepServerMagmaZones(roomId, matchId) {
         if (touching) {
             p.lastMagmaHitAt = now;
             applyPulseDamageToPlayer(roomId, p, tickDmg, 'magma', matchId, touching.element);
+            if (room.state !== 'playing' || room.matchId !== matchId) return;
         }
     }
 }
@@ -897,6 +899,7 @@ function stepServerPlayerDots(roomId, matchId) {
 
     const now = Date.now();
     for (const pid in room.players) {
+        if (room.state !== 'playing' || room.matchId !== matchId) return;
         const p = room.players[pid];
         if (!p || p.isDead || p.isEliminated) continue;
         if (isTimeStoppedForActor(room, p.id, now)) continue;
@@ -918,6 +921,7 @@ function stepServerPlayerDots(roomId, matchId) {
                 noKnockback: true,
                 noCounter: true
             });
+            if (room.state !== 'playing' || room.matchId !== matchId) return;
         }
     }
 }
@@ -932,7 +936,9 @@ function stepServerBossProjectiles(roomId, matchId, dtMs) {
     const now = Date.now();
 
     for (let i = room.bossProjectiles.length - 1; i >= 0; i--) {
+        if (room.state !== 'playing' || room.matchId !== matchId || !room.boss) return;
         const bp = room.bossProjectiles[i];
+        if (!bp) continue;
 
         if (bp.kind === 'phantom_homing') {
             let nearest = null;
@@ -998,6 +1004,7 @@ function stepServerBossProjectiles(roomId, matchId, dtMs) {
 
         let hitPlayer = false;
         for (const pid in room.players) {
+            if (room.state !== 'playing' || room.matchId !== matchId) return;
             const p = room.players[pid];
             if (!p || p.isDead || p.isEliminated) continue;
             if (now < (p.invincibleUntil || 0) || now < (p.lastServerProjHitAt || 0) + 150) continue;
@@ -1007,15 +1014,16 @@ function stepServerBossProjectiles(roomId, matchId, dtMs) {
             if (Math.hypot(bp.x - pcx, bp.y - pcy) < (bp.hitRadius || 20)) {
                 p.lastServerProjHitAt = now;
                 const applied = applyBossDamageToPlayer(roomId, p, bp.damage, bp.kind, matchId, bp.element);
-                if (applied !== false && bp.kind === 'curse_bolt') {
+                if (applied !== false && bp.kind === 'curse_bolt' && room.state === 'playing' && room.matchId === matchId) {
                     applyRandomPhantomCurse(roomId, p, matchId);
                 }
+                if (room.state !== 'playing' || room.matchId !== matchId) return;
                 hitPlayer = true;
                 break;
             }
         }
 
-        if (hitPlayer) {
+        if (hitPlayer && room.bossProjectiles[i] === bp) {
             room.bossProjectiles.splice(i, 1);
         }
     }

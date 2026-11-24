@@ -389,6 +389,37 @@
                 playTone(620, 'sawtooth', 0.24, 0.1, 180);
             }, 65);
         },
+        // Phase 3 新必殺技 4種対応SE
+        demonBlade: () => {
+            if (!canPlaySe('demonBlade', 250)) return;
+            playNoise(0.18, 0.1);
+            playTone(320, 'sawtooth', 0.22, 0.09, 920);
+            setTimeout(() => playTone(880, 'triangle', 0.24, 0.07, 440), 75);
+        },
+        ricochetGun: () => {
+            if (!canPlaySe('ricochetGun', 120)) return;
+            playNoise(0.08, 0.06);
+            playTone(980, 'square', 0.11, 0.06, 360);
+        },
+        ricochetBounce: () => {
+            if (!canPlaySe('ricochetBounce', 45)) return;
+            playTone(1320, 'triangle', 0.07, 0.05, 880);
+        },
+        phantomBoots: () => {
+            if (!canPlaySe('phantomBoots', 250)) return;
+            playTone(440, 'sine', 0.16, 0.07, 1180);
+            setTimeout(() => playTone(740, 'triangle', 0.18, 0.06, 1480), 65);
+        },
+        timeStop: () => {
+            if (!canPlaySe('timeStop', 400)) return;
+            playTone(660, 'sine', 0.42, 0.1, 82);
+            setTimeout(() => playTone(330, 'triangle', 0.38, 0.08, 55), 70);
+        },
+        timeResume: () => {
+            if (!canPlaySe('timeResume', 400)) return;
+            playTone(180, 'triangle', 0.24, 0.08, 720);
+            setTimeout(() => playTone(540, 'sine', 0.22, 0.07, 1080), 75);
+        },
         bossSlash: () => {
             if (!canPlaySe('bossSlash', 90)) return;
             playNoise(0.25, 0.13);
@@ -587,6 +618,12 @@
     };
 
     const SE_ALIASES = {
+        demon_blade: 'demonBlade',
+        ricochet_guns: 'ricochetGun',
+        ricochet_bounce: 'ricochetBounce',
+        phantom_boots: 'phantomBoots',
+        time_stop: 'timeStop',
+        time_resume: 'timeResume',
         p2_awaken: 'dragonAwaken',
         breath: 'dragonBreath',
         claw_warn: 'dragonClawWarn',

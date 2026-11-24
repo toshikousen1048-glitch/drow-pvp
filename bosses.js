@@ -1449,7 +1449,7 @@
             maxHp: 950,
             hpByPlayers: { 1: 950, 2: 1900, 3: 2850, 4: 3800 },
             speed: 3.0,
-            moveSpeed5: {
+            moveSpeed: {
                 p1: 3.0,
                 p2: 3.2,
                 soloP1: 3.0,
