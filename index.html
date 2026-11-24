@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>64x64 Pixel PvP &amp; BOSS Battle</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="PIXEL PVP">
     <style>
         * { box-sizing: border-box; }
         html, body {
@@ -393,8 +396,8 @@
     /* 左下：8方向スライド対応仮想十字キー（直径140px） */
     .lvc-dpad-zone {
         position: fixed;
-        left: max(16px, calc(env(safe-area-inset-left, 0px) + 12px));
-        bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+        left: max(8px, calc(env(safe-area-inset-left, 0px) * 0.45));
+        bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) * 0.6));
         width: 140px;
         height: 140px;
         border-radius: 50%;
