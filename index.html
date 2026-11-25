@@ -1590,6 +1590,9 @@
         const SHIELD_COOLDOWN = RULES.ACTIONS.shield.cooldownMs, SLASH_COOLDOWN = RULES.ACTIONS.slash.cooldownMs, SHOT_COOLDOWN = RULES.ACTIONS.shot.cooldownMs;
 
         function facingToVectorClient(facing) {
+            if (BOSS && typeof BOSS.facingToVector === 'function') {
+                return BOSS.facingToVector(facing);
+            }
             const D = Math.SQRT1_2;
             switch (facing) {
                 case 'up': return { dx: 0, dy: -1 };
@@ -1607,6 +1610,35 @@
             if (!entity || !facing) return;
             if (facing.includes('left')) entity.lastHorizontalFacing = 'left';
             else if (facing.includes('right')) entity.lastHorizontalFacing = 'right';
+        }
+        function getFacingVisualTilt(facing) {
+            switch (facing) {
+                case 'up_right':
+                case 'up_left':
+                    return -0.14;
+                case 'down_right':
+                case 'down_left':
+                    return 0.14;
+                case 'up':
+                    return -0.06;
+                case 'down':
+                    return 0.06;
+                default:
+                    return 0;
+            }
+        }
+        function applyClientKnockbackStep(dx, dy) {
+            if (dx === 0 && dy === 0) return;
+            const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + dx));
+            const nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + dy));
+            if (!collidesWithWall(nextX, nextY, 48)) {
+                player.x = nextX;
+                player.y = nextY;
+            } else if (!collidesWithWall(nextX, player.y, 48)) {
+                player.x = nextX;
+            } else if (!collidesWithWall(player.x, nextY, 48)) {
+                player.y = nextY;
+            }
         }
 
         let player = {
@@ -2304,7 +2336,7 @@
                 const players = data.players || {};
                 if (players[socket.id]) {
                     const me = players[socket.id];
-                    player.x = me.x; player.y = me.y; player.facing = me.facing; player.element = me.element || player.element;
+                    player.x = me.x; player.y = me.y; player.facing = me.facing; updateHorizontalFacingMemory(player, me.facing); player.element = me.element || player.element;
                     player.hp = me.hp; player.maxHp = me.maxHp; player.stocks = me.stocks ?? 1;
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
                     syncUltraBuffsFromServerEpoch(player, me);
@@ -2317,6 +2349,7 @@
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
                 for (const oid in otherPlayers) {
+                    updateHorizontalFacingMemory(otherPlayers[oid], otherPlayers[oid].facing);
                     syncUltraBuffsFromServerEpoch(otherPlayers[oid], otherPlayers[oid]);
                     syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
                 }
@@ -2329,6 +2362,7 @@
             socket.on('playerJoined', (data) => {
                 if (!data || !data.player || !data.player.id || data.player.id === socket.id) return;
                 const np = { ...data.player };
+                updateHorizontalFacingMemory(np, np.facing);
                 syncUltraBuffsFromServerEpoch(np, np);
                 syncSlowFromServerEpoch(np, np.slowUntil, np.slowMultiplier, np.attackDebuffUntil, np.attackDebuffMultiplier, np.dotUntil);
                 otherPlayers[np.id] = np;
@@ -2556,7 +2590,7 @@
             socket.on('currentPlayers', (players) => {
                 if (players[socket.id]) {
                     const me = players[socket.id];
-                    player.x = me.x; player.y = me.y; player.facing = me.facing; player.element = me.element || player.element;
+                    player.x = me.x; player.y = me.y; player.facing = me.facing; updateHorizontalFacingMemory(player, me.facing); player.element = me.element || player.element;
                     player.hp = me.hp; player.maxHp = me.maxHp; player.stocks = me.stocks ?? 1;
                     player.isDead = Boolean(me.isDead); player.isEliminated = Boolean(me.isEliminated);
                     syncUltraBuffsFromServerEpoch(player, me);
@@ -2567,6 +2601,7 @@
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
                 for (const oid in otherPlayers) {
+                    updateHorizontalFacingMemory(otherPlayers[oid], otherPlayers[oid].facing);
                     syncUltraBuffsFromServerEpoch(otherPlayers[oid], otherPlayers[oid]);
                     syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
                 }
@@ -2579,6 +2614,7 @@
                         spawnWindParticle(op.x + 24, op.y + 38, 'wind');
                     }
                     op.x = data.x; op.y = data.y; op.facing = data.facing;
+                    updateHorizontalFacingMemory(op, data.facing);
                 }
             });
             socket.on('characterUpdated', (data) => {
@@ -2597,12 +2633,11 @@
             });
             socket.on('attackBlocked', (data) => {
                 SE.block(); shakeTime = 8; shakeIntensity = 5;
-                let rx = 0, ry = 0;
-                if (data.knockbackDir === 'left') rx = 20; if (data.knockbackDir === 'right') rx = -20;
-                if (data.knockbackDir === 'up') ry = 20; if (data.knockbackDir === 'down') ry = -20;
+                const kVec = facingToVectorClient(data.knockbackDir);
+                const rx = -kVec.dx * 20, ry = -kVec.dy * 20;
                 if (data.attackerId === socket.id && data.type === 'melee') {
-                    const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + rx)), nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + ry));
-                    if (!collidesWithWall(nextX, nextY, 48)) { player.x = nextX; player.y = nextY; socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing }); }
+                    applyClientKnockbackStep(rx, ry);
+                    socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                 }
                 const label = data.byAbsoluteWall ? 'ABSOLUTE!' : 'BLOCK!';
                 if (data.targetId === socket.id) addFloatingText(player.x + 24, player.y - 12, label, '#00e5ff');
@@ -2817,8 +2852,9 @@
                 const kbDist = data.noKnockback ? 0 : (data.type === 'melee' ? 32 : 16);
                 let dx = 0, dy = 0;
                 if (kbDist > 0) {
-                    if (data.knockbackDir === 'left') dx = -kbDist; if (data.knockbackDir === 'right') dx = kbDist;
-                    if (data.knockbackDir === 'up') dy = -kbDist; if (data.knockbackDir === 'down') dy = kbDist;
+                    const kVec = facingToVectorClient(data.knockbackDir);
+                    dx = kVec.dx * kbDist;
+                    dy = kVec.dy * kbDist;
                 }
                 if (!isSlip) {
                     hitStopUntil = performance.now() + 50;
@@ -2837,8 +2873,7 @@
                         player.invincibleUntil = performance.now() + 350;
                     }
                     if (dx !== 0 || dy !== 0) {
-                        const nextX = Math.min(ARENA_WIDTH - 48, Math.max(0, player.x + dx)), nextY = Math.min(ARENA_HEIGHT - 48, Math.max(ARENA_TOP, player.y + dy));
-                        if (!collidesWithWall(nextX, nextY, 48)) { player.x = nextX; player.y = nextY; }
+                        applyClientKnockbackStep(dx, dy);
                         socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                     }
                     addFloatingText(player.x + 24, player.y - 10, dmgLabel, data.type === 'magma' ? '#ff9f1c' : (data.type === 'curse_dot' ? '#e879f9' : '#ff4d4d'));
@@ -3259,13 +3294,22 @@
                     nextX = Math.min(ARENA_WIDTH - charDisplaySize, Math.max(0, nextX));
                     nextY = Math.min(ARENA_HEIGHT - charDisplaySize, Math.max(ARENA_TOP, nextY));
                     const facingChanged = (player.facing !== nextFacing); player.facing = nextFacing;
-                    const canMove = !collidesWithWall(nextX, nextY, charDisplaySize);
-                    const posChanged = canMove && (Math.abs(player.x - nextX) > 0.01 || Math.abs(player.y - nextY) > 0.01);
+                    let finalX = player.x, finalY = player.y;
+                    if (!collidesWithWall(nextX, nextY, charDisplaySize)) {
+                        finalX = nextX;
+                        finalY = nextY;
+                    } else {
+                        const canMoveX = !collidesWithWall(nextX, player.y, charDisplaySize);
+                        const canMoveY = !collidesWithWall(player.x, nextY, charDisplaySize);
+                        if (canMoveX) finalX = nextX;
+                        else if (canMoveY) finalY = nextY;
+                    }
+                    const posChanged = (Math.abs(player.x - finalX) > 0.01 || Math.abs(player.y - finalY) > 0.01);
                     if (posChanged) {
                         if (hasBoots && Math.random() < 0.35) {
                             spawnWindParticle(player.x + 24, player.y + 38, 'wind');
                         }
-                        player.x = nextX; player.y = nextY;
+                        player.x = finalX; player.y = finalY;
                     }
                     if ((posChanged || facingChanged) && socket && socket.connected && activeRoom) socket.emit('playerMovement', { x: player.x, y: player.y, facing: player.facing });
                 }
@@ -3438,7 +3482,8 @@
                     const target = ef.playerId === (socket && socket.id) ? player : otherPlayers[ef.playerId];
                     const cx = target ? target.x + 24 : ef.x, cy = target ? target.y + 24 : ef.y;
                     c.beginPath(); c.arc(cx, cy, 46 * (1 - t * 0.7), 0, Math.PI * 2); c.strokeStyle = '#ff4d6d'; c.lineWidth = 3; c.stroke();
-                    const ang = ef.facing === 'left' ? Math.PI : ef.facing === 'up' ? -Math.PI / 2 : ef.facing === 'down' ? Math.PI / 2 : 0;
+                    const vec = facingToVectorClient(ef.facing);
+                    const ang = Math.atan2(vec.dy, vec.dx);
                     c.setLineDash([8, 6]); c.strokeStyle = 'rgba(255,77,109,0.6)'; c.lineWidth = 2;
                     c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(ang) * 620, cy + Math.sin(ang) * 620); c.stroke();
                 } else if (ef.kind === 'end_fire') {
@@ -3595,8 +3640,16 @@
             const now = performance.now();
             if (isDead) { c.fillStyle = 'rgba(255,255,255,0.4)'; c.font = 'bold 12px sans-serif'; c.textAlign = 'center'; c.fillText('RESPAWNING...', x + 24, y + 28); return; }
             if (isMe) {
+                const fVec = facingToVectorClient(facing);
+                const fAng = Math.atan2(fVec.dy, fVec.dx);
+                const indX = x + 24 + Math.cos(fAng) * 23;
+                const indY = y + 45 + Math.sin(fAng) * 9;
                 c.save(); c.beginPath(); c.ellipse(x + 24, y + 45, 20, 7, 0, 0, Math.PI * 2);
-                c.fillStyle = 'rgba(46,204,113,0.25)'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = '#2ecc71'; c.stroke(); c.restore();
+                c.fillStyle = 'rgba(46,204,113,0.25)'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = '#2ecc71'; c.stroke();
+                c.translate(indX, indY); c.rotate(fAng);
+                c.fillStyle = '#2ecc71'; c.beginPath();
+                c.moveTo(6, 0); c.lineTo(-3, -3.5); c.lineTo(-3, 3.5); c.closePath(); c.fill();
+                c.restore();
             }
             if (isSlowed) {
                 c.save();
@@ -3645,12 +3698,14 @@
                     ? 'right'
                     : ((entityRef && entityRef.lastHorizontalFacing) || 'right'));
             const flipLeft = horizFacing === 'left';
-            // 1. キャラクタードット絵（charData）の描画（64x64キャッシュ対応・左右反転）
+            // 1. キャラクタードット絵（charData）の描画（64x64キャッシュ対応・左右反転＋上下/斜め傾き）
             if (charData) {
                 const spriteVersion = isMe ? localGridVersion : 0;
+                const tilt = getFacingVisualTilt(facing);
                 c.save();
                 c.translate(x + 24, y + 24);
                 if (flipLeft) c.scale(-1, 1);
+                if (tilt !== 0) c.rotate(tilt);
                 drawCachedPixelSprite(c, -24, -24, 48, charData, now, cacheKey, spriteVersion);
                 c.restore();
             }
@@ -3757,132 +3812,6 @@
                 c.fillText(displayLabel, x + 24, barY - (typeof stocks === 'number' && stocks > 0 ? 11 : 4));
             }
             c.restore();
-        }
-
-        function drawBattleScene() {
-            if (!ctx || !canvas) return;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            if (Array.isArray(playerMagmaFloors)) {
-                for (const mf of playerMagmaFloors) {
-                    ctx.save();
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.35)';
-                    ctx.beginPath();
-                    ctx.arc(mf.x, mf.y, mf.radius || 48, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
-                }
-            }
-
-           const allObstacles = Array.isArray(staticObstacles) ? staticObstacles : [];
-            for (const obs of allObstacles) {
-                ctx.save();
-                ctx.fillStyle = obs.destructible ? '#78350f' : '#334155';
-                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-                ctx.strokeStyle = '#94a3b8';
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
-                ctx.restore();
-            }
-
-            if (otherPlayers && typeof otherPlayers === 'object') {
-                for (const [pid, p] of Object.entries(otherPlayers)) {
-                    if (!p) continue;
-                    drawEntity(
-                        ctx, p.x, p.y, p.facing || 'right', p.characterData,
-                        p.hp || 100, p.maxHp || 100, p.stocks ?? 1, p.isDead, p.isEliminated,
-                        false, false, false, false,
-                        false, false, false,
-                        false, false, false,
-                        false, false,
-                        null, p.name || '相手', p.rank || 'B', p.element || 'neutral', false, pid
-                    );
-                }
-            }
-            if (typeof bossState !== 'undefined' && bossState && bossState.hp > 0) {
-                drawBossEntity(ctx, bossState, performance.now());
-            }
-
-            const drawList = (arr, renderFn) => {
-                if (!Array.isArray(arr)) return;
-                for (const item of arr) renderFn(item);
-            };
-
-            drawList(projectiles, (pr) => {
-                ctx.save();
-                ctx.fillStyle = pr.color || '#fbbf24';
-                ctx.beginPath();
-                ctx.arc(pr.x, pr.y, pr.radius || 6, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            });
-
-            drawList(ricochetBullets, (rb) => {
-                ctx.save();
-                ctx.fillStyle = rb.color || '#38bdf8';
-                ctx.beginPath();
-                ctx.arc(rb.x, rb.y, rb.radius || 5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            });
-
-            if (typeof bossProjectiles !== 'undefined') {
-                drawList(bossProjectiles, (bp) => {
-                    ctx.save();
-                    ctx.fillStyle = bp.color || '#f43f5e';
-                    ctx.beginPath();
-                    ctx.arc(bp.x, bp.y, bp.radius || 8, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.restore();
-                });
-            }
-
-            drawList(slashEffects, (sl) => {
-                ctx.save();
-                ctx.strokeStyle = sl.color || '#fde047';
-                ctx.lineWidth = sl.lineWidth || 4;
-                ctx.beginPath();
-                ctx.arc(sl.x, sl.y, sl.radius || 32, sl.startAngle || -0.8, sl.endAngle || 0.8);
-                ctx.stroke();
-                ctx.restore();
-            });
-
-            drawList(ultraEffects, (ue) => {
-                ctx.save();
-                ctx.fillStyle = ue.color || 'rgba(168, 85, 247, 0.25)';
-                ctx.beginPath();
-                ctx.arc(ue.x, ue.y, ue.radius || 60, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            });
-
-            drawList(windParticles, (wp) => {
-                ctx.save();
-                ctx.fillStyle = wp.color || 'rgba(226, 232, 240, 0.5)';
-                ctx.fillRect(wp.x, wp.y, wp.size || 4, wp.size || 4);
-                ctx.restore();
-            });
-
-            if (typeof confettiParticles !== 'undefined') {
-                drawList(confettiParticles, (cf) => {
-                    ctx.save();
-                    ctx.fillStyle = cf.color || '#34d399';
-                    ctx.fillRect(cf.x, cf.y, cf.w || 6, cf.h || 6);
-                    ctx.restore();
-                });
-            }
-
-            drawList(floatingTexts, (ft) => {
-                ctx.save();
-                ctx.font = ft.font || 'bold 14px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillStyle = ft.color || '#ffffff';
-                ctx.fillText(ft.text || '', ft.x, ft.y);
-                ctx.restore();
-            });
         }
 
         function drawTopHUD(nowPerf) {

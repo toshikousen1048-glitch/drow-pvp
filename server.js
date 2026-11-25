@@ -8,6 +8,8 @@ BossSystem.validateDefinitions({ throwOnError: true });
 
 const {
     GAME_RULES,
+    VALID_FACING,
+    facingToVector,
     STATIC_OBSTACLES: RAW_STATIC_OBSTACLES,
     SPECIAL_INK_IDS,
     SPECIAL_INKS,
@@ -27,14 +29,32 @@ const {
     sanitizeUltraSkillId
 } = BossSystem;
 
+// 想定外の例外でプロセスごと落ちないようにする（Render上での全員切断を防ぐ）
+process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[unhandledRejection]', reason);
+});
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static(__dirname));
+// サーバーのソースや設定ファイルをブラウザから取得されないようにする
+// （bosses.js はクライアントでも使うので公開のまま）
+const BLOCKED_PATH_PATTERN = /^\/(server\.js|package(-lock)?\.json|node_modules|\.|render\.yaml|Procfile)/i;
+app.use((req, res, next) => {
+    if (BLOCKED_PATH_PATTERN.test(req.path)) {
+        return res.status(404).end();
+    }
+    next();
+});
+app.use(express.static(__dirname, { dotfiles: 'ignore' }));
 
-const rooms = {};
-const profiles = {};
+// "constructor" や "__proto__" などの合言葉でサーバーが落ちないよう、プロトタイプなしのオブジェクトを使う
+const rooms = Object.create(null);
+const profiles = Object.create(null);
 
 const MAX_PLAYERS_PER_ROOM = GAME_RULES.MAX_PLAYERS;
 const INITIAL_STOCKS = 1;
@@ -69,7 +89,6 @@ const REWARD_PVP_KO = 100;
 const REWARD_BOSS_CONTRIBUTION_POOL = 200;
 const REWARD_BOSS_MVP = 150;
 
-const VALID_FACING = ['up', 'down', 'left', 'right', 'up_left', 'up_right', 'down_left', 'down_right'];
 const CREDIT_TTL_MS = { shot: 4000, melee: 1500 };
 
 // サーバー側ティックで直接当たり判定を行うBOSS弾種（二重ダメージ防止用）
@@ -102,6 +121,9 @@ function sanitizeClientKey(raw, fallbackId) {
 
 function getOrCreateProfile(clientKey, seedData) {
     const key = sanitizeClientKey(clientKey);
+    if (profiles[key]) {
+        profiles[key].lastSeenAt = Date.now();
+    }
     if (!profiles[key]) {
         const seed = seedData && typeof seedData === 'object' ? seedData : {};
         const maxStageLimit = STAGES.length;
@@ -132,6 +154,7 @@ function getOrCreateProfile(clientKey, seedData) {
 
         profiles[key] = {
             clientKey: key,
+            lastSeenAt: Date.now(),
             points: initPoints,
             maxUnlockedStage: initStage,
             unlockedInks: initInks,
@@ -179,7 +202,9 @@ function sanitizeStats(stats) {
         atk: Math.min(35, Math.max(5, Number(stats.atk) || 12)),
         spd: Math.min(7.5, Math.max(2.0, Number(stats.spd) || 4.0)),
         maxHp: Math.min(220, Math.max(40, Number(stats.maxHp) || 100)),
-        mainColor: typeof stats.mainColor === 'string' ? stats.mainColor.slice(0, 24) : '#00a2e8'
+        mainColor: (typeof stats.mainColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(stats.mainColor.trim()))
+            ? stats.mainColor.trim().toLowerCase()
+            : '#00a2e8'
     };
 }
 
@@ -197,6 +222,35 @@ function sanitizeName(raw) {
 function sanitizeRank(raw) {
     const valid = ['C', 'B', 'A', 'S'];
     return valid.includes(raw) ? raw : 'B';
+}
+
+const GRID_MAX_SIZE = 64;
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/;
+
+// ドット絵データの検証:
+//  - 64x64 を超えるデータや不正なトークンは空きマスに置き換える
+//  - 未解放の特別インクは通常の空きマスに置き換える（ガチャ未所持でも使える抜け穴の防止）
+function sanitizeGrid(raw, unlockedInks) {
+    if (!Array.isArray(raw)) return null;
+    const unlocked = new Set(Array.isArray(unlockedInks) ? unlockedInks : []);
+    const cleanToken = (t) => {
+        if (typeof t !== 'string') return '';
+        const trimmed = t.trim();
+        if (!trimmed) return '';
+        if (Object.prototype.hasOwnProperty.call(SPECIAL_INKS, trimmed)) {
+            return unlocked.has(trimmed) ? trimmed : '';
+        }
+        const lower = trimmed.toLowerCase();
+        return HEX_COLOR_PATTERN.test(lower) ? lower : '';
+    };
+    if (raw.length > 0 && Array.isArray(raw[0])) {
+        const rows = raw.slice(0, GRID_MAX_SIZE);
+        return rows.map((row) => {
+            const src = Array.isArray(row) ? row.slice(0, GRID_MAX_SIZE) : [];
+            return src.map(cleanToken);
+        });
+    }
+    return raw.slice(0, GRID_MAX_SIZE * GRID_MAX_SIZE).map(cleanToken);
 }
 
 function analyzeSpecialInkFromGrid(gridData) {
@@ -229,6 +283,9 @@ function createPlayerGuards() {
         credits: { shot: [], melee: [] },
         nextShieldAt: 0,
         lastMoveAt: 0,
+        moveAllowancePx: 0,
+        externalDisplacementAllowancePx: 0,
+        externalDisplacementUntil: 0,
         lastMoveVectorAt: 0,
         vx: 0,
         vy: 0,
@@ -238,6 +295,18 @@ function createPlayerGuards() {
         lastMagmaHitAt: 0,
         lastPulseHitAt: 0
     };
+}
+
+function grantExternalDisplacement(p, px, durationMs = 550) {
+    if (!p) return;
+    const now = Date.now();
+    const addPx = Math.max(0, Number(px) || 0);
+    const dur = Math.max(100, Number(durationMs) || 550);
+    if (now > (p.externalDisplacementUntil || 0)) {
+        p.externalDisplacementAllowancePx = 0;
+    }
+    p.externalDisplacementAllowancePx = Math.min(360, (p.externalDisplacementAllowancePx || 0) + addPx);
+    p.externalDisplacementUntil = Math.max(p.externalDisplacementUntil || 0, now + dur);
 }
 
 function resetPlayerCombatStatuses(p) {
@@ -256,6 +325,10 @@ function resetPlayerCombatStatuses(p) {
     p.vx = 0;
     p.vy = 0;
     p.lastMoveVectorAt = 0;
+    p.lastMoveAt = 0;
+    p.moveAllowancePx = 0;
+    p.externalDisplacementAllowancePx = 0;
+    p.externalDisplacementUntil = 0;
     p.invincibleUntil = 0;
     p.lastBossHitReportAt = 0;
     p.lastServerProjHitAt = 0;
@@ -300,27 +373,29 @@ function playerCenter(p) {
     return { x: p.x + CHAR_SIZE / 2, y: p.y + CHAR_SIZE / 2 };
 }
 
-function facingToVector(facing) {
-    const D = Math.SQRT1_2; // 1 / √2
-    switch (facing) {
-        case 'up': return { dx: 0, dy: -1 };
-        case 'down': return { dx: 0, dy: 1 };
-        case 'left': return { dx: -1, dy: 0 };
-        case 'up_left': return { dx: -D, dy: -D };
-        case 'up_right': return { dx: D, dy: -D };
-        case 'down_left': return { dx: -D, dy: D };
-        case 'down_right': return { dx: D, dy: D };
-        case 'right':
-        default: return { dx: 1, dy: 0 };
-    }
-}
-
 function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
     const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
     if (l2 === 0) return Math.hypot(px - x1, py - y1);
     let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+}
+
+function isPointInSlashSector(px, py, ox, oy, facingAngle, maxRange, halfAngleRad, targetRadius) {
+    const dx = px - ox;
+    const dy = py - oy;
+    const dist = Math.hypot(dx, dy);
+    const tr = Number(targetRadius) || 0;
+    if (dist > maxRange + tr) return false;
+    if (dist <= Math.max(18, tr * 0.85)) return true;
+
+    let diff = Math.atan2(dy, dx) - facingAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    const radiusAnglePad = Math.atan2(tr * 0.75, Math.max(1, dist));
+    const effectiveHalfAngle = Math.min(Math.PI * 0.62, halfAngleRad + radiusAnglePad);
+    return Math.abs(diff) <= effectiveHalfAngle;
 }
 
 function overlapsStaticObstacle(x, y, size, pad) {
@@ -373,6 +448,7 @@ function ejectPlayerFromObstacles(room, p) {
             if (!overlapsPlayerBlocking(room, cx, cy, CHAR_SIZE)) {
                 p.x = cx;
                 p.y = cy;
+                grantExternalDisplacement(p, 160, 500);
                 return true;
             }
         }
@@ -380,6 +456,7 @@ function ejectPlayerFromObstacles(room, p) {
     const safe = findSafePosition(room, CHAR_SIZE);
     p.x = safe.x;
     p.y = safe.y;
+    grantExternalDisplacement(p, 240, 500);
     return true;
 }
 
@@ -405,7 +482,7 @@ function overlapsObstacleOrWall(room, x, y, size) {
     return false;
 }
 
-function findSafePosition(room, size) {
+function findSafePosition(room, size, allowFallback = true) {
     for (let attempt = 0; attempt < 60; attempt++) {
         const x = Math.floor(Math.random() * (ARENA_WIDTH - size - 48)) + 24;
         const y = Math.floor(Math.random() * (ARENA_HEIGHT - ARENA_TOP - size - 48)) + ARENA_TOP + 24;
@@ -436,7 +513,8 @@ function findSafePosition(room, size) {
         if (!overlap) return { x, y };
     }
 
-    return { x: 64, y: 64 };
+    // 壁・アイテム用は無理に置かない（障害物やプレイヤーの上に湧くのを防ぐ）
+    return allowFallback ? { x: 64, y: 64 } : null;
 }
 
 function pushPlayerSafely(p, angle, distance, room) {
@@ -491,8 +569,11 @@ room.boss.scaleAuraUntil = Math.max(now, room.boss.scaleAuraUntil - unspentMs);
 io.to(roomId).emit('bossStateUpdated', room.boss);
 }
 if (room.bossRoarPullUntil > now) {
-room.bossRoarPullUntil = Math.max(now, room.bossRoarPullUntil - unspentMs);
-}
+                room.bossRoarPullUntil = Math.max(now, room.bossRoarPullUntil - unspentMs);
+            }
+            if (room.bossVortexPullUntil > now) {
+                room.bossVortexPullUntil = Math.max(now, room.bossVortexPullUntil - unspentMs);
+            }
 }
 io.to(roomId).emit('ultraSkillEvent', {
 playerId: ownerId,
@@ -603,6 +684,8 @@ if (Array.isArray(room.bossPendingTimeouts)) {
     room.timeStopOwnerId = null;
     room.bossRoarPullUntil = 0;
     room.bossRoarPullStrength = 0;
+    room.bossVortexPullUntil = 0;
+    room.bossVortexPullStrength = 0;
     if (room.boss) {
         room.boss.scaleAuraActive = false;
         room.boss.scaleAuraUntil = 0;
@@ -802,6 +885,9 @@ function registerServerBossProjectilesFromEvent(roomId, matchId, ev) {
     } else if (ev.type === 'roar_warn' && ev.pullStrength) {
         room.bossRoarPullUntil = Date.now() + (Number(ev.warnDuration) || 780);
         room.bossRoarPullStrength = Number(ev.pullStrength) || 0.85;
+    } else if (ev.type === 'vortex' && ev.active) {
+        room.bossVortexPullUntil = Date.now() + (Number(ev.duration) || 3800);
+        room.bossVortexPullStrength = Number(ev.pullStrength) || 1.55;
     } else if (ev.type === 'phantom_homing' && Array.isArray(ev.orbs)) {
         for (const o of ev.orbs) {
             room.bossProjectiles.push({
@@ -1305,7 +1391,7 @@ function startGimmickLoop(roomId) {
         const wallHp = GAME_RULES.OBSTACLES.BREAKABLE_HP;
 
         if (r.walls.length < maxWalls) {
-            const wallPos = findSafePosition(r, wallSize);
+            const wallPos = findSafePosition(r, wallSize, false);
             if (wallPos) {
                 r.walls.push({
                     id: 'w_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
@@ -1328,7 +1414,7 @@ function startGimmickLoop(roomId) {
         if (isTimeStoppedWorld(r, Date.now())) return;
         const maxItems = r.mode === 'boss' ? 6 : 5;
         if (r.items.length < maxItems) {
-            const itemPos = findSafePosition(r, 24);
+            const itemPos = findSafePosition(r, 24, false);
             if (itemPos) {
                 const chosenType = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
                 r.items.push({
@@ -1567,6 +1653,7 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
             if (now < (p.absoluteWallUntil || 0)) mult = 0.15;
             else if (now < (p.shieldUntil || 0)) mult = 0.25;
             pushPlayerSafely(p, ang, kbDist * mult, room);
+            grantExternalDisplacement(p, kbDist * mult + 24, 550);
             io.to(roomId).emit('playerKnockback', {
                 id: p.id,
                 x: p.x,
@@ -1706,6 +1793,7 @@ function knockbackPlayerFromPoint(roomId, target, originX, originY, targetDistan
     else if (now < (target.shieldUntil || 0)) mult = 0.25;
 
     pushPlayerSafely(target, ang, desiredDist * mult, room);
+    grantExternalDisplacement(target, desiredDist * mult + 24, 550);
 
     io.to(roomId).emit('playerKnockback', {
         id: target.id,
@@ -1815,6 +1903,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
             if (!skipInvincible) {
                 target.invincibleUntil = now + 350;
             }
+            if (!options.noKnockback) {
+        grantExternalDisplacement(target, (hitType === 'melee' ? 32 : 16) + 20, 600);
+    }
             io.to(roomId).emit('playerDamaged', {
                 targetId: target.id,
                 attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
@@ -1882,6 +1973,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
             if (!skipInvincible) {
                 target.invincibleUntil = now + 350;
             }
+            if (!options.noKnockback) {
+        grantExternalDisplacement(target, (hitType === 'melee' ? 32 : 16) + 20, 600);
+    }
             io.to(roomId).emit('playerDamaged', {
                 targetId: target.id,
                 attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
@@ -1905,6 +1999,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
             return true;
         }
 
+        if (hitType === 'melee' && attacker && attacker !== 'BOSS') {
+            grantExternalDisplacement(attacker, 36, 600);
+        }
         io.to(roomId).emit('attackBlocked', {
             targetId: target.id,
             attackerId: attacker && attacker !== 'BOSS' ? attacker.id : 'BOSS',
@@ -1922,6 +2019,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
     target.hp = Math.max(0, target.hp - damage);
     if (!skipInvincible) {
         target.invincibleUntil = now + 350;
+    }
+    if (!options.noKnockback) {
+        grantExternalDisplacement(target, (hitType === 'melee' ? 32 : 16) + 20, 600);
     }
     io.to(roomId).emit('playerDamaged', {
         targetId: target.id,
@@ -2137,6 +2237,7 @@ function beginMatchCountdown(roomId) {
     room.timeStopOwnerId = null;
     room.bossRoarPullUntil = 0;
     room.bossRoarPullStrength = 0;
+    room.bossVortexPullUntil = 0; room.bossVortexPullStrength = 0;
 
     const stage = getStageByNumber(room.stageNumber);
     room.stageNumber = stage.stageNumber;
@@ -2461,9 +2562,9 @@ function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
     const dmgMult = isDemonBlade ? ((bladeDef && bladeDef.slashDamageMultiplier) || 2.0) : 1.0;
 
     const vec = facingToVector(facing);
+    const facingAngle = Math.atan2(vec.dy, vec.dx);
     const range = (slashCfg.range || 78) * rangeMult;
-    const endX = ox + vec.dx * range;
-    const endY = oy + vec.dy * range;
+    const slashHalfAngleRad = 1.05;
     const atkMult = getPlayerEffectiveAttackMultiplier(attacker, now);
 
     // 斬撃モーション描画イベントをルーム全員へ配信
@@ -2482,14 +2583,13 @@ function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
         durationMs: 220
     });
 
-    // 壊せる壁へのダメージ
+    // 壊せる壁へのダメージ（扇形判定）
     let wallsChanged = false;
-    const wallHitPad = 44 * rangeMult;
     for (let i = room.walls.length - 1; i >= 0; i--) {
         const w = room.walls[i];
         const wx = w.x + w.w / 2;
         const wy = w.y + w.h / 2;
-        if (pointToSegmentDistance(wx, wy, ox, oy, endX, endY) <= wallHitPad) {
+        if (isPointInSlashSector(wx, wy, ox, oy, facingAngle, range, slashHalfAngleRad, 22)) {
             w.hp -= isDemonBlade ? 40 : 20;
             wallsChanged = true;
             if (w.hp <= 0) {
@@ -2502,8 +2602,7 @@ function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
     }
 
     if (room.mode === 'boss' && room.boss && room.boss.hp > 0) {
-        const hitDist = pointToSegmentDistance(room.boss.x, room.boss.y, ox, oy, endX, endY);
-        if (hitDist <= room.boss.radius + 32 * rangeMult) {
+        if (isPointInSlashSector(room.boss.x, room.boss.y, ox, oy, facingAngle, range, slashHalfAngleRad, room.boss.radius)) {
             const rawDmg = attacker.stats.atk * slashCfg.bossMultiplier * atkMult * dmgMult;
             applyDamageToBossInternal(roomId, attacker, rawDmg, 'melee', 'melee');
         }
@@ -2513,7 +2612,7 @@ function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
             const target = room.players[id];
             if (!target || target.isDead || target.isEliminated) continue;
             const tc = playerCenter(target);
-            if (pointToSegmentDistance(tc.x, tc.y, ox, oy, endX, endY) <= 42 * rangeMult) {
+            if (isPointInSlashSector(tc.x, tc.y, ox, oy, facingAngle, range, slashHalfAngleRad, 22)) {
                 const rawDmg = attacker.stats.atk * slashCfg.pvpMultiplier * atkMult * dmgMult;
                 applyDamageToPlayerInternal(roomId, target, attacker, rawDmg, facing, 'melee', matchId, attacker.element);
             }
@@ -2776,7 +2875,7 @@ io.on('connection', (socket) => {
                 lastMatchCleared: false,
                 matchId: 0,
                 players: {},
-                sessionRecords: {},
+                sessionRecords: Object.create(null),
                 walls: [],
                 items: [],
                 boss: null,
@@ -2803,7 +2902,7 @@ io.on('connection', (socket) => {
 
         const room = rooms[roomId];
         const cleanStats = sanitizeStats(payload && payload.stats);
-        const gridData = payload && Array.isArray(payload.gridData) ? payload.gridData : null;
+        const gridData = sanitizeGrid(payload && payload.gridData, prof.unlockedInks);
         const element = gridData
             ? determineElementFromPixels(gridData)
             : sanitizeElementId(payload && payload.element);
@@ -3024,8 +3123,10 @@ io.on('connection', (socket) => {
     socket.on('returnToLobby', () => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
-        if (room.state !== 'waiting' && room.state !== 'result') {
-            socket.emit('roomActionRejected', { message: '試合中はロビーに戻れません' });
+        if (room.state !== 'result') {
+            if (room.state !== 'waiting') {
+                socket.emit('roomActionRejected', { message: '試合中はロビーに戻れません' });
+            }
             return;
         }
         room.matchId = (room.matchId || 0) + 1;
@@ -3042,6 +3143,7 @@ io.on('connection', (socket) => {
         room.timeStopOwnerId = null;
         room.bossRoarPullUntil = 0;
         room.bossRoarPullStrength = 0;
+        room.bossVortexPullUntil = 0; room.bossVortexPullStrength = 0;
         room.lastBossAttackAt = {};
 
         if (room.mode === 'boss' && room.lastMatchCleared) {
@@ -3093,25 +3195,56 @@ io.on('connection', (socket) => {
             const now = Date.now();
             if (isTimeStoppedForActor(room, socket.id, now)) return;
 
+            // 壁・障害物にめり込んだまま動けなくなる事故の救済
+            if (overlapsPlayerBlocking(room, p.x, p.y, CHAR_SIZE)) {
+                ejectPlayerFromObstacles(room, p);
+                socket.emit('playerKnockback', { id: socket.id, x: p.x, y: p.y, facing: p.facing, source: 'unstuck' });
+            }
+
             const maxX = ARENA_WIDTH - CHAR_SIZE;
             const maxY = ARENA_HEIGHT - CHAR_SIZE;
             let nx = Math.max(0, Math.min(maxX, Number(data.x) || 0));
             let ny = Math.max(ARENA_TOP, Math.min(maxY, Number(data.y) || ARENA_TOP));
 
-            const dt = Math.min(1500, Math.max(16, now - (p.lastMoveAt || now)));
-            const boosted = now < p.speedBoostUntil + 500;
-            const hasBoots = now < (p.bootsBuffUntil || 0) + 200;
+            const dt = p.lastMoveAt ? Math.min(250, Math.max(0, now - p.lastMoveAt)) : 50;
+            const boosted = now < (p.speedBoostUntil || 0) + 350;
+            const hasBoots = now < (p.bootsBuffUntil || 0) + 350;
             const slowed = now < (p.slowUntil || 0);
             const slowMult = slowed ? (p.slowMultiplier || 0.75) : 1.0;
             const bootsMult = hasBoots ? 1.5 : 1.0;
             const effSpd = p.stats.spd * (boosted ? GAME_RULES.ITEMS.speed.speedMultiplier : 1) * slowMult * bootsMult;
-            const perSec = (effSpd + (room.mode === 'boss' ? 2.2 : 0)) * 60;
-            const budget = perSec * (dt / 1000) * 1.3 + 64;
-            const dist = Math.hypot(nx - p.x, ny - p.y);
-            if (dist > budget) {
-            const ratio = budget / dist;
-            nx = p.x + (nx - p.x) * ratio;
-            ny = p.y + (ny - p.y) * ratio;
+            const perSec = effSpd * 60;
+
+            // BOSS吸引中（vortex / roar_warn）のみ正当な追加引き寄せ速度分を加算
+            let pullPerSec = 0;
+            if (room.mode === 'boss' && room.boss && !isTimeStoppedWorld(room, now)) {
+                if (room.boss.vortexActive || now <= (room.bossVortexPullUntil || 0) + 250) {
+                    const vPull = room.bossVortexPullStrength || (room.boss.phase === 2 ? 1.95 : 1.55);
+                    pullPerSec = vPull * 60;
+                } else if (now <= (room.bossRoarPullUntil || 0) + 250) {
+                    pullPerSec = (room.bossRoarPullStrength || 1.15) * 60;
+                }
+            }
+
+            const maxCap = (perSec + pullPerSec) * 0.25 * 1.2 + 8;
+            const earned = (perSec + pullPerSec) * (dt / 1000) * 1.2;
+            p.moveAllowancePx = Math.min(maxCap, (p.moveAllowancePx || 0) + earned);
+
+            if (now > (p.externalDisplacementUntil || 0)) {
+                p.externalDisplacementAllowancePx = 0;
+            }
+            const extAllowance = p.externalDisplacementAllowancePx || 0;
+            const totalBudget = p.moveAllowancePx + extAllowance;
+
+            const rawDist = Math.hypot(nx - p.x, ny - p.y);
+            let clampedBySpeed = false;
+            if (rawDist > totalBudget && rawDist > 0.001) {
+                const ratio = totalBudget / rawDist;
+                nx = p.x + (nx - p.x) * ratio;
+                ny = p.y + (ny - p.y) * ratio;
+                if (rawDist > totalBudget + 28) {
+                    clampedBySpeed = true;
+                }
             }
 
             const hitsStatic = overlapsStaticObstacle(nx, ny, CHAR_SIZE, 12);
@@ -3130,9 +3263,15 @@ io.on('connection', (socket) => {
                 }
             }
 
+            const actualDist = Math.hypot(nx - p.x, ny - p.y);
+            const usedExt = Math.min(actualDist, extAllowance);
+            p.externalDisplacementAllowancePx = Math.max(0, extAllowance - usedExt);
+            const usedMove = Math.max(0, actualDist - usedExt);
+            p.moveAllowancePx = Math.max(0, p.moveAllowancePx - usedMove);
+
             const moveDx = nx - p.x;
             const moveDy = ny - p.y;
-            if (Math.hypot(moveDx, moveDy) > 0.2) {
+            if (actualDist > 0.2) {
                 p.vx = moveDx;
                 p.vy = moveDy;
                 p.lastMoveVectorAt = now;
@@ -3142,6 +3281,17 @@ io.on('connection', (socket) => {
             p.x = nx;
             p.y = ny;
             p.facing = VALID_FACING.includes(data.facing) ? data.facing : p.facing;
+
+            if (clampedBySpeed) {
+                socket.emit('playerKnockback', {
+                    id: socket.id,
+                    x: p.x,
+                    y: p.y,
+                    facing: p.facing,
+                    source: 'speed_clamp'
+                });
+            }
+
             socket.to(currentRoom).emit('playerMoved', {
                 id: socket.id,
                 x: p.x,
@@ -3217,8 +3367,10 @@ io.on('connection', (socket) => {
         const room = rooms[currentRoom];
         const p = room.players[socket.id];
         if (p && payload && room.state === 'waiting') {
-            const actualGrid = Array.isArray(payload) ? payload : payload.gridData;
-            p.characterData = actualGrid;
+            const rawGrid = Array.isArray(payload) ? payload : payload.gridData;
+            const ownerProfile = profiles[p.clientKey];
+            const actualGrid = sanitizeGrid(rawGrid, ownerProfile ? ownerProfile.unlockedInks : []);
+            if (actualGrid) p.characterData = actualGrid;
             if (payload.name !== undefined) p.name = sanitizeName(payload.name);
             if (payload.rank !== undefined) p.rank = sanitizeRank(payload.rank);
             if (payload.title !== undefined) p.title = String(payload.title).slice(0, 16);
@@ -3652,6 +3804,7 @@ io.on('connection', (socket) => {
                                     if (!target.isDead && !target.isEliminated) {
                                         const kbAng = dist > 0.1 ? Math.atan2(tc.y - m.y, tc.x - m.x) : baseAngle;
                                         pushPlayerSafely(target, kbAng, 48, cur);
+                                        grantExternalDisplacement(target, 72, 550);
                                         io.to(roomId).emit('playerKnockback', {
                                             id: target.id,
                                             x: target.x,
@@ -3873,6 +4026,9 @@ io.on('connection', (socket) => {
             if (room.bossRoarPullUntil > activatedAt) {
                 room.bossRoarPullUntil += durationMs;
             }
+            if (room.bossVortexPullUntil > activatedAt) {
+                room.bossVortexPullUntil += durationMs;
+            }
 
             io.to(roomId).emit('ultraSkillEvent', {
                 playerId: p.id,
@@ -3978,6 +4134,22 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+// 長時間オフラインのプロファイルを掃除（メモリ肥大化対策。クライアント側localStorageから復元可能）
+const PROFILE_TTL_MS = 6 * 60 * 60 * 1000;
+setInterval(() => {
+    const now = Date.now();
+    const onlineKeys = new Set();
+    for (const [, s] of io.sockets.sockets) {
+        if (s.data && s.data.clientKey) onlineKeys.add(s.data.clientKey);
+    }
+    for (const key of Object.keys(profiles)) {
+        const prof = profiles[key];
+        if (!onlineKeys.has(key) && now - (prof.lastSeenAt || 0) > PROFILE_TTL_MS) {
+            delete profiles[key];
+        }
+    }
+}, 30 * 60 * 1000).unref();
 
 const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {

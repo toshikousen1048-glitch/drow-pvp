@@ -18,9 +18,29 @@
 
     const MAX_PLAYERS = 4;
     const PLAYER_SIZE = 48;
-    const PLAYER_BASE_MAX_HP = 100;
+ const PLAYER_BASE_MAX_HP = 100;
     const PLAYER_BASE_SPEED = 4.2;
     const PLAYER_BASE_SHOT_DAMAGE = 12;
+
+    const VALID_FACING = Object.freeze([
+        'up', 'down', 'left', 'right',
+        'up_left', 'up_right', 'down_left', 'down_right'
+    ]);
+
+    function facingToVector(facing) {
+        const D = Math.SQRT1_2;
+        switch (facing) {
+            case 'up': return { dx: 0, dy: -1 };
+            case 'down': return { dx: 0, dy: 1 };
+            case 'left': return { dx: -1, dy: 0 };
+            case 'up_left': return { dx: -D, dy: -D };
+            case 'up_right': return { dx: D, dy: -D };
+            case 'down_left': return { dx: -D, dy: D };
+            case 'down_right': return { dx: D, dy: D };
+            case 'right':
+            default: return { dx: 1, dy: 0 };
+        }
+    }
 
     const STATIC_OBSTACLE_SIZE = 52;
     const STATIC_OBSTACLE_COUNT = 8;
@@ -579,13 +599,10 @@
         if (len > 0.05) {
             return { dx: vx / len, dy: vy / len };
         }
-        switch (pl.facing) {
-            case 'up': return { dx: 0, dy: -1 };
-            case 'down': return { dx: 0, dy: 1 };
-            case 'left': return { dx: -1, dy: 0 };
-            case 'right': return { dx: 1, dy: 0 };
-            default: return { dx: 0, dy: 1 };
+        if (pl.facing && VALID_FACING.includes(pl.facing)) {
+            return facingToVector(pl.facing);
         }
+        return { dx: 0, dy: 1 };
     }
 
     function clampArenaPoint(x, y, margin) {
@@ -3119,6 +3136,9 @@
         if (GAME_RULES.ARENA.WIDTH !== 960 || GAME_RULES.ARENA.HEIGHT !== 720 || GAME_RULES.ARENA.TOP !== 28) {
             errors.push('GAME_RULES.ARENA dimensions must be 960x720 with top 28');
         }
+        if (VALID_FACING.length !== 8) {
+            errors.push(`VALID_FACING must contain 8 directions (got ${VALID_FACING.length})`);
+        }
         if (STATIC_OBSTACLES.length !== STATIC_OBSTACLE_COUNT) {
             errors.push(`STATIC_OBSTACLES count mismatch: expected ${STATIC_OBSTACLE_COUNT}, got ${STATIC_OBSTACLES.length}`);
         }
@@ -3340,6 +3360,8 @@
         ARENA_TOP,
         ARENA_HEIGHT,
         ARENA_CENTER_X,
+        VALID_FACING,
+        facingToVector,
         GAME_RULES,
         STATIC_OBSTACLES,
         SPECIAL_INKS,
