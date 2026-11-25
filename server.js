@@ -2684,6 +2684,14 @@ function fireRicochetWave(roomId, matchId, shooterId, waveIndex) {
 io.on('connection', (socket) => {
     console.log(`クライアントが接続しました: ${socket.id}`);
     let currentRoom = null;
+        let lastPingAt = 0;
+
+    socket.on('latencyPing', (cb) => {
+        const now = Date.now();
+        if (now - lastPingAt < 1000) return;
+        lastPingAt = now;
+        if (typeof cb === 'function') cb();
+    });
 
     // クライアントプロファイル初期化・同期
     socket.on('syncProfile', (payload) => {
