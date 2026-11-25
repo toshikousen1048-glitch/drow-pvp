@@ -315,6 +315,7 @@ function resetPlayerCombatStatuses(p) {
     p.speedBoostUntil = 0;
     p.powerBoostUntil = 0;
     p.slowUntil = 0;
+    p.slowStartedAt = 0;
     p.slowMultiplier = 1.0;
     p.attackDebuffUntil = 0;
     p.attackDebuffMultiplier = 1.0;
@@ -1695,10 +1696,14 @@ function applySlowToPlayer(roomId, target, multiplier, durationMs, matchId) {
     if (!room || room.state !== 'playing' || room.matchId !== matchId) return false;
     if (!target || target.isDead || target.isEliminated) return false;
 
+    const now = Date.now();
     const safeMult = Math.min(1.0, Math.max(0.25, Number(multiplier) || 0.75));
     const safeDuration = Math.max(100, Math.floor(Number(durationMs) || 1800));
-    const until = Date.now() + safeDuration;
+    const until = now + safeDuration;
 
+    if (!target.slowUntil || now >= target.slowUntil) {
+        target.slowStartedAt = now;
+    }
     target.slowMultiplier = safeMult;
     target.slowUntil = until;
 
@@ -2943,6 +2948,7 @@ io.on('connection', (socket) => {
             speedBoostUntil: 0,
             powerBoostUntil: 0,
             slowUntil: 0,
+            slowStartedAt: 0,
             slowMultiplier: 1.0,
             attackDebuffUntil: 0,
             attackDebuffMultiplier: 1.0,
@@ -3206,10 +3212,10 @@ io.on('connection', (socket) => {
             let nx = Math.max(0, Math.min(maxX, Number(data.x) || 0));
             let ny = Math.max(ARENA_TOP, Math.min(maxY, Number(data.y) || ARENA_TOP));
 
-            const dt = p.lastMoveAt ? Math.min(250, Math.max(0, now - p.lastMoveAt)) : 50;
+            const dt = p.lastMoveAt ? Math.min(600, Math.max(0, now - p.lastMoveAt)) : 60;
             const boosted = now < (p.speedBoostUntil || 0) + 350;
             const hasBoots = now < (p.bootsBuffUntil || 0) + 350;
-            const slowed = now < (p.slowUntil || 0);
+            const slowed = now < (p.slowUntil || 0) && now >= ((p.slowStartedAt || 0) + 300);
             const slowMult = slowed ? (p.slowMultiplier || 0.75) : 1.0;
             const bootsMult = hasBoots ? 1.5 : 1.0;
             const effSpd = p.stats.spd * (boosted ? GAME_RULES.ITEMS.speed.speedMultiplier : 1) * slowMult * bootsMult;
@@ -3226,7 +3232,7 @@ io.on('connection', (socket) => {
                 }
             }
 
-            const maxCap = (perSec + pullPerSec) * 0.25 * 1.2 + 8;
+            const maxCap = (perSec + pullPerSec) * 0.6 * 1.2 + 12;
             const earned = (perSec + pullPerSec) * (dt / 1000) * 1.2;
             p.moveAllowancePx = Math.min(maxCap, (p.moveAllowancePx || 0) + earned);
 

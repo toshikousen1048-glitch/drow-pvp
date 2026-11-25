@@ -269,7 +269,18 @@
         #step3Screen { padding: 6px 10px; }
         .arena-wrapper { position: relative; width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
         .arena-canvas-stage { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; position: relative; }
+        .arena-canvas-box { position: relative; display: inline-flex; align-items: center; justify-content: center; max-width: 100%; max-height: 100%; }
         #gameCanvas { width: auto; height: auto; max-width: 100%; max-height: 100%; aspect-ratio: 4 / 3; background: #12121f; border: 2.5px solid #3a467a; border-radius: 8px; display: block; box-shadow: 0 10px 30px rgba(0,0,0,0.65); }
+        .ping-badge {
+            position: absolute; top: 3px; right: 6px; z-index: 8; pointer-events: none; user-select: none;
+            height: clamp(16px, 2.6dvh, 22px); line-height: clamp(14px, 2.4dvh, 20px); padding: 0 7px;
+            border-radius: 999px; font-size: clamp(9px, 1.3vw, 11px); font-weight: 800; font-family: monospace;
+            background: rgba(9, 11, 22, 0.88); border: 1px solid rgba(148, 163, 184, 0.45); color: #94a3b8; white-space: nowrap;
+        }
+        .ping-badge.ping-good { color: #2ecc71; border-color: rgba(46, 204, 113, 0.65); }
+        .ping-badge.ping-warn { color: #f1c40f; border-color: rgba(241, 196, 15, 0.65); }
+        .ping-badge.ping-bad { color: #ff4d4d; border-color: rgba(255, 77, 77, 0.75); }
+        .ping-badge.ping-offline { color: #94a3b8; border-color: rgba(148, 163, 184, 0.45); }
         .controls-hint {
             flex-shrink: 0; font-size: 0.78rem; color: #bdc3c7; background: #131b36; padding: 4px 12px;
             border-radius: 999px; border: 1px solid #2e3866; text-align: center;
@@ -845,7 +856,10 @@
     <div id="step3Screen" class="step-screen">
         <div class="arena-wrapper">
             <div class="arena-canvas-stage" id="arenaCanvasStage">
-                <canvas id="gameCanvas" width="960" height="720"></canvas>
+                <div class="arena-canvas-box" id="gameCanvasBox">
+                    <canvas id="gameCanvas" width="960" height="720"></canvas>
+                    <div id="pingBadge" class="ping-badge ping-offline">Ping: --</div>
+                </div>
                 <div id="resultOverlay">
                     <h1 id="resultTitle" style="font-size:1.9rem; margin:0 0 6px;">🏆 YOU WIN!!</h1>
                     <canvas id="winnerCanvas" width="76" height="76" style="background:#16213e; border:2px solid #f1c40f; border-radius:8px; margin:4px 0;"></canvas>
@@ -1647,7 +1661,7 @@
             stats: { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' }, hp: 100, maxHp: 100, stocks: 1,
             isDead: false, isEliminated: false, invincibleUntil: 0, shieldUntil: 0, absoluteWallUntil: 0, counterStanceUntil: 0,
             bladeBuffUntil: 0, bootsBuffUntil: 0, gunBuffUntil: 0,
-            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowMultiplier: 1.0, attackDebuffUntil: 0, attackDebuffMultiplier: 1.0, dotUntil: 0,
+            speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowStartedAt: 0, slowMultiplier: 1.0, attackDebuffUntil: 0, attackDebuffMultiplier: 1.0, dotUntil: 0,
             lastShieldTime: -SHIELD_COOLDOWN, lastShotTime: 0, lastMeleeTime: 0,
             ultraSkillId: null, ultraRemainingUses: 0, ultraMaxUses: 0, ultraCooldownUntil: 0, ultraState: null, ultraStateUntil: 0,
             wins: 0, points: 0
@@ -2276,10 +2290,93 @@
             }
             return copy;
         }
+        const PING_INTERVAL_MS = 2000;
+        const PING_MAX_SAMPLES = 5;
+        let pingTimerId = null;
+        let pingSamples = [];
+        let pingInFlight = false;
+
+        function updatePingBadge(rttMs, isConnected) {
+            const badge = document.getElementById('pingBadge');
+            if (!badge) return;
+            badge.classList.remove('ping-good', 'ping-warn', 'ping-bad', 'ping-offline');
+            if (!isConnected || rttMs === null || !Number.isFinite(rttMs)) {
+                badge.textContent = 'Ping: --';
+                badge.classList.add('ping-offline');
+                return;
+            }
+            const rounded = Math.max(0, Math.round(rttMs));
+            badge.textContent = `Ping: ${rounded}ms`;
+            if (rounded <= 80) badge.classList.add('ping-good');
+            else if (rounded <= 160) badge.classList.add('ping-warn');
+            else badge.classList.add('ping-bad');
+        }
+
+        function sendSinglePing() {
+            if (!socket || !socket.connected || document.hidden || pingInFlight) return;
+            pingInFlight = true;
+            const sentAt = performance.now();
+            let settled = false;
+            const timeoutId = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                pingInFlight = false;
+            }, 4000);
+
+            socket.emit('latencyPing', () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                pingInFlight = false;
+                if (!socket || !socket.connected || document.hidden) return;
+                const rtt = Math.max(0, performance.now() - sentAt);
+                pingSamples.push(rtt);
+                if (pingSamples.length > PING_MAX_SAMPLES) pingSamples.shift();
+                const avg = pingSamples.reduce((sum, v) => sum + v, 0) / pingSamples.length;
+                updatePingBadge(avg, true);
+            });
+        }
+
+        function stopPingLoop(resetDisplay = false) {
+            if (pingTimerId) {
+                clearInterval(pingTimerId);
+                pingTimerId = null;
+            }
+            pingInFlight = false;
+            if (resetDisplay) {
+                pingSamples = [];
+                updatePingBadge(null, false);
+            }
+        }
+
+        function startPingLoop() {
+            stopPingLoop(false);
+            if (!socket || !socket.connected || document.hidden) return;
+            sendSinglePing();
+            pingTimerId = setInterval(sendSinglePing, PING_INTERVAL_MS);
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopPingLoop(false);
+            } else if (socket && socket.connected) {
+                startPingLoop();
+            }
+        });
+
+        function snapOtherPlayerPos(op, x, y) {
+            if (!op) return;
+            op.x = x;
+            op.y = y;
+            op.targetX = x;
+            op.targetY = y;
+        }
+
         let socket = null;
         if (typeof io !== 'undefined') {
             socket = io();
             socket.on('connect', () => {
+                startPingLoop();
                 socket.emit('syncProfile', { clientKey: MY_CLIENT_KEY, ...userProgress });
                 if (activeRoom) {
                     socket.emit('joinRoom', {
@@ -2292,6 +2389,7 @@
                 }
             });
             socket.on('disconnect', () => {
+                stopPingLoop(true);
                 connectionStatus.textContent = '🔴 切断されました';
                 connectionStatus.style.color = '#e74c3c';
                 isPullingGacha = false;
@@ -2349,6 +2447,7 @@
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
                 for (const oid in otherPlayers) {
+                    snapOtherPlayerPos(otherPlayers[oid], otherPlayers[oid].x, otherPlayers[oid].y);
                     updateHorizontalFacingMemory(otherPlayers[oid], otherPlayers[oid].facing);
                     syncUltraBuffsFromServerEpoch(otherPlayers[oid], otherPlayers[oid]);
                     syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
@@ -2362,6 +2461,7 @@
             socket.on('playerJoined', (data) => {
                 if (!data || !data.player || !data.player.id || data.player.id === socket.id) return;
                 const np = { ...data.player };
+                snapOtherPlayerPos(np, np.x, np.y);
                 updateHorizontalFacingMemory(np, np.facing);
                 syncUltraBuffsFromServerEpoch(np, np);
                 syncSlowFromServerEpoch(np, np.slowUntil, np.slowMultiplier, np.attackDebuffUntil, np.attackDebuffMultiplier, np.dotUntil);
@@ -2416,6 +2516,9 @@
             socket.on('playerKnockback', (data) => {
                 if (!data || roomState !== 'playing') return;
                 if (data.id === socket.id) {
+                    if (data.source === 'speed_clamp') {
+                        if (Math.hypot(data.x - player.x, data.y - player.y) < 32) return;
+                    }
                     player.x = data.x;
                     player.y = data.y;
                     if (data.source === 'p2_awaken') {
@@ -2424,8 +2527,7 @@
                         addFloatingText(player.x + 24, player.y - 18, 'AMBUSH!!', '#f43f5e');
                     }
                 } else if (otherPlayers[data.id]) {
-                    otherPlayers[data.id].x = data.x;
-                    otherPlayers[data.id].y = data.y;
+                    snapOtherPlayerPos(otherPlayers[data.id], data.x, data.y);
                     if (data.source === 'phantom_ambush') {
                         addFloatingText(otherPlayers[data.id].x + 24, otherPlayers[data.id].y - 18, 'AMBUSH!!', '#f43f5e');
                     }
@@ -2601,6 +2703,7 @@
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
                 for (const oid in otherPlayers) {
+                    snapOtherPlayerPos(otherPlayers[oid], otherPlayers[oid].x, otherPlayers[oid].y);
                     updateHorizontalFacingMemory(otherPlayers[oid], otherPlayers[oid].facing);
                     syncUltraBuffsFromServerEpoch(otherPlayers[oid], otherPlayers[oid]);
                     syncSlowFromServerEpoch(otherPlayers[oid], otherPlayers[oid].slowUntil, otherPlayers[oid].slowMultiplier, otherPlayers[oid].attackDebuffUntil, otherPlayers[oid].attackDebuffMultiplier, otherPlayers[oid].dotUntil);
@@ -2610,10 +2713,18 @@
             socket.on('playerMoved', (data) => {
                 const op = otherPlayers[data.id];
                 if (op) {
-                    if (performance.now() < (op.bootsBuffUntil || 0) && Math.hypot(data.x - op.x, data.y - op.y) > 2.5 && Math.random() < 0.45) {
+                    const prevTargetX = (typeof op.targetX === 'number') ? op.targetX : op.x;
+                    const prevTargetY = (typeof op.targetY === 'number') ? op.targetY : op.y;
+                    if (performance.now() < (op.bootsBuffUntil || 0) && Math.hypot(data.x - prevTargetX, data.y - prevTargetY) > 2.5 && Math.random() < 0.45) {
                         spawnWindParticle(op.x + 24, op.y + 38, 'wind');
                     }
-                    op.x = data.x; op.y = data.y; op.facing = data.facing;
+                    if (Math.hypot(data.x - op.x, data.y - op.y) >= 120) {
+                        snapOtherPlayerPos(op, data.x, data.y);
+                    } else {
+                        op.targetX = data.x;
+                        op.targetY = data.y;
+                    }
+                    op.facing = data.facing;
                     updateHorizontalFacingMemory(op, data.facing);
                 }
             });
@@ -2912,7 +3023,7 @@
                     player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                     player.invincibleUntil = performance.now() + 1500; updateUltraHudButton();
                 } else if (otherPlayers[data.id]) {
-                    otherPlayers[data.id].isDead = false; otherPlayers[data.id].hp = data.hp; otherPlayers[data.id].x = data.x; otherPlayers[data.id].y = data.y;
+                    otherPlayers[data.id].isDead = false; otherPlayers[data.id].hp = data.hp; snapOtherPlayerPos(otherPlayers[data.id], data.x, data.y);
                     otherPlayers[data.id].slowUntil = 0; otherPlayers[data.id].slowMultiplier = 1.0; otherPlayers[data.id].attackDebuffUntil = 0; otherPlayers[data.id].attackDebuffMultiplier = 1.0; otherPlayers[data.id].dotUntil = 0;
                 }
             });
@@ -3236,6 +3347,24 @@
                 const wp = windParticles[i];
                 wp.x += wp.vx; wp.y += wp.vy; wp.life--;
                 if (wp.life <= 0) windParticles.splice(i, 1);
+            }
+
+            const OTHER_PLAYER_LERP = 0.28;
+            for (const oid in otherPlayers) {
+                const op = otherPlayers[oid];
+                if (!op || op.isDead || op.isEliminated) continue;
+                if (isTimeStoppedForActorClient(oid, now)) continue;
+                if (typeof op.targetX === 'number' && typeof op.targetY === 'number') {
+                    const dx = op.targetX - op.x;
+                    const dy = op.targetY - op.y;
+                    if (Math.hypot(dx, dy) < 0.35) {
+                        op.x = op.targetX;
+                        op.y = op.targetY;
+                    } else {
+                        op.x += dx * OTHER_PLAYER_LERP;
+                        op.y += dy * OTHER_PLAYER_LERP;
+                    }
+                }
             }
 
             if (!player.isDead && !player.isEliminated && !isTyping && !amStopped) {
@@ -3829,7 +3958,7 @@
                 gameCtx.fillStyle = bossState.phase === 2 ? '#ff6b6b' : '#f5b7ff';
                 gameCtx.fillText(`${elem.icon}${elem.name} ST.${bossState.stageNumber || currentStageNumber} ${bossState.name} (${phaseLabel})`, 10, 18);
 
-                const barX = 330, barW = 470, barH = 12;
+                const barX = 310, barW = 420, barH = 12;
                 gameCtx.fillStyle = '#2c2c3e'; gameCtx.fillRect(barX, 8, barW, barH);
                 gameCtx.fillStyle = bossState.phase === 2 ? '#e74c3c' : (bossState.element === 'dark' ? '#9333ea' : (bossState.element === 'fire' ? '#ea580c' : '#9b59b6'));
                 gameCtx.fillRect(barX, 8, barW * hpRatio, barH);
@@ -3838,7 +3967,7 @@
                 gameCtx.strokeRect(barX, 8, barW, barH);
 
                 gameCtx.font = 'bold 11px monospace'; gameCtx.textAlign = 'right'; gameCtx.fillStyle = '#fff';
-                gameCtx.fillText(`${bossState.hp}/${bossState.maxHp}`, ARENA_WIDTH - 12, 18);
+                gameCtx.fillText(`${bossState.hp}/${bossState.maxHp}`, ARENA_WIDTH - 118, 18);
 
                 if (hasScaleAura) {
                     gameCtx.save();
@@ -4083,8 +4212,14 @@
         function gameLoop(ts) {
             const nowTs = (typeof ts === 'number') ? ts : performance.now();
             stepAccumulator += Math.min(100, nowTs - lastFrameTs); lastFrameTs = nowTs;
-            while (stepAccumulator >= FIXED_STEP_MS - 0.5) { updateGame(); stepAccumulator = Math.max(0, stepAccumulator - FIXED_STEP_MS); }
-            drawGame(); requestAnimationFrame(gameLoop);
+            let shouldDraw = false;
+            while (stepAccumulator >= FIXED_STEP_MS) {
+                updateGame();
+                stepAccumulator = Math.max(0, stepAccumulator - FIXED_STEP_MS);
+                shouldDraw = true;
+            }
+            if (shouldDraw) drawGame();
+            requestAnimationFrame(gameLoop);
         }
 
         loadUserProgress();
