@@ -54,6 +54,11 @@
             background: #232b46; color: #fff; border: 1px solid #495786;
             padding: 11px; font-size: 0.92rem; font-weight: bold; border-radius: 8px; cursor: pointer;
         }
+        .progression-section { margin: 12px 0; padding: 10px; text-align: left; background: rgba(8, 12, 30, 0.78); border: 1px solid #34416f; border-radius: 10px; }
+        .progression-section h3 { margin: 0 0 8px; color: #00e5ff; font-size: 0.95rem; }
+        .progression-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+        .progression-card { padding: 9px; border: 1px solid #34416f; border-radius: 8px; background: #10152b; color: #e8edff; font-size: 0.78rem; }
+        .progression-card button { margin-top: 7px; width: 100%; }
         .home-sound-row { margin-top: 14px; display: flex; justify-content: center; gap: 10px; }
 
         /* 🎰 刷新ガチャモーダル */
@@ -569,6 +574,21 @@
         border-color: #a29bfe; background: rgba(45, 27, 92, 0.72);
         box-shadow: 0 0 14px rgba(162, 155, 254, 0.45); font-size: 0.76rem;
     }
+    .lvc-leave-btn {
+        position: fixed;
+        left: max(8px, calc(env(safe-area-inset-left, 0px) + 8px));
+        top: max(8px, calc(env(safe-area-inset-top, 0px) + 8px));
+        min-width: 48px;
+        height: 30px;
+        border: 1.5px solid rgba(255, 77, 77, 0.85);
+        border-radius: 999px;
+        background: rgba(127, 29, 29, 0.82);
+        color: #fff;
+        font-size: 0.68rem;
+        font-weight: 800;
+        pointer-events: auto;
+        touch-action: manipulation;
+    }
     .lvc-btn-icon { font-size: 1.05em; pointer-events: none; }
     .lvc-btn-sub { font-size: 0.62rem; opacity: 0.92; pointer-events: none; margin-top: 1px; }
     .lvc-cd-mask {
@@ -609,6 +629,7 @@
                     <button class="btn-gacha" onclick="openGachaModal('ink')">🎰 特別インク＆必殺技ガチャ</button>
                     <button class="btn-howto" onclick="openHowToModal()">📖 ルール・操作説明</button>
                 </div>
+                <button class="btn-howto" onclick="openProgressionModal()">🧬 タレント・覚醒・パッシブ装備</button>
             </div>
             <div class="home-sound-row">
                 <button id="homeBgmBtn" class="small-btn" onclick="toggleBgm()">🎵 BGM: ON</button>
@@ -661,6 +682,39 @@
                     <button class="small-btn" onclick="closeGachaModal()">閉じる</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="progressionModal" class="modal-overlay">
+        <div class="modal-box" style="max-width:820px; text-align:left;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <h2 style="margin:0; color:#00e5ff; font-size:1.15rem;">🧬 育成・覚醒・パッシブ</h2>
+                <div style="font-weight:bold; color:#f1c40f;">🪙 <span id="progressionPointsVal">0</span> Pt</div>
+            </div>
+            <p style="font-size:0.76rem; color:#aab8df; margin:6px 0;">タレント効果はBOSS戦限定。強化・装備変更は試合終了後に反映されます。</p>
+            <section class="progression-section">
+                <h3>🌱 10段階タレント</h3>
+                <div id="talentTreeCards" class="progression-grid"></div>
+                <div id="progressionActionResult" style="font-size:0.78rem; color:#2ecc71; margin-top:7px;"></div>
+            </section>
+            <section class="progression-section">
+                <h3>⚡ 必殺技覚醒</h3>
+                <div id="ultraAwakeningCards" class="progression-grid"></div>
+            </section>
+            <section class="progression-section">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <h3 style="margin:0;">🎒 パッシブ装備（3枠）</h3>
+                    <button id="drawPassiveGearBtn" class="btn-gacha" style="padding:7px 10px; font-size:0.78rem;" onclick="drawPassiveGear()">装備ガチャ (1500Pt)</button>
+                </div>
+                <div id="passiveGearCards" class="progression-grid" style="margin-top:8px;"></div>
+                <div id="passiveGachaResult" style="font-size:0.78rem; color:#ffd166; margin-top:8px;"></div>
+            </section>
+            <section class="progression-section">
+                <h3>📅 デイリー初勝利</h3>
+                <div id="dailyWinStatus" style="font-size:0.8rem; color:#e8edff;"></div>
+                <div style="font-size:0.72rem; color:#aab8df; margin-top:4px;">BOSS戦またはPvPのその日最初の勝利で+500Pt（日本時間）。</div>
+            </section>
+            <div style="text-align:right;"><button class="small-btn" onclick="closeProgressionModal()">閉じる</button></div>
         </div>
     </div>
 
@@ -816,10 +870,20 @@
             <div class="mode-selector">
                 <button id="modePvpBtn" class="mode-btn active-pvp" onclick="selectRoomMode('pvp')">⚔️ PvP対戦 (2〜4人)</button>
                 <button id="modeBossBtn" class="mode-btn" onclick="selectRoomMode('boss')">🌀 BOSS討伐 (1〜4人協力)</button>
+                <button id="modeTrainingBtn" class="mode-btn" onclick="selectRoomMode('training')">🎯 トレーニング (サンドバッグ)</button>
             </div>
             <div id="bossSelector" class="boss-selector" style="display:none;"></div>
             <div id="modeDescBanner" style="font-size:0.76rem; color:#bdc3c7; background:#090b16; padding:6px 10px; border-radius:6px; margin-bottom:8px;">
                 ⚔️ プレイヤー同士のサバイバル対戦！
+            </div>
+            <div id="trainingPanel" style="display:none; background:#090b16; border:1px solid #00e5ff; border-radius:8px; padding:8px; margin-bottom:8px;">
+                <div id="trainingUltraSelect" style="display:flex; gap:5px; flex-wrap:wrap; justify-content:center;"></div>
+                <div style="display:flex; gap:12px; justify-content:center; margin-top:6px; font-size:0.78rem;">
+                    <span id="trainingDpsDisplay" style="color:#00e5ff;">DPS: 0</span>
+                    <span id="trainingMaxHitDisplay" style="color:#ffd166;">最大ヒット: 0</span>
+                    <span id="trainingDamageDisplay" style="color:#ff8c42;">累計: 0</span>
+                </div>
+                <button class="small-btn" style="margin-top:6px;" onclick="resetTrainingTarget()">サンドバッグをリセット</button>
             </div>
 
             <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin:6px 0;">
@@ -929,6 +993,7 @@
                     <span id="lvcCdMaskUltra" class="lvc-cd-mask"></span>
                     <span id="lvcCdTextUltra" class="lvc-cd-text"></span>
                 </button>
+                <button id="lvcBtnLeave" type="button" class="lvc-leave-btn" aria-label="トレーニングモードを退出">🚪退出</button>
             </div>
         </div>
     </div>
@@ -991,8 +1056,18 @@
             ARENA: { WIDTH: 960, TOP: 28, HEIGHT: 720, CENTER_X: 480, PLAY_CENTER_Y: 374 },
             ITEMS: { speed: { speedMultiplier: 1.4 } },
             ACTIONS: { shield: { durationMs: 1200, cooldownMs: 4000 }, slash: { cooldownMs: 600 }, shot: { cooldownMs: 450 }, ultra: { cooldownMs: 6000, maxStock: 3 } },
-            GACHA: { INK_COST: 300, INK_DUPLICATE_REFUND: 100, ULTRA_COST: 1000, ULTRA_MAX_STOCK: 3, ULTRA_DUPLICATE_REFUND: 300 }
+            GACHA: { INK_COST: 300, INK_DUPLICATE_REFUND: 100, ULTRA_COST: 1000, ULTRA_MAX_STOCK: 3, ULTRA_DUPLICATE_REFUND: 300 },
+            PROGRESSION: {
+                TALENT_MAX_LEVEL: 10, TALENT_COST_PER_LEVEL: 500,
+                TALENT_PER_LEVEL: { durability: 0.04, attack: 0.035, mobility: 0.02, reward: 0.05 },
+                TALENT_UNLOCKS: { emergencyEscape: 5, bulletConservation: 8, inkProtection: 10 },
+                BULLET_COOLDOWN_MULTIPLIER: 0.85,
+                ULTRA_RANK_2_POINTS: 3, ULTRA_RANK_3_POINTS: 6,
+                PASSIVE_GACHA_COST: 1500, PASSIVE_MAX_RANK: 5, DAILY_FIRST_WIN_BONUS: 500,
+                PASSIVE_PER_RANK: { weaponAttack: 0.05, armorReduction: 0.05, accessoryDuration: 0.05 }
+            }
         };
+        const PROGRESSION_RULES = RULES.PROGRESSION;
 
         // サーバーティックで直接当たり判定を行う弾種（二重ダメージ防止のためクライアントからはヒット通知を送らない）
         const SERVER_AUTHORITATIVE_PROJECTILES = new Set(['snake_dark', 'shadow_orb', 'phantom_homing', 'curse_bolt', 'feint_orb']);
@@ -1292,26 +1367,77 @@
                 box.appendChild(btn);
             });
         }
+        function renderTrainingUltraSelect() {
+            const box = document.getElementById('trainingUltraSelect');
+            if (!box || !BOSS) return;
+            box.textContent = '';
+            BOSS.getAllUltraSkills().forEach((skill) => {
+                const btn = document.createElement('button');
+                btn.className = 'small-btn';
+                btn.style.padding = '3px 6px';
+                btn.style.fontSize = '0.72rem';
+                const active = player.ultraSkillId === skill.id;
+                btn.textContent = `${active ? '✅ ' : ''}${skill.icon}${skill.name}`;
+                btn.onclick = () => {
+                    initAudio(); SE.click();
+                    player.ultraSkillId = skill.id;
+                    player.ultraRemainingUses = RULES.GACHA.ULTRA_MAX_STOCK;
+                    player.ultraMaxUses = RULES.GACHA.ULTRA_MAX_STOCK;
+                    player.ultraCooldownUntil = 0;
+                    player.ultraCooldownDurationMs = 0;
+                    renderTrainingUltraSelect();
+                    updateUltraHudButton();
+                    if (socket && socket.connected && activeRoom) socket.emit('setTrainingUltra', { skillId: skill.id });
+                };
+                box.appendChild(btn);
+            });
+        }
+
+        function resetTrainingTarget() {
+            initAudio(); SE.click();
+            updateTrainingStats({ startAt: Date.now(), totalDamage: 0, maxHit: 0, elapsedMs: 0 });
+            if (socket && socket.connected && activeRoom) socket.emit('resetTrainingTarget');
+        }
+
+        function updateTrainingStats(stats) {
+            if (!stats) return;
+            const elapsedSec = Math.max(0.001, (Number(stats.elapsedMs) || 0) / 1000);
+            const dps = Math.round((Number(stats.totalDamage) || 0) / elapsedSec);
+            const dpsEl = document.getElementById('trainingDpsDisplay');
+            const maxHitEl = document.getElementById('trainingMaxHitDisplay');
+            const damageEl = document.getElementById('trainingDamageDisplay');
+            if (dpsEl) dpsEl.textContent = `DPS: ${dps}`;
+            if (maxHitEl) maxHitEl.textContent = `最大ヒット: ${Number(stats.maxHit) || 0}`;
+            if (damageEl) damageEl.textContent = `累計: ${Number(stats.totalDamage) || 0}`;
+        }
+
         function updateModeButtonsUI() {
-            const pvpBtn = document.getElementById('modePvpBtn'), bossBtn = document.getElementById('modeBossBtn'), desc = document.getElementById('modeDescBanner');
+            const pvpBtn = document.getElementById('modePvpBtn'), bossBtn = document.getElementById('modeBossBtn'), trainingBtn = document.getElementById('modeTrainingBtn'), desc = document.getElementById('modeDescBanner');
             const isInRoom = Boolean(activeRoom), amHost = !isInRoom || (socket && roomHostId === socket.id), lockedByState = isInRoom && roomState !== 'waiting';
             pvpBtn.className = 'mode-btn' + (currentRoomMode === 'pvp' ? ' active-pvp' : '');
             bossBtn.className = 'mode-btn' + (currentRoomMode === 'boss' ? ' active-boss' : '');
-            pvpBtn.disabled = lockedByState || !amHost; bossBtn.disabled = !BOSS || lockedByState || !amHost;
+            trainingBtn.className = 'mode-btn' + (currentRoomMode === 'training' ? ' active-boss' : '');
+            pvpBtn.disabled = lockedByState || !amHost; bossBtn.disabled = !BOSS || lockedByState || !amHost; trainingBtn.disabled = !BOSS || lockedByState || !amHost;
             if (currentRoomMode === 'boss' && BOSS) {
                 const stage = BOSS.getStageByNumber(currentStageNumber), def = BOSS.getBossDef(stage.bossId), elem = BOSS.getElementInfo(def.element);
                 desc.innerHTML = `🌀 <b>STAGE ${stage.stageNumber}: ${escapeHtml(def.name)}</b> (${elem.icon}${elem.name}) — ${escapeHtml(def.summary)}` + (amHost ? '' : ' <span style="color:#ffd166;">[ホストが選択中]</span>');
                 desc.style.color = '#f5b7ff';
+            } else if (currentRoomMode === 'training') {
+                desc.innerHTML = '🎯 <b>トレーニングモード</b>｜サンドバッグ、必殺技無料試用、リアルタイムDPS計測';
+                desc.style.color = '#00e5ff';
             } else {
                 desc.innerHTML = '⚔️ <b>PvPサバイバル対戦！</b> 2〜4人でバトル！最後の1人まで生き残れ！';
                 desc.style.color = '#bdc3c7';
             }
+            const trainingPanel = document.getElementById('trainingPanel');
+            if (trainingPanel) trainingPanel.style.display = currentRoomMode === 'training' ? 'block' : 'none';
+            if (currentRoomMode === 'training') renderTrainingUltraSelect();
             renderBossSelector();
         }
         function selectRoomMode(mode) {
             initAudio(); SE.click();
             if (activeRoom && (roomState !== 'waiting' || (socket && roomHostId !== socket.id))) return;
-            currentRoomMode = (mode === 'boss' && BOSS) ? 'boss' : 'pvp';
+            currentRoomMode = (mode === 'boss' && BOSS) ? 'boss' : ((mode === 'training' && BOSS) ? 'training' : 'pvp');
             updateModeButtonsUI();
             if (activeRoom && socket && socket.connected) socket.emit('changeRoomMode', { mode: currentRoomMode, stageNumber: currentStageNumber, bossId: currentBossId });
         }
@@ -1367,7 +1493,42 @@
             }
             return base;
         }
-        let userProgress = { points: 300, maxUnlockedStage: 1, unlockedInks: [], ultraStocks: createDefaultUltraStocksClient(), equippedUltra: null, wins: 0 };
+        function createDefaultTalentLevelsClient() {
+            return { durability: 0, attack: 0, mobility: 0, reward: 0 };
+        }
+        function createDefaultUltraAwakeningClient() {
+            const points = {};
+            for (const id of (BOSS && BOSS.ULTRA_SKILL_ORDER) || []) points[id] = 0;
+            return points;
+        }
+        function normalizeClientProgression(raw) {
+            const talentInput = raw && raw.talents && typeof raw.talents === 'object' ? raw.talents : {};
+            const awakeningInput = raw && raw.ultraAwakeningPoints && typeof raw.ultraAwakeningPoints === 'object'
+                ? raw.ultraAwakeningPoints
+                : {};
+            const inventoryInput = raw && raw.passiveInventory && typeof raw.passiveInventory === 'object'
+                ? raw.passiveInventory
+                : {};
+            const slotsInput = raw && raw.passiveGearSlots && typeof raw.passiveGearSlots === 'object'
+                ? raw.passiveGearSlots
+                : {};
+            const talents = createDefaultTalentLevelsClient();
+            for (const key of Object.keys(talents)) talents[key] = Math.min(PROGRESSION_RULES.TALENT_MAX_LEVEL, Math.max(0, Math.floor(Number(talentInput[key]) || 0)));
+            const ultraAwakeningPoints = createDefaultUltraAwakeningClient();
+            for (const key of Object.keys(ultraAwakeningPoints)) ultraAwakeningPoints[key] = Math.min(PROGRESSION_RULES.ULTRA_RANK_3_POINTS, Math.max(0, Math.floor(Number(awakeningInput[key]) || 0)));
+            const passiveInventory = { weapon: [0, 0, 0, 0, 0, 0], armor: [0, 0, 0, 0, 0, 0], accessory: [0, 0, 0, 0, 0, 0] };
+            for (const type of Object.keys(passiveInventory)) {
+                const counts = Array.isArray(inventoryInput[type]) ? inventoryInput[type] : [];
+                for (let rank = 1; rank <= PROGRESSION_RULES.PASSIVE_MAX_RANK; rank++) passiveInventory[type][rank] = Math.min(999, Math.max(0, Math.floor(Number(counts[rank]) || 0)));
+            }
+            const passiveGearSlots = { weapon: 0, armor: 0, accessory: 0 };
+            for (const type of Object.keys(passiveGearSlots)) passiveGearSlots[type] = Math.min(PROGRESSION_RULES.PASSIVE_MAX_RANK, Math.max(0, Math.floor(Number(slotsInput[type]) || 0)));
+            return { talents, ultraAwakeningPoints, passiveInventory, passiveGearSlots, dailyWinDate: typeof (raw && raw.dailyWinDate) === 'string' ? raw.dailyWinDate : '' };
+        }
+        let userProgress = {
+            points: 300, maxUnlockedStage: 1, unlockedInks: [], ultraStocks: createDefaultUltraStocksClient(),
+            equippedUltra: null, wins: 0, ...normalizeClientProgression({})
+        };
 
         function loadUserProgress() {
             try {
@@ -1379,11 +1540,13 @@
                         unlockedInks: Array.isArray(saved.unlockedInks) ? saved.unlockedInks : [],
                         ultraStocks: Object.assign(createDefaultUltraStocksClient(), saved.ultraStocks || {}),
                         equippedUltra: saved.equippedUltra || null,
-                        wins: Math.max(0, Math.floor(saved.wins || 0))
+                        wins: Math.max(0, Math.floor(saved.wins || 0)),
+                        ...normalizeClientProgression(saved)
                     };
                 }
             } catch (e) {}
             updatePointsDisplay();
+            renderProgressionUI();
         }
         function applyServerProfile(prof) {
             if (!prof || typeof prof !== 'object') return;
@@ -1393,10 +1556,12 @@
                 unlockedInks: Array.isArray(prof.unlockedInks) ? prof.unlockedInks : [],
                 ultraStocks: Object.assign(createDefaultUltraStocksClient(), prof.ultraStocks || {}),
                 equippedUltra: prof.equippedUltra || null,
-                wins: Math.max(0, Math.floor(prof.wins || 0))
+                wins: Math.max(0, Math.floor(prof.wins || 0)),
+                ...normalizeClientProgression(prof)
             };
             localStorage.setItem(USER_PROGRESS_KEY, JSON.stringify(userProgress));
             updatePointsDisplay(); renderSpecialPalette(); renderGachaInventoryPanel(); renderLobbyPreview();
+            renderProgressionUI();
             if (!activeRoom) { hostMaxUnlockedStage = userProgress.maxUnlockedStage; updateModeButtonsUI(); }
         }
         function updatePointsDisplay() {
@@ -1422,7 +1587,7 @@
                 const btn = document.getElementById('pullGachaBtn');
                 const msg = tab === 'ink'
                     ? '特別インク3種（虹・金・毒）が排出！重複時は 100Pt 還元！'
-                    : '全8種（Sレア4種40%・Aレア4種60%）が排出！同技×3まで増加、上限重複で 300Pt 還元！';
+                    : '全8種（Sレア4種40%・Aレア4種60%）。重複で覚醒Pt、★2はCD -10%、★3は効果威力 +15%！';
                 btn.textContent = tab === 'ink' ? '特別インクガチャ (300Pt)' : 'ウルトラガチャ (1000Pt)';
                 document.getElementById('gachaResultArea').innerHTML = `<p id="gachaRuleDesc" style="font-size:0.8rem; color:#b8c6e8; margin:0;">${msg}</p>`;
             } else {
@@ -1444,17 +1609,136 @@
             listEl.innerHTML = '';
             BOSS.getAllUltraSkills().forEach((skill) => {
                 const stock = userProgress.ultraStocks[skill.id] || 0;
+                const awakenPoints = userProgress.ultraAwakeningPoints[skill.id] || 0;
+                const awakenRank = awakenPoints >= PROGRESSION_RULES.ULTRA_RANK_3_POINTS ? 3
+                    : (awakenPoints >= PROGRESSION_RULES.ULTRA_RANK_2_POINTS ? 2 : 1);
                 const isEquipped = userProgress.equippedUltra === skill.id && stock > 0;
                 const card = document.createElement('div');
                 card.className = 'ultra-equip-card' + (isEquipped ? ' equipped' : '') + (stock <= 0 ? ' locked' : '');
                 const left = document.createElement('div');
-                left.innerHTML = `<div style="font-weight:bold; color:#fff;">${skill.icon} ${skill.name} <span class="rarity-tag rar-${skill.rarity}">${skill.rarity}</span> <span class="stock-pill">×${stock}</span></div><div style="font-size:0.72rem; color:#a4b0be; margin-top:2px;">${skill.description}</div>`;
+                left.innerHTML = `<div style="font-weight:bold; color:#fff;">${skill.icon} ${skill.name} <span class="rarity-tag rar-${skill.rarity}">${skill.rarity}</span> <span class="stock-pill">×${stock}</span> <span class="stock-pill">★${awakenRank} (${awakenPoints}/${PROGRESSION_RULES.ULTRA_RANK_3_POINTS})</span></div><div style="font-size:0.72rem; color:#a4b0be; margin-top:2px;">${skill.description}</div>`;
                 const btn = document.createElement('button'); btn.className = 'small-btn'; btn.style.flexShrink = '0';
                 if (stock <= 0) { btn.textContent = '未所持'; btn.disabled = true; }
                 else if (isEquipped) { btn.textContent = '✅ 装備中'; btn.style.background = '#00b4d8'; btn.style.borderColor = '#90e0ef'; }
                 else { btn.textContent = '装備する'; btn.addEventListener('click', () => equipUltraSkill(skill.id)); }
                 card.appendChild(left); card.appendChild(btn); listEl.appendChild(card);
             });
+        }
+        const formatProgressionPercent = (ratio) => Number((ratio * 100).toFixed(1));
+        const TALENT_UI = {
+            durability: { name: '耐久', effect: `最大HP +${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.durability)}% / Lv`, total: `+${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.durability * PROGRESSION_RULES.TALENT_MAX_LEVEL)}%`, ability: `Lv.${PROGRESSION_RULES.TALENT_UNLOCKS.emergencyEscape} 緊急脱出 / Lv.${PROGRESSION_RULES.TALENT_UNLOCKS.inkProtection} インクの加護` },
+            attack: { name: '攻撃', effect: `玉・斬撃ダメージ +${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.attack)}% / Lv`, total: `+${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.attack * PROGRESSION_RULES.TALENT_MAX_LEVEL)}%`, ability: `Lv.${PROGRESSION_RULES.TALENT_UNLOCKS.bulletConservation} 弾丸節約（CのCD -15%）` },
+            mobility: { name: '機動', effect: `移動速度 +${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.mobility)}% / Lv`, total: `+${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.mobility * PROGRESSION_RULES.TALENT_MAX_LEVEL)}%`, ability: 'BOSS戦の移動速度を強化' },
+            reward: { name: '報酬', effect: `BOSS勝利Pt +${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.reward)}% / Lv`, total: `+${formatProgressionPercent(PROGRESSION_RULES.TALENT_PER_LEVEL.reward * PROGRESSION_RULES.TALENT_MAX_LEVEL)}%`, ability: 'BOSS勝利報酬を強化' }
+        };
+        const PASSIVE_UI = {
+            weapon: { name: '武器', icon: '⚔️', effect: `+${PROGRESSION_RULES.PASSIVE_PER_RANK.weaponAttack * 100}%攻撃力 / ランク` },
+            armor: { name: '防具', icon: '🛡️', effect: `-${PROGRESSION_RULES.PASSIVE_PER_RANK.armorReduction * 100}%被ダメージ / ランク` },
+            accessory: { name: '装飾品', icon: '💎', effect: `+${PROGRESSION_RULES.PASSIVE_PER_RANK.accessoryDuration * 100}%アイテム時間 / ランク` }
+        };
+        function openProgressionModal() {
+            initAudio(); SE.click();
+            renderProgressionUI();
+            document.getElementById('progressionModal').style.display = 'flex';
+        }
+        function closeProgressionModal() {
+            SE.click();
+            document.getElementById('progressionModal').style.display = 'none';
+        }
+        function progressionEditingLocked() {
+            return Boolean(activeRoom && (roomState === 'playing' || roomState === 'countdown'));
+        }
+        function renderProgressionUI() {
+            const pointsEl = document.getElementById('progressionPointsVal');
+            if (!pointsEl || !userProgress) return;
+            pointsEl.textContent = userProgress.points;
+            const locked = progressionEditingLocked();
+            const talentBox = document.getElementById('talentTreeCards');
+            if (talentBox) {
+                talentBox.textContent = '';
+                for (const [tree, def] of Object.entries(TALENT_UI)) {
+                    const level = userProgress.talents[tree] || 0;
+                    const cost = PROGRESSION_RULES.TALENT_COST_PER_LEVEL * (level + 1);
+                    const card = document.createElement('div');
+                    card.className = 'progression-card';
+                    const unlockedAbilities = [];
+                    if (tree === 'durability' && level >= PROGRESSION_RULES.TALENT_UNLOCKS.emergencyEscape) unlockedAbilities.push('緊急脱出 解放済み');
+                    if (tree === 'attack' && level >= PROGRESSION_RULES.TALENT_UNLOCKS.bulletConservation) unlockedAbilities.push('弾丸節約 解放済み');
+                    if (tree === 'durability' && level >= PROGRESSION_RULES.TALENT_UNLOCKS.inkProtection) unlockedAbilities.push('インクの加護 解放済み');
+                    card.innerHTML = `<b>${def.name}ツリー Lv.${level}/${PROGRESSION_RULES.TALENT_MAX_LEVEL}</b><div style="margin-top:4px;">${def.effect}（最大${def.total}）</div><div style="margin-top:4px; color:#aab8df;">${def.ability}</div>${unlockedAbilities.map((text) => `<div style="margin-top:4px; color:#2ecc71;">${text}</div>`).join('')}`;
+                    const button = document.createElement('button');
+                    button.className = 'small-btn';
+                    button.textContent = level >= PROGRESSION_RULES.TALENT_MAX_LEVEL ? '最大レベル' : `Lv.${level + 1}へ (${cost}Pt)`;
+                    button.disabled = locked || level >= PROGRESSION_RULES.TALENT_MAX_LEVEL || userProgress.points < cost;
+                    button.onclick = () => buyTalent(tree);
+                    card.appendChild(button);
+                    talentBox.appendChild(card);
+                }
+            }
+            const awakeningBox = document.getElementById('ultraAwakeningCards');
+            if (awakeningBox && BOSS) {
+                awakeningBox.textContent = '';
+                BOSS.getAllUltraSkills().forEach((skill) => {
+                    const points = userProgress.ultraAwakeningPoints[skill.id] || 0;
+                    const rank = points >= PROGRESSION_RULES.ULTRA_RANK_3_POINTS ? 3
+                        : (points >= PROGRESSION_RULES.ULTRA_RANK_2_POINTS ? 2 : 1);
+                    const card = document.createElement('div');
+                    card.className = 'progression-card';
+                    card.innerHTML = `<b>${skill.icon} ${skill.name}　★${rank}</b><div style="margin-top:4px;">覚醒Pt ${points}/${PROGRESSION_RULES.ULTRA_RANK_3_POINTS}</div><div style="margin-top:4px; color:#aab8df;">★2: CD -10%　/　★3: 効果威力 +15%</div>`;
+                    awakeningBox.appendChild(card);
+                });
+            }
+            const passiveBox = document.getElementById('passiveGearCards');
+            if (passiveBox) {
+                passiveBox.textContent = '';
+                for (const [type, def] of Object.entries(PASSIVE_UI)) {
+                    const rank = userProgress.passiveGearSlots[type] || 0;
+                    const card = document.createElement('div');
+                    card.className = 'progression-card';
+                    const counts = [];
+                    for (let itemRank = 1; itemRank <= PROGRESSION_RULES.PASSIVE_MAX_RANK; itemRank++) {
+                        const count = userProgress.passiveInventory[type][itemRank] || 0;
+                        if (count > 0) counts.push(`★${itemRank} ×${count}`);
+                    }
+                    card.innerHTML = `<b>${def.icon} ${def.name}　装備中: ${rank ? `★${rank}` : 'なし'}</b><div style="margin-top:4px;">${def.effect}</div><div style="margin-top:4px; color:#aab8df;">所持: ${counts.length ? counts.join(' / ') : 'なし'}</div>`;
+                    for (let itemRank = 1; itemRank <= PROGRESSION_RULES.PASSIVE_MAX_RANK; itemRank++) {
+                        const count = userProgress.passiveInventory[type][itemRank] || 0;
+                        if (!count || rank === itemRank) continue;
+                        const button = document.createElement('button');
+                        button.className = 'small-btn';
+                        button.textContent = `★${itemRank}を装備`;
+                        button.disabled = locked;
+                        button.onclick = () => equipPassiveGear(type, itemRank);
+                        card.appendChild(button);
+                    }
+                    passiveBox.appendChild(card);
+                }
+            }
+            const drawButton = document.getElementById('drawPassiveGearBtn');
+            if (drawButton) {
+                drawButton.disabled = locked || userProgress.points < PROGRESSION_RULES.PASSIVE_GACHA_COST;
+                drawButton.textContent = `装備ガチャ (${PROGRESSION_RULES.PASSIVE_GACHA_COST}Pt)`;
+            }
+            const dateKey = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const dailyEl = document.getElementById('dailyWinStatus');
+            if (dailyEl) {
+                dailyEl.textContent = userProgress.dailyWinDate === dateKey
+                    ? '本日の初勝利ボーナスは受取済みです。'
+                    : `本日の初勝利ボーナス +${PROGRESSION_RULES.DAILY_FIRST_WIN_BONUS}Pt を受け取れます。`;
+                dailyEl.style.color = userProgress.dailyWinDate === dateKey ? '#aab8df' : '#2ecc71';
+            }
+        }
+        function buyTalent(tree) {
+            if (!socket || !socket.connected) { alert('サーバー未接続のため購入できません。'); return; }
+            socket.emit('buyTalent', { clientKey: MY_CLIENT_KEY, tree });
+        }
+        function drawPassiveGear() {
+            if (!socket || !socket.connected) { alert('サーバー未接続のためガチャを実行できません。'); return; }
+            socket.emit('drawPassiveGear', { clientKey: MY_CLIENT_KEY });
+        }
+        function equipPassiveGear(type, rank) {
+            if (!socket || !socket.connected) { alert('サーバー未接続のため装備を変更できません。'); return; }
+            socket.emit('equipPassiveGear', { clientKey: MY_CLIENT_KEY, type, rank });
         }
         function equipUltraSkill(skillId) {
             initAudio(); SE.click();
@@ -1537,10 +1821,13 @@
                 capsule.textContent = payload.icon || '⚡';
                 if (payload.isMaxDuplicate) {
                     SE.itemHeal();
-                    resultArea.innerHTML = `<span class="rarity-tag rar-${rarity}">${rarity} MAX!!</span><p style="margin:3px 0; font-size:0.98rem; font-weight:bold; color:#fff;">${payload.skillName}（×3上限到達済み）</p><p style="margin:0; font-size:0.78rem; color:#ffd166;">上限重複還元: +${payload.refundPt}Pt 獲得！</p>`;
+                    resultArea.innerHTML = `<span class="rarity-tag rar-${rarity}">${rarity} MAX!!</span><p style="margin:3px 0; font-size:0.98rem; font-weight:bold; color:#fff;">${payload.skillName}（×3上限）</p><p style="margin:0; font-size:0.78rem; color:#ffd166;">上限重複還元 +${payload.refundPt}Pt / 覚醒 ★${payload.awakeningRank} (${payload.awakeningPoints}/${PROGRESSION_RULES.ULTRA_RANK_3_POINTS})</p>`;
                 } else {
                     SE.win();
-                    resultArea.innerHTML = `<span class="rarity-tag rar-${rarity}">${rarity} ${payload.isDuplicate ? 'STOCK UP!' : 'NEW!!'}</span><p style="margin:3px 0; font-size:1.02rem; font-weight:bold; color:#fff;">${payload.skillName} <span class="stock-pill">×${payload.newStock}</span></p><p style="margin:0; font-size:0.78rem; color:#2ecc71;">1試合の使用回数が ×${payload.newStock} になりました！</p>`;
+                    const awakeningText = payload.isDuplicate
+                        ? ` 覚醒Pt +${payload.awakeningPointsGained || 0} → ★${payload.awakeningRank} (${payload.awakeningPoints}/${PROGRESSION_RULES.ULTRA_RANK_3_POINTS})`
+                        : ' 覚醒Ptは重複入手時に加算';
+                    resultArea.innerHTML = `<span class="rarity-tag rar-${rarity}">${rarity} ${payload.isDuplicate ? 'STOCK UP!' : 'NEW!!'}</span><p style="margin:3px 0; font-size:1.02rem; font-weight:bold; color:#fff;">${payload.skillName} <span class="stock-pill">×${payload.newStock}</span></p><p style="margin:0; font-size:0.78rem; color:#2ecc71;">1試合の使用回数 ×${payload.newStock}。${awakeningText}</p>`;
                 }
             }
             if (payload.profile) applyServerProfile(payload.profile);
@@ -1620,6 +1907,31 @@
                 default: return { dx: 1, dy: 0 };
             }
         }
+        function resolveFacingFromVector(dirX, dirY) {
+            if (dirX < 0 && dirY < 0) return 'up_left';
+            if (dirX > 0 && dirY < 0) return 'up_right';
+            if (dirX < 0 && dirY > 0) return 'down_left';
+            if (dirX > 0 && dirY > 0) return 'down_right';
+            if (dirY < 0) return 'up';
+            if (dirY > 0) return 'down';
+            if (dirX < 0) return 'left';
+            if (dirX > 0) return 'right';
+            return null;
+        }
+        function getNormalizedMovementVector(inputKeys) {
+            const moveUp = Boolean(inputKeys['ArrowUp'] || inputKeys['KeyW']);
+            const moveDown = Boolean(inputKeys['ArrowDown'] || inputKeys['KeyS']);
+            const moveLeft = Boolean(inputKeys['ArrowLeft'] || inputKeys['KeyA']);
+            const moveRight = Boolean(inputKeys['ArrowRight'] || inputKeys['KeyD']);
+            let dirX = (moveRight ? 1 : 0) - (moveLeft ? 1 : 0);
+            let dirY = (moveDown ? 1 : 0) - (moveUp ? 1 : 0);
+            if (dirX === 0 && dirY === 0) return { dirX: 0, dirY: 0, facing: null };
+            if (dirX !== 0 && dirY !== 0) {
+                dirX *= Math.SQRT1_2;
+                dirY *= Math.SQRT1_2;
+            }
+            return { dirX, dirY, facing: resolveFacingFromVector(dirX, dirY) };
+        }
         function updateHorizontalFacingMemory(entity, facing) {
             if (!entity || !facing) return;
             if (facing.includes('left')) entity.lastHorizontalFacing = 'left';
@@ -1663,9 +1975,28 @@
             bladeBuffUntil: 0, bootsBuffUntil: 0, gunBuffUntil: 0,
             speedBoostUntil: 0, powerBoostUntil: 0, slowUntil: 0, slowStartedAt: 0, slowMultiplier: 1.0, attackDebuffUntil: 0, attackDebuffMultiplier: 1.0, dotUntil: 0,
             lastShieldTime: -SHIELD_COOLDOWN, lastShotTime: 0, lastMeleeTime: 0,
-            ultraSkillId: null, ultraRemainingUses: 0, ultraMaxUses: 0, ultraCooldownUntil: 0, ultraState: null, ultraStateUntil: 0,
+            ultraSkillId: null, ultraRemainingUses: 0, ultraMaxUses: 0, ultraCooldownUntil: 0, ultraCooldownDurationMs: 0, ultraState: null, ultraStateUntil: 0,
             wins: 0, points: 0
         };
+        function restoreProfileEquipmentAfterTraining() {
+            const equippedId = userProgress && userProgress.equippedUltra
+                ? (BOSS && typeof BOSS.sanitizeUltraSkillId === 'function' ? BOSS.sanitizeUltraSkillId(userProgress.equippedUltra) : null)
+                : null;
+            const stock = equippedId ? (userProgress.ultraStocks[equippedId] || 0) : 0;
+            player.ultraSkillId = stock > 0 ? equippedId : null;
+            player.ultraRemainingUses = stock;
+            player.ultraMaxUses = stock;
+            player.ultraCooldownUntil = 0;
+            player.ultraCooldownDurationMs = 0;
+            player.ultraState = null;
+            player.ultraStateUntil = 0;
+            player.gunBuffUntil = 0;
+            player.bladeBuffUntil = 0;
+            player.bootsBuffUntil = 0;
+            player.absoluteWallUntil = 0;
+            player.counterStanceUntil = 0;
+            player.hp = player.maxHp;
+        }
         let otherPlayers = {};
         let staticObstacles = BOSS ? BOSS.STATIC_OBSTACLES.map((o, i) => ({ id: `obs_${i + 1}`, ...o })) : [];
         let arenaWalls = [], arenaItems = [], bossState = null, bossProjectiles = [], bossEffects = [], bossTrail = [], bossVortexUntil = 0, bossVortexPull = 1.55;
@@ -1887,6 +2218,19 @@
         bindActionBtn('lvcBtnX', triggerMelee);
         bindActionBtn('lvcBtnC', triggerShot);
         bindActionBtn('lvcBtnUltra', triggerUltra);
+        const lvcLeaveBtn = document.getElementById('lvcBtnLeave');
+        if (lvcLeaveBtn) {
+            lvcLeaveBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                leaveActiveRoom();
+            }, { passive: false });
+            lvcLeaveBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                leaveActiveRoom();
+            });
+        }
     })();
 
     function setLvcCooldownState(btnId, maskId, textId, remainMs, maxMs) {
@@ -1942,7 +2286,7 @@
         if (ultraSub.textContent !== subText) ultraSub.textContent = subText;
 
         ultraBtn.disabled = (uses <= 0 || roomState !== 'playing' || player.isDead || player.isEliminated);
-        setLvcCooldownState('lvcBtnUltra', 'lvcCdMaskUltra', 'lvcCdTextUltra', uses > 0 ? cdRemain : 0, skill.cooldownMs || 6000);
+        setLvcCooldownState('lvcBtnUltra', 'lvcCdMaskUltra', 'lvcCdTextUltra', uses > 0 ? cdRemain : 0, player.ultraCooldownDurationMs || skill.cooldownMs || 6000);
     }
         gameCanvas.addEventListener('mousedown', (e) => {
             if (roomState !== 'playing' || player.isDead || player.isEliminated) return;
@@ -2185,7 +2529,7 @@
                 lobbyWaitingArea.style.display = 'flex'; lobbyGuideArea.style.display = 'none'; resultOverlay.style.display = 'none';
                 const totalMembers = 1 + Object.keys(otherPlayers).length, stage = BOSS ? BOSS.getStageByNumber(currentStageNumber) : null, lobbyBossDef = BOSS && stage ? BOSS.getBossDef(stage.bossId) : null;
                 let html = '';
-                if (currentRoomMode === 'boss' && lobbyBossDef) {
+                if ((currentRoomMode === 'boss' || currentRoomMode === 'training') && lobbyBossDef) {
                     const elem = BOSS.getElementInfo(lobbyBossDef.element);
                     html += `<div class="ready-row" style="background:rgba(155,89,182,0.18); padding:5px 8px; border-radius:6px; margin-bottom:4px;"><span style="color:#f5b7ff; font-weight:bold;">🌀 ST.${stage.stageNumber} ${escapeHtml(lobbyBossDef.name)} (${elem.icon}${elem.name})</span><span style="color:#f1c40f; font-weight:bold;">BOSS HP: ${lobbyBossDef.hpByPlayers[Math.min(4, totalMembers)]}</span></div>`;
                 }
@@ -2193,7 +2537,7 @@
                 html += `<div class="ready-row"><span>${myHostMark}[${escapeHtml(player.rank)}] ${escapeHtml(player.name)}</span><span class="${myReady ? 'badge-ok' : 'badge-wait'}">${myReady ? '準備OK!' : '準備中'}</span></div>`;
                 const otherIds = Object.keys(otherPlayers);
                 if (otherIds.length === 0) {
-                    html += `<div class="ready-row"><span style="color:#aaa; font-size:0.8rem;">${currentRoomMode === 'boss' ? '👤 1人でも「準備OK！」で即出撃できます！' : '👥 対戦相手を待機中...（あと1人必要）'}</span></div>`;
+                    html += `<div class="ready-row"><span style="color:#aaa; font-size:0.8rem;">${currentRoomMode === 'boss' || currentRoomMode === 'training' ? '👤 1人でも「準備OK！」で即出撃できます！' : '👥 対戦相手を待機中...（あと1人必要）'}</span></div>`;
                 } else {
                     otherIds.forEach((id) => {
                         const op = otherPlayers[id], hostMark = roomHostId === id ? '👑' : '';
@@ -2202,7 +2546,7 @@
                 }
                 readyList.innerHTML = html;
                 if (myReady) { readyBtn.textContent = '⏳ キャンセル（待機中に戻る）'; readyBtn.classList.add('is-ready'); }
-                else { readyBtn.textContent = currentRoomMode === 'boss' ? '🌀 準備OK！（出撃する）' : '✅ 準備OK！'; readyBtn.classList.remove('is-ready'); }
+                else { readyBtn.textContent = currentRoomMode === 'boss' || currentRoomMode === 'training' ? '🌀 準備OK！（出撃する）' : '✅ 準備OK！'; readyBtn.classList.remove('is-ready'); }
            } else if (roomState === 'result') { switchStep(3); resultOverlay.style.display = 'flex'; }
         else { switchStep(3); resultOverlay.style.display = 'none'; }
         updateLandscapeBattleMode();
@@ -2223,7 +2567,7 @@
             if (homeScreen.style.display !== 'none') return { track: 'menu', rate: 1.0 };
             if (roomState === 'countdown') return { track: 'none', rate: 1.0 };
             if (roomState === 'playing') {
-                if (currentRoomMode === 'boss') return { track: 'boss', rate: (bossState && bossState.phase === 2) ? 1.12 : 1.0 };
+                if (currentRoomMode === 'boss' || currentRoomMode === 'training') return { track: 'boss', rate: (bossState && bossState.phase === 2) ? 1.12 : 1.0 };
                 const low = !player.isDead && !player.isEliminated && player.maxHp > 0 && (player.hp / player.maxHp <= 0.30);
                 return { track: 'pvp', rate: low ? 1.12 : 1.0 };
             }
@@ -2295,17 +2639,20 @@
         let pingTimerId = null;
         let pingSamples = [];
         let pingInFlight = false;
+        let currentPingRttMs = null;
 
         function updatePingBadge(rttMs, isConnected) {
             const badge = document.getElementById('pingBadge');
             if (!badge) return;
             badge.classList.remove('ping-good', 'ping-warn', 'ping-bad', 'ping-offline');
             if (!isConnected || rttMs === null || !Number.isFinite(rttMs)) {
+                currentPingRttMs = null;
                 badge.textContent = 'Ping: --';
                 badge.classList.add('ping-offline');
                 return;
             }
             const rounded = Math.max(0, Math.round(rttMs));
+            currentPingRttMs = rounded;
             badge.textContent = `Ping: ${rounded}ms`;
             if (rounded <= 80) badge.classList.add('ping-good');
             else if (rounded <= 160) badge.classList.add('ping-warn');
@@ -2321,6 +2668,7 @@
                 if (settled) return;
                 settled = true;
                 pingInFlight = false;
+                updatePingBadge(null, false);
             }, 4000);
 
             socket.emit('latencyPing', () => {
@@ -2345,6 +2693,7 @@
             pingInFlight = false;
             if (resetDisplay) {
                 pingSamples = [];
+                currentPingRttMs = null;
                 updatePingBadge(null, false);
             }
         }
@@ -2399,6 +2748,25 @@
                 if (skipBtn) skipBtn.style.display = 'none';
             });
             socket.on('profileUpdated', (prof) => applyServerProfile(prof));
+            socket.on('progressionError', (data) => {
+                if (data && data.message) alert(data.message);
+            });
+            socket.on('progressionActionResult', (data) => {
+                if (data && data.profile) applyServerProfile(data.profile);
+                const resultEl = document.getElementById('progressionActionResult');
+                if (resultEl && data && data.message) resultEl.textContent = data.message;
+            });
+            socket.on('passiveGachaResult', (data) => {
+                if (data && data.profile) applyServerProfile(data.profile);
+                const gear = PASSIVE_UI[data && data.type];
+                const resultEl = document.getElementById('passiveGachaResult');
+                if (resultEl && gear) {
+                    const mergeText = Array.isArray(data.merges) && data.merges.length
+                        ? ` 合成で★${data.rank}まで上昇！`
+                        : '';
+                    resultEl.textContent = `${gear.icon} ${gear.name} ★${data.rank}を獲得。${mergeText}`;
+                }
+            });
             socket.on('gachaError', (err) => {
                 isPullingGacha = false; document.getElementById('pullGachaBtn').disabled = false; document.getElementById('gachaSkipBtn').style.display = 'none';
                 if (err && err.profile) applyServerProfile(err.profile);
@@ -2442,6 +2810,7 @@
                     player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
+                    player.ultraCooldownDurationMs = me.ultraCooldownDurationMs || 0;
                     player.ultraState = me.ultraState || null; player.ultraStateUntil = me.ultraStateUntil || 0;
                     player.wins = me.wins || 0; player.points = me.points || 0; myReady = Boolean(me.isReady);
                 }
@@ -2456,7 +2825,7 @@
                 bossProjectiles = []; bossEffects = []; bossTrail = [];
                 bossVortexUntil = 0; confettiParticles = []; countdownBanner = '';
                 if (homeScreen.style.display === 'none') { const d = getDesiredBgmState(); startBgm(d.track, d.rate); }
-                updateUltraHudButton(); updateLobbyUI();
+                updateUltraHudButton(); updateModeButtonsUI(); updateLobbyUI();
             });
             socket.on('playerJoined', (data) => {
                 if (!data || !data.player || !data.player.id || data.player.id === socket.id) return;
@@ -2481,10 +2850,23 @@
                 bossState = syncBossAuraFromServer(bossData);
                 if (bossState && prevPhase === 1 && bossState.phase === 2 && roomState === 'playing' && currentRoomMode === 'boss') setBgmPlaybackRate(1.12);
             });
+            socket.on('bossClonesUpdated', (data) => {
+                if (!bossState || !data || !Array.isArray(data.clones)) return;
+                bossState.clones = data.clones.map((clone) => ({ ...clone }));
+            });
             socket.on('bossDamaged', (data) => {
                 if (!bossState) return;
                 const prevPhase = bossState.phase;
                 bossState.hp = data.hp; bossState.maxHp = data.maxHp; bossState.phase = data.phase;
+                if (Array.isArray(data.clones)) {
+                    bossState.clones = data.clones.map((clone) => ({ ...clone }));
+                } else if (data.targetCloneId && Array.isArray(bossState.clones)) {
+                    const clone = bossState.clones.find((item) => item.id === data.targetCloneId);
+                    if (clone) {
+                        clone.hp = data.cloneHp;
+                        if (Number.isFinite(data.cloneMaxHp)) clone.maxHp = data.cloneMaxHp;
+                    }
+                }
                 if (prevPhase === 1 && data.phase === 2) {
                     SE.bossPulse(); shakeTime = 16; shakeIntensity = 8;
                     const p2Msg = bossState.id === 'phantom_mirage'
@@ -2503,8 +2885,18 @@
                 let color = data.blockedByBarrier ? '#00e5ff' : (data.reducedByScaleAura ? '#ffbe0b' : (data.attackerId === socket.id ? '#f1c40f' : '#ffffff'));
                 if (!data.blockedByBarrier && !data.reducedByScaleAura && mult >= 1.35) { label += ' WEAK!'; color = '#ff9f43'; }
                 else if (!data.blockedByBarrier && !data.reducedByScaleAura && mult <= 0.8) { label += ' RESIST'; color = '#a4b0be'; }
-                addFloatingText(bossState.x + (Math.random() - 0.5) * 36, bossState.y - 24, label, color);
+                const hitClone = data.targetCloneId && Array.isArray(bossState.clones)
+                    ? bossState.clones.find((clone) => clone.id === data.targetCloneId)
+                    : null;
+                addFloatingText(
+                    (hitClone ? hitClone.x : bossState.x) + (Math.random() - 0.5) * 36,
+                    (hitClone ? hitClone.y : bossState.y) - 24,
+                    label,
+                    color
+                );
+                if (data.trainingStats) updateTrainingStats(data.trainingStats);
             });
+            socket.on('trainingStatsUpdated', (stats) => updateTrainingStats(stats));
             socket.on('bossAttackEvent', (ev) => {
                 if (roomState !== 'playing' || !BOSS) return;
                 BOSS.handleClientBossAttack(ev, {
@@ -2592,7 +2984,7 @@
                 player.bladeBuffUntil = 0; player.bootsBuffUntil = 0; player.gunBuffUntil = 0;
                 player.speedBoostUntil = 0; player.powerBoostUntil = 0; player.slowUntil = 0; player.slowMultiplier = 1.0; player.attackDebuffUntil = 0; player.attackDebuffMultiplier = 1.0; player.dotUntil = 0;
                 player.lastShieldTime = -SHIELD_COOLDOWN; player.lastShotTime = 0; player.lastMeleeTime = 0;
-                player.ultraCooldownUntil = 0; player.ultraState = null; player.ultraStateUntil = 0;
+                player.ultraCooldownUntil = 0; player.ultraCooldownDurationMs = 0; player.ultraState = null; player.ultraStateUntil = 0;
                 for (const k in keys) keys[k] = false;
                 stopBgm(); updateUltraHudButton(); updateLobbyUI();
                 let count = data.seconds || 3; countdownBanner = String(count); SE.countdown(false);
@@ -2606,7 +2998,7 @@
                 if (data && data.boss) bossState = syncBossAuraFromServer(data.boss);
                 bossTrail = [];
                 countdownBanner = 'FIGHT!'; SE.countdown(true);
-                startBgm(currentRoomMode === 'boss' ? 'boss' : 'pvp', 1.0);
+                startBgm(currentRoomMode === 'boss' || currentRoomMode === 'training' ? 'boss' : 'pvp', 1.0);
                 updateUltraHudButton(); updateLobbyUI();
                 setTimeout(() => { if (countdownBanner === 'FIGHT!') countdownBanner = ''; }, 900);
             });
@@ -2664,7 +3056,9 @@
                     const sorted = Object.values(allPlayers).sort((a, b) => (b.bossDamageDealt || 0) - (a.bossDamageDealt || 0));
                     document.getElementById('resultScoreList').innerHTML = sorted.map((pl) => {
                         const bd = (data.rewardsByPlayer && data.rewardsByPlayer[pl.id]) || pl.lastPointBreakdown || {};
-                        const bdText = data.bossCleared ? `基本${bd.clearBonus || 0}+貢献${bd.contributionBonus || 0}${bd.mvpBonus ? `+MVP${bd.mvpBonus}` : ''}` : '獲得0Pt';
+                        const bdText = data.bossCleared
+                            ? `基本${bd.clearBonus || 0}+貢献${bd.contributionBonus || 0}${bd.mvpBonus ? `+MVP${bd.mvpBonus}` : ''}${bd.talentBonus ? `+育成${bd.talentBonus}` : ''}${bd.dailyFirstWinBonus ? `+デイリー${bd.dailyFirstWinBonus}` : ''}`
+                            : `参加賞${bd.participationBonus || 0}Pt`;
                         return `<div class="ready-row"><span>${pl.id === data.mvpId ? '👑 ' : ''}[${escapeHtml(pl.rank)}] ${escapeHtml(pl.name)} <small style="color:#a4b0be;">(${bdText})</small></span><span style="color:#f1c40f; font-weight:bold;">与ダメ:${pl.bossDamageDealt || 0} / ${pl.points || 0}pt</span></div>`;
                     }).join('');
                 } else {
@@ -2699,6 +3093,7 @@
                     syncSlowFromServerEpoch(player, me.slowUntil, me.slowMultiplier, me.attackDebuffUntil, me.attackDebuffMultiplier, me.dotUntil);
                     player.ultraSkillId = me.ultraSkillId || null; player.ultraRemainingUses = me.ultraRemainingUses || 0;
                     player.ultraMaxUses = me.ultraMaxUses || 0; player.ultraCooldownUntil = me.ultraCooldownUntil || 0;
+                    player.ultraCooldownDurationMs = me.ultraCooldownDurationMs || 0;
                     player.ultraState = me.ultraState || null; player.ultraStateUntil = me.ultraStateUntil || 0;
                 }
                 otherPlayers = { ...players }; delete otherPlayers[socket.id];
@@ -2766,6 +3161,7 @@
                     if (typeof ev.remainingUses === 'number') player.ultraRemainingUses = ev.remainingUses;
                     if (typeof ev.maxUses === 'number') player.ultraMaxUses = ev.maxUses;
                     if (typeof ev.cooldownUntil === 'number') player.ultraCooldownUntil = ev.cooldownUntil;
+                    if (typeof ev.cooldownMs === 'number') player.ultraCooldownDurationMs = ev.cooldownMs;
                     updateUltraHudButton();
                 }
                 if (ev.phase === 'charge' || ev.phase === 'stance' || ev.phase === 'warn' || (ev.phase === 'active' && ev.skillId !== 'demon_blade' && ev.skillId !== 'phantom_boots' && ev.skillId !== 'time_stop')) SE.ultra();
@@ -3041,7 +3437,7 @@
             initAudio(); SE.click();
             let roomName = roomInput.value.trim();
             if (!roomName) {
-                if (currentRoomMode === 'boss') { roomName = 'SOLO_' + Math.floor(1000 + Math.random() * 9000); roomInput.value = roomName; }
+                if (currentRoomMode === 'boss' || currentRoomMode === 'training') { roomName = 'SOLO_' + Math.floor(1000 + Math.random() * 9000); roomInput.value = roomName; }
                 else { alert('合言葉（ルーム名）を入力してください！'); roomInput.focus(); return; }
             }
             if (!socket || !socket.connected) { alert('サーバーに接続されていません。少し待ってから再度お試しください。'); return; }
@@ -3065,18 +3461,26 @@
         });
         rematchBtn.addEventListener('click', () => { initAudio(); SE.click(); if (socket && socket.connected && activeRoom) socket.emit('returnToLobby'); });
         retryStageBtn.addEventListener('click', () => { initAudio(); SE.click(); if (socket && socket.connected && activeRoom) socket.emit('retryStage'); });
-        leaveRoomBtn.addEventListener('click', () => {
+        function leaveActiveRoom() {
             initAudio(); SE.click();
             if (socket && socket.connected) socket.emit('leaveRoom');
-            activeRoom = null; roomState = 'waiting'; roomHostId = null; myReady = false; otherPlayers = {}; bossState = null;
+            activeRoom = null; roomState = 'waiting'; roomHostId = null; myReady = false;
+            otherPlayers = {}; bossState = null;
             arenaWalls = []; arenaItems = []; projectiles = []; slashEffects = []; ultraEffects = []; ricochetBullets = []; playerMagmaFloors = []; windParticles = [];
             bossProjectiles = []; bossEffects = []; bossTrail = []; confettiParticles = []; countdownBanner = '';
             timeStopUntil = 0; timeStopOwnerId = null;
             player.slowUntil = 0; player.slowMultiplier = 1.0;
             player.bladeBuffUntil = 0; player.bootsBuffUntil = 0; player.gunBuffUntil = 0;
+            restoreProfileEquipmentAfterTraining();
+            if (typeof resetLandscapeVirtualControls === 'function') resetLandscapeVirtualControls();
             connectionStatus.textContent = '🟡 サーバー接続済み・未入室'; connectionStatus.style.color = '#f1c40f';
             roomInput.disabled = false; joinRoomBtn.style.display = 'inline-block'; leaveRoomBtn.style.display = 'none';
+            updateLandscapeBattleMode();
             const d = getDesiredBgmState(); startBgm(d.track, d.rate); updateLobbyUI();
+            switchStep(2);
+        }
+        leaveRoomBtn.addEventListener('click', () => {
+            leaveActiveRoom();
         });
 
         // 🎨 エディタ機能
@@ -3232,7 +3636,7 @@
         window.addEventListener('keydown', (e) => {
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
             if (!isTyping && roomState !== 'playing' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undoCanvas(); return; }
-            if (!isTyping && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+            if (!isTyping && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) e.preventDefault();
             keys[e.code] = true;
             if (isTyping || player.isDead || player.isEliminated || roomState !== 'playing') return;
             if (e.code === 'KeyZ') triggerShield();
@@ -3252,8 +3656,12 @@
         function triggerShot() {
             const now = performance.now();
             if (isTimeStoppedForActorClient(socket ? socket.id : 'local', now)) return;
-            const cdMult = (now < (player.bootsBuffUntil || 0)) ? (1 / 1.5) : 1.0;
-            if (now - player.lastShotTime < SHOT_COOLDOWN * cdMult) return;
+            const bootsCdMult = (now < (player.bootsBuffUntil || 0)) ? (1 / 1.5) : 1.0;
+            const talentCdMult = currentRoomMode === 'boss' &&
+                (userProgress.talents.attack || 0) >= PROGRESSION_RULES.TALENT_UNLOCKS.bulletConservation
+                ? PROGRESSION_RULES.BULLET_COOLDOWN_MULTIPLIER
+                : 1.0;
+            if (now - player.lastShotTime < SHOT_COOLDOWN * bootsCdMult * talentCdMult) return;
             initAudio(); SE.shot(); player.lastShotTime = now;
             const cx = player.x + 24, cy = player.y + 24;
             const boostedSpd = now < player.speedBoostUntil ? player.stats.spd * RULES.ITEMS.speed.speedMultiplier : player.stats.spd;
@@ -3349,7 +3757,9 @@
                 if (wp.life <= 0) windParticles.splice(i, 1);
             }
 
-            const OTHER_PLAYER_LERP = 0.28;
+            const pingLerpFactor = currentPingRttMs === null
+                ? 0.28
+                : (currentPingRttMs <= 80 ? 0.32 : (currentPingRttMs <= 160 ? 0.28 : 0.22));
             for (const oid in otherPlayers) {
                 const op = otherPlayers[oid];
                 if (!op || op.isDead || op.isEliminated) continue;
@@ -3361,8 +3771,8 @@
                         op.x = op.targetX;
                         op.y = op.targetY;
                     } else {
-                        op.x += dx * OTHER_PLAYER_LERP;
-                        op.y += dy * OTHER_PLAYER_LERP;
+                        op.x += dx * pingLerpFactor;
+                        op.y += dy * pingLerpFactor;
                     }
                 }
             }
@@ -3374,42 +3784,26 @@
                 const hasBoots = now < (player.bootsBuffUntil || 0);
                 const isSlowed = now < (player.slowUntil || 0);
                 let spd = player.stats.spd;
+                if (currentRoomMode === 'boss') {
+                    spd *= 1 + (userProgress.talents.mobility || 0) * PROGRESSION_RULES.TALENT_PER_LEVEL.mobility;
+                }
                 if (isBoosted) spd *= RULES.ITEMS.speed.speedMultiplier;
                 if (hasBoots) spd *= 1.5;
                 if (isSlowed) spd *= (player.slowMultiplier || 0.75);
                 if (isShielding) spd *= 0.7;
 
               let nextX = player.x, nextY = player.y, nextFacing = player.facing;
-                const moveUp = Boolean(keys['ArrowUp'] || keys['KeyW']);
-                const moveDown = Boolean(keys['ArrowDown'] || keys['KeyS']);
-                const moveLeft = Boolean(keys['ArrowLeft'] || keys['KeyA']);
-                const moveRight = Boolean(keys['ArrowRight'] || keys['KeyD']);
-
-                let dirX = (moveRight ? 1 : 0) - (moveLeft ? 1 : 0);
-                let dirY = (moveDown ? 1 : 0) - (moveUp ? 1 : 0);
-                const inputPressed = (dirX !== 0 || dirY !== 0);
+                const movement = getNormalizedMovementVector(keys);
+                const inputPressed = (movement.dirX !== 0 || movement.dirY !== 0);
 
                 if (inputPressed) {
-                    if (dirX !== 0 && dirY !== 0) {
-                        dirX *= Math.SQRT1_2;
-                        dirY *= Math.SQRT1_2;
-                    }
-                    nextX += dirX * spd;
-                    nextY += dirY * spd;
-
-                    if (dirY < 0 && dirX < 0) nextFacing = 'up_left';
-                    else if (dirY < 0 && dirX > 0) nextFacing = 'up_right';
-                    else if (dirY > 0 && dirX < 0) nextFacing = 'down_left';
-                    else if (dirY > 0 && dirX > 0) nextFacing = 'down_right';
-                    else if (dirY < 0) nextFacing = 'up';
-                    else if (dirY > 0) nextFacing = 'down';
-                    else if (dirX < 0) nextFacing = 'left';
-                    else if (dirX > 0) nextFacing = 'right';
-
+                    nextX += movement.dirX * spd;
+                    nextY += movement.dirY * spd;
+                    nextFacing = movement.facing || nextFacing;
                     updateHorizontalFacingMemory(player, nextFacing);
                 }
                 let pulled = false;
-                if (!worldStopped && currentRoomMode === 'boss' && bossState && now < bossVortexUntil) {
+                if (!worldStopped && (currentRoomMode === 'boss' || currentRoomMode === 'training') && bossState && now < bossVortexUntil) {
                     const pcx = nextX + 24, pcy = nextY + 24, distToBoss = Math.hypot(bossState.x - pcx, bossState.y - pcy);
                     if (distToBoss > bossState.radius + 10 && distToBoss < 480) {
                         const pullAng = Math.atan2(bossState.y - pcy, bossState.x - pcx);
@@ -3464,9 +3858,24 @@
                     hitWall = true; if (p.isMine && socket && socket.connected && activeRoom) socket.emit('damageWall', { wallId: w.id, type: 'shot' }); break;
                 }
                 if (hitWall) { projectiles.splice(i, 1); continue; }
-                if (currentRoomMode === 'boss' && bossState && !bossState.isStealthed && bossState.hp > 0 && Math.hypot(p.x - bossState.x, p.y - bossState.y) <= bossState.radius + 6) {
-                    if (p.isMine && socket && socket.connected && activeRoom) socket.emit('damageBoss', { type: 'shot' });
-                    projectiles.splice(i, 1); continue;
+                if ((currentRoomMode === 'boss' || currentRoomMode === 'training') && bossState && bossState.hp > 0) {
+                    let hitCloneId = null;
+                    if (Array.isArray(bossState.clones)) {
+                        for (const clone of bossState.clones) {
+                            if (clone.hp > 0 && Math.hypot(p.x - clone.x, p.y - clone.y) <= clone.radius + 6) {
+                                hitCloneId = clone.id;
+                                break;
+                            }
+                        }
+                    }
+                    if (hitCloneId) {
+                        if (p.isMine && socket && socket.connected && activeRoom) socket.emit('damageBoss', { type: 'shot', cloneId: hitCloneId });
+                        projectiles.splice(i, 1); continue;
+                    }
+                    if (!bossState.isStealthed && Math.hypot(p.x - bossState.x, p.y - bossState.y) <= bossState.radius + 6) {
+                        if (p.isMine && socket && socket.connected && activeRoom) socket.emit('damageBoss', { type: 'shot' });
+                        projectiles.splice(i, 1); continue;
+                    }
                 }
                 if (currentRoomMode === 'pvp' && p.isMine && socket && socket.connected && activeRoom) {
                     for (const id in otherPlayers) {
@@ -3947,7 +4356,7 @@
             if (!activeRoom || roomState === 'waiting' || roomState === 'result') return;
             gameCtx.fillStyle = 'rgba(15, 15, 26, 0.94)'; gameCtx.fillRect(0, 0, ARENA_WIDTH, ARENA_TOP);
             gameCtx.strokeStyle = '#3a3a52'; gameCtx.lineWidth = 1; gameCtx.beginPath(); gameCtx.moveTo(0, ARENA_TOP); gameCtx.lineTo(ARENA_WIDTH, ARENA_TOP); gameCtx.stroke();
-            if (currentRoomMode === 'boss' && bossState) {
+            if ((currentRoomMode === 'boss' || currentRoomMode === 'training') && bossState) {
                 const elem = BOSS ? BOSS.getElementInfo(bossState.element) : { icon: '', name: '無' };
                 const hpRatio = Math.max(0, Math.min(1, bossState.hp / bossState.maxHp));
                 const scaleRemainMs = Math.max(0, (bossState.scaleAuraUntil || 0) - nowPerf);
@@ -4057,7 +4466,7 @@
             if (!skill || player.ultraMaxUses <= 0) return;
             const now = Date.now(), cdRemain = Math.max(0, player.ultraCooldownUntil - now);
             const activeRemain = player.ultraState ? Math.max(0, (player.ultraStateUntil || 0) - now) : 0;
-            const cdRatio = 1 - Math.min(1, cdRemain / (skill.cooldownMs || 6000));
+            const cdRatio = 1 - Math.min(1, cdRemain / (player.ultraCooldownDurationMs || skill.cooldownMs || 6000));
             let stateText = cdRemain > 0 ? `CD ${(cdRemain / 1000).toFixed(1)}s` : (player.ultraRemainingUses > 0 ? 'READY (Space)' : '使用済');
             if (player.ultraState === 'charging') stateText = '溜め中!';
             else if (player.ultraState === 'counter_stance') stateText = `構え ${(activeRemain / 1000).toFixed(1)}s`;
@@ -4120,7 +4529,41 @@
 
             drawPlayerMagmaFloors(gameCtx, now);
             drawBossTrailAndSnakeTrails(gameCtx);
-            if (currentRoomMode === 'boss' && bossState && BOSS) BOSS.drawBossEntity(gameCtx, bossState, now, { vortexUntil: bossVortexUntil });
+            if ((currentRoomMode === 'boss' || currentRoomMode === 'training') && bossState && BOSS) BOSS.drawBossEntity(gameCtx, bossState, now, { vortexUntil: bossVortexUntil });
+            if ((currentRoomMode === 'boss' || currentRoomMode === 'training') && bossState && bossState.phase === 2 && Array.isArray(bossState.clones)) {
+                for (const clone of bossState.clones) {
+                    if (!clone || (Number(clone.hp) || 0) <= 0) continue;
+                    const radius = Number(clone.radius) || 24;
+                    gameCtx.save();
+                    gameCtx.translate(clone.x, clone.y);
+                    gameCtx.rotate(now / 180);
+                    gameCtx.strokeStyle = '#cbd5e1';
+                    gameCtx.lineWidth = 3;
+                    gameCtx.setLineDash([8, 6]);
+                    gameCtx.beginPath();
+                    gameCtx.arc(0, 0, radius, 0, Math.PI * 2);
+                    gameCtx.stroke();
+                    gameCtx.setLineDash([]);
+                    gameCtx.rotate(-now / 180);
+                    const grad = gameCtx.createRadialGradient(0, 0, 3, 0, 0, radius);
+                    grad.addColorStop(0, '#f1f5f9');
+                    grad.addColorStop(0.45, '#64748b');
+                    grad.addColorStop(1, '#1e293b');
+                    gameCtx.beginPath();
+                    gameCtx.arc(0, 0, radius - 3, 0, Math.PI * 2);
+                    gameCtx.fillStyle = grad;
+                    gameCtx.fill();
+                    gameCtx.strokeStyle = '#e2e8f0';
+                    gameCtx.lineWidth = 2;
+                    gameCtx.stroke();
+                    gameCtx.fillStyle = '#ffffff';
+                    gameCtx.font = 'bold 10px monospace';
+                    gameCtx.textAlign = 'center';
+                    gameCtx.textBaseline = 'middle';
+                    gameCtx.fillText(`${clone.hp}/${clone.maxHp || 400}`, 0, 0);
+                    gameCtx.restore();
+                }
+            }
             if (BOSS) BOSS.drawBossEffectsAndProjectiles(gameCtx, bossEffects, []);
             drawWindParticles(gameCtx);
 

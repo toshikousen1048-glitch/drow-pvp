@@ -125,6 +125,26 @@
         ULTRA_DUPLICATE_REFUND: 300
     });
 
+    const PROGRESSION = Object.freeze({
+        TALENT_MAX_LEVEL: 10,
+        TALENT_COST_PER_LEVEL: 500,
+        TALENT_PER_LEVEL: Object.freeze({ durability: 0.04, attack: 0.035, mobility: 0.02, reward: 0.05 }),
+        TALENT_UNLOCKS: Object.freeze({ emergencyEscape: 5, bulletConservation: 8, inkProtection: 10 }),
+        EMERGENCY_ESCAPE_HP_RATIO: 0.2,
+        BULLET_COOLDOWN_MULTIPLIER: 0.85,
+        WEAKNESS_DAMAGE_MULTIPLIER: 1.18,
+        ULTRA_AWAKENING_POINTS_PER_DUPLICATE: 1,
+        ULTRA_RANK_2_POINTS: 3,
+        ULTRA_RANK_3_POINTS: 6,
+        ULTRA_RANK_2_COOLDOWN_MULTIPLIER: 0.9,
+        ULTRA_RANK_3_EFFECT_MULTIPLIER: 1.15,
+        PASSIVE_GACHA_COST: 1500,
+        PASSIVE_MAX_RANK: 5,
+        PASSIVE_MERGE_COUNT: 3,
+        PASSIVE_PER_RANK: Object.freeze({ weaponAttack: 0.05, armorReduction: 0.05, accessoryDuration: 0.05 }),
+        DAILY_FIRST_WIN_BONUS: 500
+    });
+
     const SPECIAL_INKS = Object.freeze({
         SPECIAL_GOLD: Object.freeze({ id: 'SPECIAL_GOLD', name: 'ゴールドインク', group: 'light', isAnimatedInk: true }),
         SPECIAL_RAINBOW: Object.freeze({ id: 'SPECIAL_RAINBOW', name: 'レインボーインク', group: 'light', isAnimatedInk: true }),
@@ -162,6 +182,7 @@
         ITEMS,
         ACTIONS,
         GACHA,
+        PROGRESSION,
         ELEMENT: Object.freeze({
             SPECIAL_INK_THRESHOLD: SPECIAL_INK_ELEMENT_THRESHOLD,
             NORMAL_TIEBREAK_ORDER: Object.freeze(['fire', 'water', 'grass', 'thunder', 'rock']),
@@ -1803,6 +1824,264 @@
             }
         },
 
+        true_void_typhoon: {
+            id: 'true_void_typhoon',
+            stageNumber: 6,
+            stageId: 'stage_6',
+            name: 'TRUE VOID TYPHOON',
+            tag: '🌌 原初・無属性・最終嵐',
+            element: 'neutral',
+            summary: '属性の枠組みを超えた原初の嵐。潜伏、吸引、レーザー、螺旋弾幕、巨大竜巻で殲滅する',
+            radius: 50,
+            spawnX: ARENA_CENTER_X,
+            spawnY: 175,
+            maxHp: 1300,
+            hpByPlayers: { 1: 1300, 2: 2200, 3: 3100, 4: 4000 },
+            speed: 3.4,
+            moveSpeed: {
+                soloP1: 3.4,
+                multiP1: 4.0,
+                soloP2: 5.4,
+                multiP2: 6.4
+            },
+            attackIntervalMs: {
+                p1: 1950,
+                p2: 1250,
+                soloP1: 1950,
+                multiP1: 1750,
+                soloP2: 1250,
+                multiP2: 1050
+            },
+            randomActionSelection: true,
+            previousActionSuppression: true,
+            attackProjectiles: ['spiral', 'true_void_orb'],
+            projectileDamage: { spiral: 18, true_void_orb: 18 },
+            attackPatterns: [
+                { id: 'stealth_sigil', name: '潜伏魔法陣予兆', damage: 28 },
+                { id: 'void_vortex', name: '強化吸引', damage: 5 },
+                { id: 'ancient_laser', name: '薙ぎ払いレーザー', damage: 30 },
+                { id: 'enhanced_spiral', name: '強化渦巻き弾幕', damage: 18 }
+            ],
+            patternCount: 4,
+            phase2Awaken: {
+                scaleAuraDurationMs: 3000,
+                scaleDamageMultiplier: 0.75,
+                shockDamage: 22,
+                knockbackRadius: 250,
+                knockbackDistance: 130,
+                tornadoRadius: 170,
+                tornadoDurationMs: 8000,
+                tornadoPullStrength: 2.65,
+                tornadoTickIntervalMs: 500,
+                tornadoTickDamage: 8
+            },
+            executeAttack(ctx) {
+                const {
+                    room, roomId, matchId, boss, allPlayerCount, targetCx, targetCy,
+                    io, registerTimeout, applyDamageToPlayer, knockbackPlayerFromPoint, pointToSegmentDistance
+                } = ctx;
+
+                if (boss.isStealthed) return;
+
+                const actions = ['stealth_sigil', 'void_vortex', 'ancient_laser', 'enhanced_spiral'];
+                let candidates = actions.filter((id) => id !== boss.lastActionId);
+                if (candidates.length === 0) candidates = actions;
+                const action = candidates[Math.floor(Math.random() * candidates.length)];
+                boss.lastActionId = action;
+                const isP2 = boss.phase === 2;
+
+                if (action === 'stealth_sigil') {
+                    boss.isStealthed = true;
+                    io.to(roomId).emit('bossStateUpdated', boss);
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'true_void_stealth',
+                        x: boss.x,
+                        y: boss.y,
+                        durationMs: 3000
+                    });
+
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                        const live = Object.values(cur.players).filter((p) => p && !p.isDead && !p.isEliminated);
+                        const anchor = live.length
+                            ? live[Math.floor(Math.random() * live.length)]
+                            : { x: targetCx - 24, y: targetCy - 24 };
+                        const sigilPos = clampArenaPoint(anchor.x + 24, anchor.y + 24, 105);
+                        const x = sigilPos.x;
+                        const y = sigilPos.y;
+
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'true_void_sigil_warn',
+                            x,
+                            y,
+                            radius: 105,
+                            warnDuration: 750
+                        });
+
+                        registerTimeout(cur, () => {
+                            const cur2 = ctx.getRoom();
+                            if (!cur2 || cur2.state !== 'playing' || cur2.matchId !== matchId || !cur2.boss) return;
+                            cur2.boss.isStealthed = false;
+                            cur2.boss.x = x;
+                            cur2.boss.y = y;
+                            io.to(roomId).emit('bossStateUpdated', cur2.boss);
+                            io.to(roomId).emit('bossAttackEvent', {
+                                bossId: cur2.boss.id,
+                                element: cur2.boss.element,
+                                type: 'true_void_sigil_fire',
+                                x,
+                                y,
+                                radius: 105,
+                                damage: 28
+                            });
+                            for (const id in cur2.players) {
+                                const p = cur2.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                if (Math.hypot(p.x + 24 - x, p.y + 24 - y) <= 105) {
+                                    applyDamageToPlayer(roomId, p, 28, 'true_void_sigil', matchId, cur2.boss.element);
+                                    knockbackPlayerFromPoint(roomId, p, x, y, 76, matchId, 'true_void_sigil');
+                                }
+                            }
+                        }, 750);
+                    }, 3000);
+                } else if (action === 'void_vortex') {
+                    const duration = isP2 ? 4000 : 3600;
+                    const pullStrength = isP2 ? 2.65 : 2.2;
+                    boss.vortexActive = true;
+                    boss.vortexPullStrength = pullStrength;
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'true_void_vortex',
+                        active: true,
+                        duration,
+                        radius: 260,
+                        pullStrength,
+                        tickIntervalMs: 600,
+                        tickDamage: 5
+                    });
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.matchId !== matchId || !cur.boss) return;
+                        cur.boss.vortexActive = false;
+                        cur.boss.vortexPullStrength = 0;
+                    }, duration);
+
+                    const tickCount = Math.floor(duration / 600);
+                    for (let i = 1; i <= tickCount; i++) {
+                        registerTimeout(room, () => {
+                            const cur = ctx.getRoom();
+                            if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                            for (const id in cur.players) {
+                                const p = cur.players[id];
+                                if (!p || p.isDead || p.isEliminated) continue;
+                                if (Math.hypot(p.x + 24 - boss.x, p.y + 24 - boss.y) <= 260) {
+                                    applyDamageToPlayer(roomId, p, 5, 'true_void_vortex', matchId, cur.boss.element);
+                                }
+                            }
+                        }, i * 600);
+                    }
+                } else if (action === 'ancient_laser') {
+                    const warnDuration = isP2 ? 640 : 780;
+                    const angle = Math.atan2(targetCy - boss.y, targetCx - boss.x);
+                    const sweepHalfAngle = isP2 ? 0.68 : 0.52;
+                    const startAngle = angle - sweepHalfAngle;
+                    const endAngle = angle + sweepHalfAngle;
+                    const length = 520;
+                    const x2 = boss.x + Math.cos(endAngle) * length;
+                    const y2 = boss.y + Math.sin(endAngle) * length;
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'true_void_laser_warn',
+                        x1: boss.x,
+                        y1: boss.y,
+                        x2,
+                        y2,
+                        startAngle,
+                        endAngle,
+                        length,
+                        warnDuration
+                    });
+                    registerTimeout(room, () => {
+                        const cur = ctx.getRoom();
+                        if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                        io.to(roomId).emit('bossAttackEvent', {
+                            bossId: cur.boss.id,
+                            element: cur.boss.element,
+                            type: 'true_void_laser_fire',
+                            x1: cur.boss.x,
+                            y1: cur.boss.y,
+                            x2,
+                            y2,
+                            startAngle,
+                            endAngle,
+                            length,
+                            damage: 30
+                        });
+                        for (const id in cur.players) {
+                            const p = cur.players[id];
+                            if (!p || p.isDead || p.isEliminated) continue;
+                            const pcx = p.x + 24;
+                            const pcy = p.y + 24;
+                            const dx = pcx - cur.boss.x;
+                            const dy = pcy - cur.boss.y;
+                            const dist = Math.hypot(dx, dy);
+                            let diff = Math.atan2(dy, dx) - angle;
+                            while (diff > Math.PI) diff -= Math.PI * 2;
+                            while (diff < -Math.PI) diff += Math.PI * 2;
+                            if (dist <= length && Math.abs(diff) <= sweepHalfAngle) {
+                                applyDamageToPlayer(roomId, p, 30, 'true_void_laser', matchId, cur.boss.element);
+                            }
+                        }
+                    }, warnDuration);
+                } else {
+                    const count = (isP2 ? 11 : 9) + Math.min(3, allPlayerCount - 1);
+                    const speed = isP2 ? 5.3 : 4.4;
+                    boss.spiralAngle = (boss.spiralAngle + 0.42) % (Math.PI * 2);
+                    io.to(roomId).emit('bossAttackEvent', {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'true_void_spiral',
+                        x: boss.x,
+                        y: boss.y,
+                        count,
+                        baseAngle: boss.spiralAngle,
+                        speed,
+                        damage: 18
+                    });
+                }
+            },
+            drawEntity(ctx, boss, now) {
+                const bx = boss.x, by = boss.y;
+                if (boss.isStealthed) return;
+                ctx.save();
+                ctx.translate(bx, by);
+                ctx.rotate(now / 900);
+                ctx.strokeStyle = boss.phase === 2 ? '#f1f5f9' : '#94a3b8';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, boss.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.rotate(Math.PI / 4);
+                ctx.strokeRect(-boss.radius * 0.72, -boss.radius * 0.72, boss.radius * 1.44, boss.radius * 1.44);
+                ctx.restore();
+                const grad = ctx.createRadialGradient(bx, by, 8, bx, by, boss.radius);
+                grad.addColorStop(0, '#e2e8f0');
+                grad.addColorStop(0.45, '#334155');
+                grad.addColorStop(1, '#020617');
+                ctx.beginPath();
+                ctx.arc(bx, by, boss.radius - 4, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+        },
+
         phantom_mirage: {
             id: 'phantom_mirage',
             stageNumber: 5,
@@ -2156,6 +2435,14 @@
             bossId: 'phantom_mirage',
             unlockedByDefault: false,
             clearRewardPt: 2500
+        }),
+        Object.freeze({
+            stageNumber: 6,
+            stageId: 'stage_6',
+            title: 'STAGE 6 : 原初の虚空嵐',
+            bossId: 'true_void_typhoon',
+            unlockedByDefault: false,
+            clearRewardPt: 5000
         })
     ]);
 
@@ -2251,6 +2538,37 @@
                     life: 145
                 });
             }
+        } else if (ev.type === 'true_void_spiral' || ev.type === 'true_void_clone_spiral') {
+            callSeSafe(state, 'shot');
+            for (let i = 0; i < ev.count; i++) {
+                const ang = ev.baseAngle + (Math.PI * 2 / ev.count) * i;
+                state.bossProjectiles.push({
+                    kind: 'spiral',
+                    element: ev.element || def.element,
+                    x: ev.x,
+                    y: ev.y,
+                    vx: Math.cos(ang) * ev.speed,
+                    vy: Math.sin(ang) * ev.speed,
+                    damage: ev.damage || (ev.type === 'true_void_clone_spiral' ? 20 : 18),
+                    life: 150
+                });
+            }
+        } else if (ev.type === 'true_void_sigil_warn') {
+            const frames = Math.max(45, Math.round((ev.warnDuration || 750) / 16.67));
+            state.bossEffects.push({ type: 'laser_warn', x: ev.x, y: ev.y, radius: ev.radius || 105, timer: frames, maxTimer: frames });
+        } else if (ev.type === 'true_void_sigil_fire') {
+            state.bossEffects.push({ type: 'pulse_fire', x: ev.x, y: ev.y, radius: ev.radius || 105, timer: 24, maxTimer: 24 });
+        } else if (ev.type === 'true_void_laser_warn') {
+            const frames = Math.max(38, Math.round((ev.warnDuration || 780) / 16.67));
+            state.bossEffects.push({ type: 'laser_warn', x: ev.x1, y: ev.y1, startAngle: ev.startAngle, endAngle: ev.endAngle, length: ev.length || 520, timer: frames, maxTimer: frames });
+        } else if (ev.type === 'true_void_laser_fire') {
+            state.bossEffects.push({ type: 'laser_fire', x: ev.x1, y: ev.y1, startAngle: ev.startAngle, endAngle: ev.endAngle, length: ev.length || 520, timer: 18, maxTimer: 18 });
+        } else if (ev.type === 'true_void_vortex') {
+            state.bossVortexUntil = Date.now() + (ev.duration || 3600);
+            state.bossVortexPull = ev.pullStrength || 2.2;
+            state.bossEffects.push({ type: 'true_void_vortex', x: state.bossState ? state.bossState.x : ev.x, y: state.bossState ? state.bossState.y : ev.y, radius: ev.radius || 260, timer: Math.ceil((ev.duration || 3600) / 16.67), maxTimer: Math.ceil((ev.duration || 3600) / 16.67) });
+        } else if (ev.type === 'true_void_giant_tornado') {
+            state.bossEffects.push({ type: 'giant_tornado', x: ev.x, y: ev.y, radius: ev.radius || 170, timer: Math.ceil((ev.duration || 8000) / 16.67), maxTimer: Math.ceil((ev.duration || 8000) / 16.67) });
         } else if (ev.type === 'breath') {
             callSeSafe(state, 'shot');
             const total = Math.max(1, ev.count || 5);
@@ -2486,6 +2804,9 @@
             if (state.bossState) {
                 state.bossState.scaleAuraActive = true;
                 state.bossState.scaleAuraUntil = performance.now() + (ev.scaleAuraDurationMs || 3000);
+                if (Array.isArray(ev.clones)) {
+                    state.bossState.clones = ev.clones.map((clone) => ({ ...clone }));
+                }
                 if (typeof state.addFloatingText === 'function') {
                     state.addFloatingText(state.bossState.x, state.bossState.y - 60, 'DRAGON SCALE AURA!!', '#ffbe0b');
                 }
@@ -2952,6 +3273,39 @@
                     gameCtx.lineWidth = 6;
                     gameCtx.stroke();
                 }
+            } else if (ef.type === 'true_void_vortex') {
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(148, 163, 184, 0.10)';
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#94a3b8';
+                gameCtx.lineWidth = 4;
+                gameCtx.setLineDash([18, 10]);
+                gameCtx.stroke();
+                gameCtx.setLineDash([]);
+                const pulse = 0.78 + Math.sin(now / 120) * 0.12;
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius * pulse, 0, Math.PI * 2);
+                gameCtx.strokeStyle = 'rgba(226, 232, 240, 0.38)';
+                gameCtx.lineWidth = 2;
+                gameCtx.stroke();
+            } else if (ef.type === 'giant_tornado') {
+                gameCtx.beginPath();
+                gameCtx.arc(ef.x, ef.y, ef.radius, 0, Math.PI * 2);
+                gameCtx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+                gameCtx.fill();
+                gameCtx.strokeStyle = '#ef4444';
+                gameCtx.lineWidth = 4;
+                gameCtx.setLineDash([10, 6]);
+                gameCtx.stroke();
+            } else if (ef.type === 'laser_warn' && Number.isFinite(ef.x1)) {
+                gameCtx.beginPath();
+                gameCtx.moveTo(ef.x1, ef.y1);
+                gameCtx.lineTo(ef.x2, ef.y2);
+                gameCtx.strokeStyle = 'rgba(255, 82, 82, 0.55)';
+                gameCtx.lineWidth = 8;
+                gameCtx.setLineDash([10, 8]);
+                gameCtx.stroke();
             } else if (ef.type === 'laser_warn') {
                 const segs = 12;
                 gameCtx.strokeStyle = 'rgba(255, 82, 82, 0.55)';
@@ -2964,6 +3318,19 @@
                     gameCtx.lineTo(ef.x + Math.cos(a) * ef.length, ef.y + Math.sin(a) * ef.length);
                     gameCtx.stroke();
                 }
+            } else if (ef.type === 'laser_fire' && Number.isFinite(ef.x1)) {
+                gameCtx.beginPath();
+                gameCtx.moveTo(ef.x1, ef.y1);
+                gameCtx.lineTo(ef.x2, ef.y2);
+                gameCtx.strokeStyle = 'rgba(255, 159, 67, 0.72)';
+                gameCtx.lineWidth = 22;
+                gameCtx.stroke();
+                gameCtx.beginPath();
+                gameCtx.moveTo(ef.x1, ef.y1);
+                gameCtx.lineTo(ef.x2, ef.y2);
+                gameCtx.strokeStyle = '#ffffff';
+                gameCtx.lineWidth = 5;
+                gameCtx.stroke();
             } else if (ef.type === 'laser_fire') {
                 const segs = 14;
                 for (let s = 0; s <= segs; s++) {
@@ -3363,6 +3730,7 @@
         VALID_FACING,
         facingToVector,
         GAME_RULES,
+        PROGRESSION,
         STATIC_OBSTACLES,
         SPECIAL_INKS,
         SPECIAL_INK_IDS,

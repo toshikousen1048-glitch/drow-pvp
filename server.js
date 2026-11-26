@@ -88,6 +88,11 @@ const REWARD_PVP_WIN = 450;
 const REWARD_PVP_KO = 100;
 const REWARD_BOSS_CONTRIBUTION_POOL = 200;
 const REWARD_BOSS_MVP = 150;
+const TALENT_TREES = ['durability', 'attack', 'mobility', 'reward'];
+const PASSIVE_GEAR_TYPES = ['weapon', 'armor', 'accessory'];
+const PROGRESSION_RULES = GAME_RULES.PROGRESSION;
+const PASSIVE_GACHA_COST = PROGRESSION_RULES.PASSIVE_GACHA_COST;
+const PASSIVE_MAX_RANK = PROGRESSION_RULES.PASSIVE_MAX_RANK;
 
 const CREDIT_TTL_MS = { shot: 4000, melee: 1500 };
 
@@ -110,6 +115,63 @@ function createDefaultUltraStocks() {
         stocks[skillId] = 0;
     }
     return stocks;
+}
+
+function createDefaultTalentLevels() {
+    return { durability: 0, attack: 0, mobility: 0, reward: 0 };
+}
+
+function sanitizeTalentLevels(raw) {
+    const levels = createDefaultTalentLevels();
+    if (!raw || typeof raw !== 'object') return levels;
+    for (const tree of TALENT_TREES) {
+        levels[tree] = Math.min(PROGRESSION_RULES.TALENT_MAX_LEVEL, Math.max(0, Math.floor(Number(raw[tree]) || 0)));
+    }
+    return levels;
+}
+
+function createDefaultUltraAwakeningPoints() {
+    const points = {};
+    for (const skillId of ULTRA_SKILL_ORDER) points[skillId] = 0;
+    return points;
+}
+
+function sanitizeUltraAwakeningPoints(raw) {
+    const points = createDefaultUltraAwakeningPoints();
+    if (!raw || typeof raw !== 'object') return points;
+    for (const skillId of ULTRA_SKILL_ORDER) {
+        points[skillId] = Math.min(PROGRESSION_RULES.ULTRA_RANK_3_POINTS, Math.max(0, Math.floor(Number(raw[skillId]) || 0)));
+    }
+    return points;
+}
+
+function createDefaultPassiveInventory() {
+    const inventory = {};
+    for (const type of PASSIVE_GEAR_TYPES) inventory[type] = [0, 0, 0, 0, 0, 0];
+    return inventory;
+}
+
+function sanitizePassiveInventory(raw) {
+    const inventory = createDefaultPassiveInventory();
+    if (!raw || typeof raw !== 'object') return inventory;
+    for (const type of PASSIVE_GEAR_TYPES) {
+        const counts = raw[type];
+        if (!Array.isArray(counts)) continue;
+        for (let rank = 1; rank <= PASSIVE_MAX_RANK; rank++) {
+            inventory[type][rank] = Math.min(999, Math.max(0, Math.floor(Number(counts[rank]) || 0)));
+        }
+    }
+    return inventory;
+}
+
+function sanitizePassiveGearSlots(raw, inventory) {
+    const slots = { weapon: 0, armor: 0, accessory: 0 };
+    if (!raw || typeof raw !== 'object') return slots;
+    for (const type of PASSIVE_GEAR_TYPES) {
+        const rank = Math.min(PASSIVE_MAX_RANK, Math.max(0, Math.floor(Number(raw[type]) || 0)));
+        slots[type] = rank > 0 && inventory && inventory[type] && inventory[type][rank] > 0 ? rank : 0;
+    }
+    return slots;
 }
 
 function sanitizeClientKey(raw, fallbackId) {
@@ -152,6 +214,7 @@ function getOrCreateProfile(clientKey, seedData) {
             initEquipped = null;
         }
 
+        const passiveInventory = sanitizePassiveInventory(seed.passiveInventory);
         profiles[key] = {
             clientKey: key,
             lastSeenAt: Date.now(),
@@ -159,6 +222,13 @@ function getOrCreateProfile(clientKey, seedData) {
             maxUnlockedStage: initStage,
             unlockedInks: initInks,
             ultraStocks: initStocks,
+            talents: sanitizeTalentLevels(seed.talents),
+            ultraAwakeningPoints: sanitizeUltraAwakeningPoints(seed.ultraAwakeningPoints),
+            passiveInventory,
+            passiveGearSlots: sanitizePassiveGearSlots(seed.passiveGearSlots, passiveInventory),
+            dailyWinDate: typeof seed.dailyWinDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(seed.dailyWinDate)
+                ? seed.dailyWinDate
+                : '',
             equippedUltra: initEquipped,
             wins: Math.max(0, Math.floor(Number(seed.wins) || 0))
         };
@@ -173,6 +243,11 @@ function serializeProfile(profile) {
         maxUnlockedStage: profile.maxUnlockedStage,
         unlockedInks: [...profile.unlockedInks],
         ultraStocks: { ...profile.ultraStocks },
+        talents: { ...profile.talents },
+        ultraAwakeningPoints: { ...profile.ultraAwakeningPoints },
+        passiveInventory: Object.fromEntries(PASSIVE_GEAR_TYPES.map((type) => [type, [...profile.passiveInventory[type]]])),
+        passiveGearSlots: { ...profile.passiveGearSlots },
+        dailyWinDate: profile.dailyWinDate,
         equippedUltra: profile.equippedUltra,
         wins: profile.wins
     };
@@ -191,6 +266,92 @@ function findSocketsByClientKey(clientKey) {
         }
     }
     return matched;
+}
+
+function getJstDateKey(now = Date.now()) {
+    return new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function claimDailyFirstWinBonus(profile) {
+    const today = getJstDateKey();
+    if (!profile || profile.dailyWinDate === today) return 0;
+    profile.dailyWinDate = today;
+    return PROGRESSION_RULES.DAILY_FIRST_WIN_BONUS;
+}
+
+function getUltraAwakeningRank(points) {
+    const safePoints = Math.max(0, Number(points) || 0);
+    if (safePoints >= PROGRESSION_RULES.ULTRA_RANK_3_POINTS) return 3;
+    if (safePoints >= PROGRESSION_RULES.ULTRA_RANK_2_POINTS) return 2;
+    return 1;
+}
+
+function getProfileUltraAwakeningRank(profile, skillId) {
+    return getUltraAwakeningRank(profile && profile.ultraAwakeningPoints
+        ? profile.ultraAwakeningPoints[skillId]
+        : 0);
+}
+
+function getProgressionSnapshot(profile) {
+    return {
+        talents: sanitizeTalentLevels(profile && profile.talents),
+        ultraAwakeningPoints: sanitizeUltraAwakeningPoints(profile && profile.ultraAwakeningPoints),
+        passiveGearSlots: sanitizePassiveGearSlots(profile && profile.passiveGearSlots, profile && profile.passiveInventory)
+    };
+}
+
+function syncPlayerProgression(room, player, profile) {
+    if (!room || !player || !profile) return;
+    player.progression = getProgressionSnapshot(profile);
+    const hpBonus = room.mode === 'boss'
+        ? player.progression.talents.durability * PROGRESSION_RULES.TALENT_PER_LEVEL.durability
+        : 0;
+    player.maxHp = Math.max(1, Math.round(player.stats.maxHp * (1 + hpBonus)));
+    player.hp = Math.min(player.hp, player.maxHp);
+}
+
+function getPlayerTalentLevel(player, tree, roomMode) {
+    if (!player || roomMode !== 'boss' || !player.progression || !player.progression.talents) return 0;
+    return player.progression.talents[tree] || 0;
+}
+
+function getPlayerPassiveRank(player, type) {
+    if (!player || !player.progression || !player.progression.passiveGearSlots) return 0;
+    return player.progression.passiveGearSlots[type] || 0;
+}
+
+function getPlayerUltraAwakeningRank(player, skillId) {
+    if (!player || !player.progression || !player.progression.ultraAwakeningPoints) return 1;
+    return getUltraAwakeningRank(player.progression.ultraAwakeningPoints[skillId]);
+}
+
+function getPlayerUltraDamageMultiplier(player, skillId, roomMode) {
+    if (roomMode === 'training') return 1.0;
+    return getPlayerUltraAwakeningRank(player, skillId) >= 3
+        ? PROGRESSION_RULES.ULTRA_RANK_3_EFFECT_MULTIPLIER
+        : 1.0;
+}
+
+function getPassiveItemDurationMultiplier(player, roomMode) {
+    if (roomMode === 'training') return 1.0;
+    return 1 + getPlayerPassiveRank(player, 'accessory') * PROGRESSION_RULES.PASSIVE_PER_RANK.accessoryDuration;
+}
+
+function addPassiveGear(profile, type) {
+    const inventory = profile.passiveInventory[type];
+    let rank = 1;
+    inventory[rank] += 1;
+    const merges = [];
+    while (rank < PASSIVE_MAX_RANK && inventory[rank] >= PROGRESSION_RULES.PASSIVE_MERGE_COUNT) {
+        inventory[rank] -= PROGRESSION_RULES.PASSIVE_MERGE_COUNT;
+        inventory[rank + 1] += 1;
+        rank += 1;
+        merges.push(rank);
+    }
+    if (profile.passiveGearSlots[type] < rank) {
+        profile.passiveGearSlots[type] = rank;
+    }
+    return { rank, merges };
 }
 
 // =========================================================================
@@ -380,6 +541,27 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
     let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+}
+
+function clampArenaPoint(x, y, margin) {
+    const m = Math.max(40, Number(margin) || 95);
+    return {
+        x: Math.max(m, Math.min(ARENA_WIDTH - m, Number(x) || 0)),
+        y: Math.max(ARENA_TOP + m, Math.min(ARENA_HEIGHT - m, Number(y) || ARENA_TOP))
+    };
+}
+
+function resolveFacingFromMovement(dx, dy) {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 0.01) return null;
+    const deg = Math.atan2(dy, dx) * (180 / Math.PI);
+    if (deg >= -22.5 && deg < 22.5) return 'right';
+    if (deg >= 22.5 && deg < 67.5) return 'down_right';
+    if (deg >= 67.5 && deg < 112.5) return 'down';
+    if (deg >= 112.5 && deg < 157.5) return 'down_left';
+    if (deg >= 157.5 || deg < -157.5) return 'left';
+    if (deg >= -157.5 && deg < -112.5) return 'up_left';
+    if (deg >= -112.5 && deg < -67.5) return 'up';
+    return 'up_right';
 }
 
 function isPointInSlashSector(px, py, ox, oy, facingAngle, maxRange, halfAngleRad, targetRadius) {
@@ -744,6 +926,7 @@ function serializeRoomPlayers(room) {
             ultraRemainingUses: p.ultraRemainingUses,
             ultraMaxUses: p.ultraMaxUses,
             ultraCooldownUntil: p.ultraCooldownUntil,
+            ultraCooldownDurationMs: p.ultraCooldownDurationMs || 0,
             ultraState: p.ultraState,
             ultraStateUntil: p.ultraStateUntil,
             bossDamageDealt: p.bossDamageDealt,
@@ -923,6 +1106,25 @@ function registerServerBossProjectilesFromEvent(roomId, matchId, ev) {
                 damage,
                 hitRadius: 20,
                 life: 145
+            });
+        }
+    } else if (ev.type === 'true_void_spiral' || ev.type === 'true_void_clone_spiral') {
+        const total = Math.max(1, ev.count || 9);
+        const baseAngle = ev.baseAngle || 0;
+        const speed = ev.speed || 4.4;
+        const damage = ev.damage || (ev.type === 'true_void_clone_spiral' ? 20 : 18);
+        for (let i = 0; i < total; i++) {
+            const ang = baseAngle + (Math.PI * 2 / total) * i;
+            room.bossProjectiles.push({
+                kind: 'spiral',
+                element: bossElem,
+                x: ev.x,
+                y: ev.y,
+                vx: Math.cos(ang) * speed,
+                vy: Math.sin(ang) * speed,
+                damage,
+                hitRadius: 18,
+                life: 150
             });
         }
     } else if (ev.type === 'feint_barrage') {
@@ -1158,13 +1360,25 @@ function stepPlayerMagmaZones(roomId, matchId) {
         const tickInterval = mz.tickIntervalMs || 1000;
         const tickDamage = mz.tickDamage || 10;
 
-        if (room.mode === 'boss' && room.boss && room.boss.hp > 0 && !room.boss.isStealthed) {
-            const lastBossHit = mz.lastHitAtByTarget.BOSS || 0;
-            if (now >= lastBossHit + tickInterval) {
-                const touchingBoss = mz.zones.some((z) => Math.hypot(room.boss.x - z.x, room.boss.y - z.y) <= z.radius + room.boss.radius * 0.5);
-                if (touchingBoss) {
-                    mz.lastHitAtByTarget.BOSS = now;
-                    applyDamageToBossInternal(roomId, owner, tickDamage, 'ultra_meteor_magma', 'magma');
+        if ((room.mode === 'boss' || room.mode === 'training') && room.boss && room.boss.hp > 0) {
+            if (!room.boss.isStealthed) {
+                const lastBossHit = mz.lastHitAtByTarget.BOSS || 0;
+                if (now >= lastBossHit + tickInterval) {
+                    const touchingBoss = mz.zones.some((z) => Math.hypot(room.boss.x - z.x, room.boss.y - z.y) <= z.radius + room.boss.radius * 0.5);
+                    if (touchingBoss) {
+                        mz.lastHitAtByTarget.BOSS = now;
+                        applyDamageToBossInternal(roomId, owner, tickDamage, 'ultra_meteor_magma', 'magma');
+                    }
+                }
+            }
+            for (const clone of room.boss.clones || []) {
+                if (!clone || clone.hp <= 0) continue;
+                const lastCloneHit = mz.lastHitAtByTarget[clone.id] || 0;
+                if (now < lastCloneHit + tickInterval) continue;
+                const touchingClone = mz.zones.some((z) => Math.hypot(clone.x - z.x, clone.y - z.y) <= z.radius + (clone.radius || 0) * 0.5);
+                if (touchingClone) {
+                    mz.lastHitAtByTarget[clone.id] = now;
+                    applyDamageToBossInternal(roomId, owner, tickDamage, 'ultra_meteor_magma', 'magma', clone.id);
                 }
             }
         } else if (room.mode === 'pvp') {
@@ -1315,11 +1529,20 @@ for (let s = 0; s < subSteps; s++) {
 
                 const owner = room.players[up.ownerId];
                 if (owner) {
-                    const powerMult = now < (owner.powerBoostUntil || 0) ? 1.5 : 1.0;
-                    const rawDamage = up.fixedDamage * powerMult;
+                    const rawDamage = up.fixedDamage * getPlayerEffectiveAttackMultiplier(owner, now, room.mode);
 
-                    if (room.mode === 'boss' && room.boss && room.boss.hp > 0 && !room.boss.isStealthed) {
-                        if (Math.hypot(up.x - room.boss.x, up.y - room.boss.y) <= room.boss.radius + r + 4) {
+                    if ((room.mode === 'boss' || room.mode === 'training') && room.boss && room.boss.hp > 0) {
+                        const hitClone = (room.boss.clones || []).find((clone) =>
+                            clone && clone.hp > 0 &&
+                            Math.hypot(up.x - clone.x, up.y - clone.y) <= (clone.radius || 0) + r + 4
+                        );
+                        if (hitClone) {
+                            applyDamageToBossInternal(roomId, owner, rawDamage, 'ultra_ricochet', 'ultra', hitClone.id);
+                            if (room.state !== 'playing' || room.matchId !== matchId) return;
+                            destroyed = true;
+                            break;
+                        }
+                        if (!room.boss.isStealthed && Math.hypot(up.x - room.boss.x, up.y - room.boss.y) <= room.boss.radius + r + 4) {
                             applyDamageToBossInternal(roomId, owner, rawDamage, 'ultra_ricochet', 'ultra');
                             if (room.state !== 'playing' || room.matchId !== matchId) return;
                             destroyed = true;
@@ -1491,6 +1714,9 @@ function startBossAILoop(roomId, matchId) {
             let moveSpd = boss.phase === 2
                 ? (isSolo ? (moveCfg.soloP2 ?? moveCfg.p2 ?? curDef.speed) : (moveCfg.multiP2 ?? moveCfg.p2 ?? curDef.speed))
                 : (isSolo ? (moveCfg.soloP1 ?? moveCfg.p1 ?? curDef.speed) : (moveCfg.multiP1 ?? moveCfg.p1 ?? curDef.speed));
+            if (boss.id === 'true_void_typhoon' && boss.phase === 2) {
+                moveSpd = 5.0;
+            }
 
             if (boss.vortexActive) {
                 moveSpd *= 0.65;
@@ -1515,7 +1741,45 @@ function startBossAILoop(roomId, matchId) {
             }
         }
 
+        if (boss.id === 'true_void_typhoon' && boss.phase === 2 && Array.isArray(boss.clones)) {
+            for (const clone of boss.clones) {
+                if (!nearest) break;
+                const angleToPlayer = Math.atan2((nearest.y + 24) - clone.y, (nearest.x + 24) - clone.x);
+                clone.x += Math.cos(angleToPlayer) * 2.2;
+                clone.y += Math.sin(angleToPlayer) * 2.2;
+                clone.x = Math.max(70, Math.min(ARENA_WIDTH - 70, clone.x));
+                clone.y = Math.max(ARENA_TOP + 70, Math.min(ARENA_HEIGHT - 70, clone.y));
+
+                if (!clone.lastShotAt || now - clone.lastShotAt >= 1500) {
+                    clone.lastShotAt = now;
+                    const baseAngle = angleToPlayer;
+                    const count = 9;
+                    const speed = 4.4;
+                    const eventPayload = {
+                        bossId: boss.id,
+                        element: boss.element,
+                        type: 'true_void_clone_spiral',
+                        x: clone.x,
+                        y: clone.y,
+                        count,
+                        baseAngle,
+                        speed,
+                        damage: 20
+                    };
+                    io.to(roomId).emit('bossAttackEvent', eventPayload);
+                    registerServerBossProjectilesFromEvent(roomId, matchId, eventPayload);
+                }
+            }
+        }
+
         io.to(roomId).emit('bossStateUpdated', boss);
+        if (boss.id === 'true_void_typhoon' && boss.phase === 2 && Array.isArray(boss.clones)) {
+            io.to(roomId).emit('bossClonesUpdated', {
+                bossId: boss.id,
+                phase: boss.phase,
+                clones: boss.clones.map((clone) => ({ ...clone }))
+            });
+        }
     }, 200);
 
     let lastProjTickAt = Date.now();
@@ -1536,9 +1800,15 @@ function startBossAILoop(roomId, matchId) {
         if (!r || r.state !== 'playing' || r.matchId !== matchId || !r.boss) return;
 
         const curDef = getBossDef(r.boss.id);
+        const activePlayerCount = Object.keys(r.players).filter((id) => !r.players[id].isEliminated).length;
+        const isSolo = activePlayerCount <= 1;
+        const phaseKey = r.boss.phase === 2 ? 'p2' : 'p1';
+        const intervalDef = curDef.attackIntervalMs || {};
+        const extendedIntervalKey = `${isSolo ? 'solo' : 'multi'}${phaseKey[1].toUpperCase()}`;
+        const intervalFallback = intervalDef[phaseKey];
         const interval = customDelayMs !== undefined
             ? customDelayMs
-            : (r.boss.phase === 2 ? curDef.attackIntervalMs.p2 : curDef.attackIntervalMs.p1);
+            : (intervalDef[extendedIntervalKey] ?? intervalFallback);
         r.bossAttackTimer = setTimeout(() => {
             const cur = rooms[roomId];
             if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
@@ -1637,6 +1907,9 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
     const auraDuration = Number(cfg.scaleAuraDurationMs) || 3000;
     const kbRadius = Number(cfg.knockbackRadius) || 240;
     const kbDist = Number(cfg.knockbackDistance) || 120;
+    const isTrueVoid = def.id === 'true_void_typhoon';
+    const shockDamage = isTrueVoid ? (Number(cfg.shockDamage) || 22) : 0;
+    const shockRadius = isTrueVoid ? (Number(cfg.knockbackRadius) || 250) : kbRadius;
 
     boss.scaleAuraActive = true;
     boss.scaleAuraUntil = now + auraDuration;
@@ -1645,10 +1918,11 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
     for (const id in room.players) {
         const p = room.players[id];
         if (!p || p.isDead || p.isEliminated) continue;
+        if (isTimeStoppedForActor(room, p.id, now)) continue;
         const pcx = p.x + CHAR_SIZE / 2;
         const pcy = p.y + CHAR_SIZE / 2;
         const dist = Math.hypot(pcx - boss.x, pcy - boss.y);
-        if (dist <= kbRadius) {
+        if (dist <= shockRadius) {
             const ang = dist > 0.1 ? Math.atan2(pcy - boss.y, pcx - boss.x) : Math.PI / 2;
             let mult = 1.0;
             if (now < (p.absoluteWallUntil || 0)) mult = 0.15;
@@ -1668,6 +1942,9 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
                 y: p.y,
                 facing: p.facing
             });
+            if (shockDamage > 0) {
+                applyBossDamageToPlayer(roomId, p, shockDamage, 'true_void_shockwave', matchId, boss.element);
+            }
         }
     }
 
@@ -1677,9 +1954,88 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
         type: 'p2_awaken',
         x: boss.x,
         y: boss.y,
-        knockbackRadius: kbRadius,
+        knockbackRadius: shockRadius,
         scaleAuraDurationMs: auraDuration
     });
+
+    if (isTrueVoid) {
+        boss.clones = [];
+        const cloneAngles = [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
+        for (let i = 0; i < 4; i++) {
+            const pos = clampArenaPoint(
+                boss.x + Math.cos(cloneAngles[i]) * 170,
+                boss.y + Math.sin(cloneAngles[i]) * 170,
+                70
+            );
+            boss.clones.push({
+                id: `void_clone_${matchId}_${i}`,
+                x: pos.x,
+                y: pos.y,
+                radius: 24,
+                hp: 400,
+                maxHp: 400,
+                lastShotAt: 0
+            });
+        }
+        io.to(roomId).emit('bossStateUpdated', boss);
+        io.to(roomId).emit('bossClonesUpdated', {
+            bossId: boss.id,
+            phase: boss.phase,
+            clones: boss.clones.map((clone) => ({ ...clone }))
+        });
+        io.to(roomId).emit('bossAttackEvent', {
+            bossId: boss.id,
+            element: boss.element,
+            type: 'p2_awaken',
+            x: boss.x,
+            y: boss.y,
+            knockbackRadius: shockRadius,
+            scaleAuraDurationMs: auraDuration,
+            clones: boss.clones.map((clone) => ({ ...clone }))
+        });
+
+        const tornadoRadius = Number(cfg.tornadoRadius) || 170;
+        const tornadoDuration = Number(cfg.tornadoDurationMs) || 8000;
+        const tornadoPull = Number(cfg.tornadoPullStrength) || 2.65;
+        const tickInterval = Number(cfg.tornadoTickIntervalMs) || 500;
+        const tickDamage = Number(cfg.tornadoTickDamage) || 8;
+        room.bossGiantTornadoUntil = now + tornadoDuration;
+        room.bossGiantTornadoRadius = tornadoRadius;
+        room.bossGiantTornadoPullStrength = tornadoPull;
+        io.to(roomId).emit('bossAttackEvent', {
+            bossId: boss.id,
+            element: boss.element,
+            type: 'true_void_giant_tornado',
+            x: boss.x,
+            y: boss.y,
+            radius: tornadoRadius,
+            duration: tornadoDuration,
+            pullStrength: tornadoPull,
+            tickIntervalMs: tickInterval,
+            tickDamage
+        });
+        const tickCount = Math.floor(tornadoDuration / tickInterval);
+        for (let i = 1; i <= tickCount; i++) {
+            registerBossTimeout(room, () => {
+                const cur = rooms[roomId];
+                if (!cur || cur.state !== 'playing' || cur.matchId !== matchId || !cur.boss) return;
+                for (const id in cur.players) {
+                    const p = cur.players[id];
+                    if (!p || p.isDead || p.isEliminated) continue;
+                    if (Math.hypot(p.x + 24 - cur.boss.x, p.y + 24 - cur.boss.y) <= tornadoRadius) {
+                        applyBossDamageToPlayer(roomId, p, tickDamage, 'true_void_giant_tornado', matchId, cur.boss.element);
+                    }
+                }
+            }, i * tickInterval);
+        }
+        registerBossTimeout(room, () => {
+            const cur = rooms[roomId];
+            if (!cur) return;
+            cur.bossGiantTornadoUntil = 0;
+            cur.bossGiantTornadoRadius = 0;
+            cur.bossGiantTornadoPullStrength = 0;
+        }, tornadoDuration);
+    }
     io.to(roomId).emit('bossStateUpdated', boss);
 
     registerBossTimeout(room, () => {
@@ -1697,6 +2053,7 @@ function applySlowToPlayer(roomId, target, multiplier, durationMs, matchId) {
     if (!target || target.isDead || target.isEliminated) return false;
 
     const now = Date.now();
+    if (attacker === 'BOSS' && isTimeStoppedForActor(room, target.id, now)) return false;
     const safeMult = Math.min(1.0, Math.max(0.25, Number(multiplier) || 0.75));
     const safeDuration = Math.max(100, Math.floor(Number(durationMs) || 1800));
     const until = now + safeDuration;
@@ -1816,23 +2173,115 @@ function knockbackPlayerFromPoint(roomId, target, originX, originY, targetDistan
     return true;
 }
 
-function getPlayerEffectiveAttackMultiplier(p, now) {
+function getPlayerEffectiveAttackMultiplier(p, now, roomMode) {
     if (!p) return 1.0;
     const powerMult = now < (p.powerBoostUntil || 0) ? 1.5 : 1.0;
     const debuffMult = now < (p.attackDebuffUntil || 0) ? (p.attackDebuffMultiplier || 0.75) : 1.0;
-    return powerMult * debuffMult;
+    const talentMult = 1 + getPlayerTalentLevel(p, 'attack', roomMode) * PROGRESSION_RULES.TALENT_PER_LEVEL.attack;
+    const gearMult = roomMode === 'training' ? 1.0
+        : (1 + getPlayerPassiveRank(p, 'weapon') * PROGRESSION_RULES.PASSIVE_PER_RANK.weaponAttack);
+    return powerMult * debuffMult * talentMult * gearMult;
 }
 
-function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitTypeLabel) {
+function getPlayerMobilityMultiplier(p, roomMode) {
+    return 1 + getPlayerTalentLevel(p, 'mobility', roomMode) * PROGRESSION_RULES.TALENT_PER_LEVEL.mobility;
+}
+
+function getPlayerShotCooldownMs(p, roomMode) {
+    const baseCooldown = GAME_RULES.ACTIONS.shot.cooldownMs;
+    return roomMode === 'boss' && getPlayerTalentLevel(p, 'attack', roomMode) >= PROGRESSION_RULES.TALENT_UNLOCKS.bulletConservation
+        ? Math.floor(baseCooldown * PROGRESSION_RULES.BULLET_COOLDOWN_MULTIPLIER)
+        : baseCooldown;
+}
+
+function getPlayerDamageModifiers(target, attackerElement, roomMode) {
+    let elementMultiplier = getElementMultiplier(attackerElement, target.element);
+    if (roomMode === 'boss' && getPlayerTalentLevel(target, 'durability', roomMode) >= PROGRESSION_RULES.TALENT_UNLOCKS.inkProtection &&
+        elementMultiplier >= 1.35 && elementMultiplier <= 1.45) {
+        elementMultiplier = PROGRESSION_RULES.WEAKNESS_DAMAGE_MULTIPLIER;
+    }
+    return {
+        elementMultiplier,
+        armorMultiplier: roomMode === 'training' ? 1.0
+            : (1 - getPlayerPassiveRank(target, 'armor') * PROGRESSION_RULES.PASSIVE_PER_RANK.armorReduction)
+    };
+}
+
+function tryActivateEmergencyEscape(roomId, room, target, incomingDamage, now) {
+    if (!room || room.mode !== 'boss' || !target || target.emergencyEscapeUsed ||
+        getPlayerTalentLevel(target, 'durability', room.mode) < PROGRESSION_RULES.TALENT_UNLOCKS.emergencyEscape ||
+        now < (target.shieldUntil || 0) || now < (target.absoluteWallUntil || 0)) {
+        return false;
+    }
+    if (target.hp - incomingDamage > target.maxHp * PROGRESSION_RULES.EMERGENCY_ESCAPE_HP_RATIO) return false;
+
+    const duration = GAME_RULES.ACTIONS.shield.durationMs;
+    target.emergencyEscapeUsed = true;
+    target.shieldUntil = now + duration;
+    target.nextShieldAt = now + GAME_RULES.ACTIONS.shield.cooldownMs;
+    io.to(roomId).emit('playerShielded', {
+        id: target.id,
+        duration,
+        cooldownMs: GAME_RULES.ACTIONS.shield.cooldownMs,
+        autoEmergency: true
+    });
+    io.to(roomId).emit('attackBlocked', {
+        targetId: target.id,
+        attackerId: 'BOSS',
+        type: 'talent_emergency',
+        byTalent: true
+    });
+    return true;
+}
+
+function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitTypeLabel, targetCloneId) {
     const room = rooms[roomId];
-    if (!room || room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return false;
+    if (!room || room.state !== 'playing' || !['boss', 'training'].includes(room.mode) || !room.boss) return false;
     if (!attacker || room.boss.hp <= 0) return false;
-    if (room.boss.isStealthed) return false;
 
     const now = Date.now();
     const def = getBossDef(room.boss.id);
     const elemMult = getElementMultiplier(attacker.element, room.boss.element);
     const barrierMult = (room.boss.barrierActive && def.barrierDamageMultiplier) ? def.barrierDamageMultiplier : 1.0;
+
+    if (targetCloneId) {
+        const clone = Array.isArray(room.boss.clones)
+            ? room.boss.clones.find((c) => c && c.id === targetCloneId)
+            : null;
+        if (!clone || clone.hp <= 0) return false;
+        const elemMult = getElementMultiplier(attacker.element, room.boss.element);
+        const finalCloneDamage = Math.max(1, Math.round(rawDamage * elemMult));
+        clone.hp = Math.max(0, clone.hp - finalCloneDamage);
+        attacker.bossDamageDealt = (attacker.bossDamageDealt || 0) + finalCloneDamage;
+        io.to(roomId).emit('bossDamaged', {
+            attackerId: attacker.id,
+            damage: finalCloneDamage,
+            hp: room.boss.hp,
+            maxHp: room.boss.maxHp,
+            phase: room.boss.phase,
+            targetCloneId,
+            cloneId: clone.id,
+            cloneHp: clone.hp,
+            cloneMaxHp: clone.maxHp,
+            clones: room.boss.clones.map((c) => ({ ...c })),
+            elementMultiplier: elemMult,
+            attackerElement: attacker.element,
+            defenderElement: room.boss.element,
+            attackType: hitTypeLabel || attackKind
+        });
+        if (clone.hp <= 0) {
+            room.boss.clones = room.boss.clones.filter((c) => c.id !== targetCloneId);
+            io.to(roomId).emit('bossStateUpdated', room.boss);
+            io.to(roomId).emit('bossClonesUpdated', {
+                bossId: room.boss.id,
+                phase: room.boss.phase,
+                clones: room.boss.clones.map((c) => ({ ...c }))
+            });
+        }
+        return true;
+    }
+
+    if (room.boss.isStealthed) return false;
 
     if (room.boss.scaleAuraActive && now >= (room.boss.scaleAuraUntil || 0)) {
         room.boss.scaleAuraActive = false;
@@ -1846,6 +2295,13 @@ function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitT
 
     room.boss.hp = Math.max(0, room.boss.hp - finalDamage);
     attacker.bossDamageDealt = (attacker.bossDamageDealt || 0) + finalDamage;
+    attacker.bossCoreDamageDealt = (attacker.bossCoreDamageDealt || 0) + finalDamage;
+    if (room.mode === 'training') {
+        if (!room.trainingStats) room.trainingStats = { startAt: now, totalDamage: 0, maxHit: 0, elapsedMs: 0 };
+        room.trainingStats.totalDamage = (room.trainingStats.totalDamage || 0) + finalDamage;
+        room.trainingStats.maxHit = Math.max(room.trainingStats.maxHit || 0, finalDamage);
+        room.trainingStats.elapsedMs = Math.max(0, now - (room.trainingStats.startAt || now));
+    }
 
     let triggeredAwaken = false;
     if (room.boss.phase === 1 && room.boss.hp > 0 && room.boss.hp <= room.boss.maxHp * 0.5) {
@@ -1861,19 +2317,31 @@ function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitT
         hp: room.boss.hp,
         maxHp: room.boss.maxHp,
         phase: room.boss.phase,
+        clones: Array.isArray(room.boss.clones)
+            ? room.boss.clones.map((clone) => ({ ...clone }))
+            : [],
         blockedByBarrier: Boolean(room.boss.barrierActive),
         reducedByScaleAura: scaleAuraMult < 1.0,
         elementMultiplier: elemMult,
         attackerElement: attacker.element,
         defenderElement: room.boss.element,
-        attackType: hitTypeLabel || attackKind
+        attackType: hitTypeLabel || attackKind,
+        trainingStats: room.mode === 'training' ? {
+            totalDamage: room.trainingStats.totalDamage,
+            maxHit: room.trainingStats.maxHit,
+            elapsedMs: room.trainingStats.elapsedMs
+        } : null
     });
 
     if (triggeredAwaken) {
         triggerBossPhase2Awaken(roomId, room, def, room.matchId);
     }
 
-    if (room.boss.hp <= 0) {
+    if (room.boss.hp <= 0 && room.mode === 'training') {
+        room.boss.hp = room.boss.maxHp;
+        room.boss.phase = 1;
+        io.to(roomId).emit('bossStateUpdated', room.boss);
+    } else if (room.boss.hp <= 0) {
         checkMatchWinner(roomId);
     }
     return true;
@@ -1901,8 +2369,8 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
                 ? Boolean(eodDef.counterInteraction.triggersCounter)
                 : true;
             const atkElem = attackerElement || (attacker && attacker !== 'BOSS' ? attacker.element : 'neutral');
-            const elemMult = getElementMultiplier(atkElem, target.element);
-            const damage = Math.max(1, Math.round(rawDamage * elemMult * counterMult));
+            const damageMods = getPlayerDamageModifiers(target, atkElem, room.mode);
+            const damage = Math.max(1, Math.round(rawDamage * damageMods.elementMultiplier * damageMods.armorMultiplier * counterMult));
 
             target.hp = Math.max(0, target.hp - damage);
             if (!skipInvincible) {
@@ -1919,7 +2387,7 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
                 maxHp: target.maxHp,
                 knockbackDir: knockDir || 'down',
                 type: hitType,
-                elementMultiplier: elemMult,
+                elementMultiplier: damageMods.elementMultiplier,
                 attackerElement: atkElem,
                 defenderElement: target.element,
                 skipInvincible,
@@ -1971,8 +2439,8 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
             }
 
             const atkElem = attackerElement || (attacker && attacker !== 'BOSS' ? attacker.element : 'neutral');
-            const elemMult = getElementMultiplier(atkElem, target.element);
-            const damage = Math.max(1, Math.round(rawDamage * elemMult * guardMult));
+            const damageMods = getPlayerDamageModifiers(target, atkElem, room.mode);
+            const damage = Math.max(1, Math.round(rawDamage * damageMods.elementMultiplier * damageMods.armorMultiplier * guardMult));
 
             target.hp = Math.max(0, target.hp - damage);
             if (!skipInvincible) {
@@ -1989,7 +2457,7 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
                 maxHp: target.maxHp,
                 knockbackDir: knockDir || 'down',
                 type: hitType,
-                elementMultiplier: elemMult,
+                elementMultiplier: damageMods.elementMultiplier,
                 attackerElement: atkElem,
                 defenderElement: target.element,
                 skipInvincible,
@@ -2018,8 +2486,9 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
     }
 
     const atkElem = attackerElement || (attacker && attacker !== 'BOSS' ? attacker.element : 'neutral');
-    const elemMult = getElementMultiplier(atkElem, target.element);
-    const damage = Math.max(1, Math.round(rawDamage * elemMult));
+    const damageMods = getPlayerDamageModifiers(target, atkElem, room.mode);
+    const damage = Math.max(1, Math.round(rawDamage * damageMods.elementMultiplier * damageMods.armorMultiplier));
+    if (tryActivateEmergencyEscape(roomId, room, target, damage, now)) return false;
 
     target.hp = Math.max(0, target.hp - damage);
     if (!skipInvincible) {
@@ -2036,7 +2505,7 @@ function applyDamageToPlayerInternal(roomId, target, attacker, rawDamage, knockD
         maxHp: target.maxHp,
         knockbackDir: knockDir || 'down',
         type: hitType,
-        elementMultiplier: elemMult,
+        elementMultiplier: damageMods.elementMultiplier,
         attackerElement: atkElem,
         defenderElement: target.element,
         skipInvincible,
@@ -2079,8 +2548,9 @@ function triggerPerfectCounter(roomId, counterPlayer, attacker, matchId) {
 
     const pc = playerCenter(counterPlayer);
     const counterRadius = skill.counterRadius || 210;
-    const atkMult = getPlayerEffectiveAttackMultiplier(counterPlayer, Date.now());
-    const baseCounterDmg = counterPlayer.stats.atk * skill.damageMultiplier * atkMult;
+    const atkMult = getPlayerEffectiveAttackMultiplier(counterPlayer, Date.now(), room.mode);
+    const baseCounterDmg = counterPlayer.stats.atk * skill.damageMultiplier * atkMult *
+        getPlayerUltraDamageMultiplier(counterPlayer, skill.id, room.mode);
 
     io.to(roomId).emit('ultraSkillEvent', {
         playerId: counterPlayer.id,
@@ -2094,10 +2564,17 @@ function triggerPerfectCounter(roomId, counterPlayer, attacker, matchId) {
         durationMs: 320
     });
 
-    if (room.mode === 'boss' && room.boss && room.boss.hp > 0) {
+    if ((room.mode === 'boss' || room.mode === 'training') && room.boss && room.boss.hp > 0) {
         const distToBoss = Math.hypot(room.boss.x - pc.x, room.boss.y - pc.y);
         if (attacker === 'BOSS' || distToBoss <= counterRadius + room.boss.radius + 90) {
             applyDamageToBossInternal(roomId, counterPlayer, baseCounterDmg, 'ultra_counter', 'ultra');
+        }
+        for (const clone of room.boss.clones || []) {
+            if (!clone || clone.hp <= 0) continue;
+            const distToClone = Math.hypot(clone.x - pc.x, clone.y - pc.y);
+            if (attacker === 'BOSS' || distToClone <= counterRadius + (clone.radius || 0) + 90) {
+                applyDamageToBossInternal(roomId, counterPlayer, baseCounterDmg, 'ultra_counter', 'ultra', clone.id);
+            }
         }
     } else if (room.mode === 'pvp') {
         for (const id in room.players) {
@@ -2250,7 +2727,18 @@ function beginMatchCountdown(roomId) {
     room.bossId = stage.bossId;
 
     const playerIds = Object.keys(room.players);
-    room.boss = room.mode === 'boss' ? createBossInstance(room.bossId, playerIds.length) : null;
+    if (room.mode === 'training') {
+        room.boss = createBossInstance(room.bossId || 'void_typhoon', 1);
+        room.boss.maxHp = 100000;
+        room.boss.hp = 100000;
+        room.boss.phase = 1;
+        room.boss.isStealthed = false;
+        room.boss.x = ARENA_CENTER_X;
+        room.boss.y = 220;
+        room.trainingStats = { startAt: Date.now(), totalDamage: 0, maxHit: 0, elapsedMs: 0 };
+    } else {
+        room.boss = room.mode === 'boss' ? createBossInstance(room.bossId, playerIds.length) : null;
+    }
 
     playerIds.forEach((id, index) => {
         const p = room.players[id];
@@ -2264,8 +2752,18 @@ function beginMatchCountdown(roomId) {
         p.bossDamageDealt = 0;
         p.lastEarnedPoints = 0;
         p.lastPointBreakdown = null;
+        p.bossCoreDamageDealt = 0;
+        p.emergencyEscapeUsed = false;
         p.ultraCooldownUntil = 0;
+        p.ultraCooldownDurationMs = 0;
         syncPlayerEquippedUltraFromProfile(p);
+        syncPlayerProgression(room, p, getOrCreateProfile(p.clientKey));
+        if (room.mode === 'training') {
+            p.ultraSkillId = p.ultraSkillId && ULTRA_SKILL_ORDER.includes(p.ultraSkillId) ? p.ultraSkillId : ULTRA_SKILL_ORDER[0];
+            p.ultraRemainingUses = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+            p.ultraMaxUses = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+            p.ultraCooldownUntil = 0;
+        }
 
         p.hp = p.maxHp;
         p.x = spawn.x;
@@ -2275,7 +2773,7 @@ function beginMatchCountdown(roomId) {
 
     io.to(roomId).emit('currentPlayers', serializeRoomPlayers(room));
     io.to(roomId).emit('gimmicksUpdated', { walls: [], items: [] });
-    if (room.mode === 'boss') {
+    if (room.mode === 'boss' || room.mode === 'training') {
         io.to(roomId).emit('bossStateUpdated', room.boss);
     }
     io.to(roomId).emit('matchCountdown', {
@@ -2308,7 +2806,7 @@ function checkAllReadyAndStart(roomId) {
     if (!room || room.state !== 'waiting') return;
 
     const playerIds = Object.keys(room.players);
-    const minRequired = room.mode === 'boss' ? 1 : 2;
+    const minRequired = room.mode === 'boss' || room.mode === 'training' ? 1 : 2;
     if (playerIds.length < minRequired) return;
 
     const allReady = playerIds.every((id) => room.players[id].isReady);
@@ -2323,6 +2821,10 @@ function checkMatchWinner(roomId) {
 
     const playerIds = Object.keys(room.players);
     const survivors = playerIds.filter((id) => !room.players[id].isEliminated);
+
+    if (room.mode === 'training') {
+        return;
+    }
 
     if (room.mode === 'boss') {
         if (room.boss && room.boss.hp <= 0) {
@@ -2351,6 +2853,7 @@ function checkMatchWinner(roomId) {
 
             const rewardsByPlayer = {};
             const unlockedStagesByPlayer = {};
+            const dailyBonusByPlayer = {};
 
             playerIds.forEach((id) => {
                 const p = room.players[id];
@@ -2359,7 +2862,12 @@ function checkMatchWinner(roomId) {
                 const dmgRatio = totalDamageDealt > 0 ? (dmg / totalDamageDealt) : (1 / Math.max(1, playerIds.length));
                 const contributionBonus = Math.round(REWARD_BOSS_CONTRIBUTION_POOL * dmgRatio);
                 const mvpBonus = (id === mvpId) ? REWARD_BOSS_MVP : 0;
-                const totalEarned = clearBonus + contributionBonus + mvpBonus;
+                const baseEarned = clearBonus + contributionBonus + mvpBonus;
+                const prof = getOrCreateProfile(p.clientKey);
+                const rewardMultiplier = 1 + getPlayerTalentLevel(p, 'reward', room.mode) * PROGRESSION_RULES.TALENT_PER_LEVEL.reward;
+                const talentBonus = Math.round(baseEarned * (rewardMultiplier - 1));
+                const dailyFirstWinBonus = claimDailyFirstWinBonus(prof);
+                const totalEarned = baseEarned + talentBonus + dailyFirstWinBonus;
 
                 p.wins = (p.wins || 0) + 1;
                 p.points = (p.points || 0) + totalEarned;
@@ -2368,11 +2876,13 @@ function checkMatchWinner(roomId) {
                     clearBonus,
                     contributionBonus,
                     mvpBonus,
+                    rewardMultiplier,
+                    talentBonus,
+                    dailyFirstWinBonus,
                     damageRatioPercent: Math.round(dmgRatio * 100),
                     totalEarned
                 };
 
-                const prof = getOrCreateProfile(p.clientKey);
                 prof.wins = p.wins;
                 prof.points = p.points;
                 let newlyUnlockedStage = null;
@@ -2386,6 +2896,7 @@ function checkMatchWinner(roomId) {
                 };
 
                 rewardsByPlayer[id] = p.lastPointBreakdown;
+                dailyBonusByPlayer[id] = dailyFirstWinBonus;
                 saveSessionRecord(room, p);
 
                 const sock = io.sockets.sockets.get(id);
@@ -2405,6 +2916,7 @@ function checkMatchWinner(roomId) {
                 clearBonus,
                 contributionPool: REWARD_BOSS_CONTRIBUTION_POOL,
                 mvpBonus: REWARD_BOSS_MVP,
+                dailyBonusByPlayer,
                 rewardsByPlayer,
                 unlockedStagesByPlayer,
                 players: serializeRoomPlayers(room)
@@ -2419,19 +2931,33 @@ function checkMatchWinner(roomId) {
             stopGimmickLoop(roomId);
 
             const rewardsByPlayer = {};
+            const stage = getStageByNumber(room.stageNumber);
+            const participationBaseReward = Math.max(0, Number(stage.clearRewardPt) || 0);
+            const bossMaxHp = Math.max(1, Number(room.boss && room.boss.maxHp) || 1);
             playerIds.forEach((id) => {
                 const p = room.players[id];
                 resetPlayerCombatStatuses(p);
-                p.lastEarnedPoints = 0;
+                const damagedBossHp = Math.min(bossMaxHp, Math.max(0, p.bossCoreDamageDealt || 0));
+                const participationBonus = Math.min(
+                    participationBaseReward,
+                    Math.round(participationBaseReward * damagedBossHp / bossMaxHp)
+                );
+                p.points = (p.points || 0) + participationBonus;
+                p.lastEarnedPoints = participationBonus;
                 p.lastPointBreakdown = {
                     clearBonus: 0,
                     contributionBonus: 0,
                     mvpBonus: 0,
-                    damageRatioPercent: 0,
-                    totalEarned: 0
+                    participationBonus,
+                    damageRatioPercent: Math.round(damagedBossHp / bossMaxHp * 100),
+                    totalEarned: participationBonus
                 };
                 rewardsByPlayer[id] = p.lastPointBreakdown;
+                const prof = getOrCreateProfile(p.clientKey);
+                prof.points = p.points;
                 saveSessionRecord(room, p);
+                const sock = io.sockets.sockets.get(id);
+                if (sock) emitProfileToClient(sock, prof);
             });
 
             io.to(roomId).emit('matchResult', {
@@ -2446,6 +2972,7 @@ function checkMatchWinner(roomId) {
                 clearBonus: 0,
                 contributionPool: 0,
                 mvpBonus: 0,
+                participationBaseReward,
                 rewardsByPlayer,
                 players: serializeRoomPlayers(room)
             });
@@ -2466,16 +2993,17 @@ function checkMatchWinner(roomId) {
         playerIds.forEach((id) => {
             const p = room.players[id];
             resetPlayerCombatStatuses(p);
-            const earned = (id === winnerId) ? REWARD_PVP_WIN : 0;
+            const prof = getOrCreateProfile(p.clientKey);
+            const dailyFirstWinBonus = id === winnerId ? claimDailyFirstWinBonus(prof) : 0;
+            const earned = (id === winnerId) ? REWARD_PVP_WIN + dailyFirstWinBonus : 0;
             if (id === winnerId) {
                 p.wins = (p.wins || 0) + 1;
                 p.points = (p.points || 0) + earned;
             }
             p.lastEarnedPoints = earned;
-            p.lastPointBreakdown = { totalEarned: earned };
+            p.lastPointBreakdown = { winBonus: id === winnerId ? REWARD_PVP_WIN : 0, dailyFirstWinBonus, totalEarned: earned };
             rewardsByPlayer[id] = p.lastPointBreakdown;
 
-            const prof = getOrCreateProfile(p.clientKey);
             prof.wins = p.wins;
             prof.points = p.points;
             saveSessionRecord(room, p);
@@ -2490,6 +3018,9 @@ function checkMatchWinner(roomId) {
             winner: winnerId ? serialized[winnerId] : null,
             winnerId,
             winBonus: winnerId ? REWARD_PVP_WIN : 0,
+            dailyFirstWinBonus: winnerId
+                ? (rewardsByPlayer[winnerId] ? rewardsByPlayer[winnerId].dailyFirstWinBonus : 0)
+                : 0,
             rewardsByPlayer,
             players: serialized
         });
@@ -2535,7 +3066,7 @@ function handlePlayerExit(socket, roomId) {
             checkMatchWinner(roomId);
         }
     } else if (room.state === 'countdown') {
-        const minReq = room.mode === 'boss' ? 1 : 2;
+        const minReq = room.mode === 'boss' || room.mode === 'training' ? 1 : 2;
         if (remainingIds.length < minReq) {
             room.matchId = (room.matchId || 0) + 1;
             stopGimmickLoop(roomId);
@@ -2564,13 +3095,15 @@ function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
     const isDemonBlade = now < (attacker.bladeBuffUntil || 0);
     const bladeDef = isDemonBlade ? getUltraSkillDef('demon_blade') : null;
     const rangeMult = isDemonBlade ? ((bladeDef && bladeDef.slashRangeMultiplier) || 1.5) : 1.0;
-    const dmgMult = isDemonBlade ? ((bladeDef && bladeDef.slashDamageMultiplier) || 2.0) : 1.0;
+    const dmgMult = isDemonBlade
+        ? ((bladeDef && bladeDef.slashDamageMultiplier) || 2.0) * getPlayerUltraDamageMultiplier(attacker, 'demon_blade', room.mode)
+        : 1.0;
 
     const vec = facingToVector(facing);
     const facingAngle = Math.atan2(vec.dy, vec.dx);
     const range = (slashCfg.range || 78) * rangeMult;
     const slashHalfAngleRad = 1.05;
-    const atkMult = getPlayerEffectiveAttackMultiplier(attacker, now);
+    const atkMult = getPlayerEffectiveAttackMultiplier(attacker, now, room.mode);
 
     // 斬撃モーション描画イベントをルーム全員へ配信
     io.to(roomId).emit('slashMotionEvent', {
@@ -2606,10 +3139,19 @@ function executeServerSlash(roomId, attacker, ox, oy, facing, isPowered) {
         io.to(roomId).emit('gimmicksUpdated', { walls: room.walls, items: room.items });
     }
 
-    if (room.mode === 'boss' && room.boss && room.boss.hp > 0) {
+    if ((room.mode === 'boss' || room.mode === 'training') && room.boss && room.boss.hp > 0) {
         if (isPointInSlashSector(room.boss.x, room.boss.y, ox, oy, facingAngle, range, slashHalfAngleRad, room.boss.radius)) {
             const rawDmg = attacker.stats.atk * slashCfg.bossMultiplier * atkMult * dmgMult;
             applyDamageToBossInternal(roomId, attacker, rawDmg, 'melee', 'melee');
+        }
+        if (Array.isArray(room.boss.clones)) {
+            for (const clone of room.boss.clones) {
+                if (!clone || clone.hp <= 0) continue;
+                if (isPointInSlashSector(clone.x, clone.y, ox, oy, facingAngle, range, slashHalfAngleRad, clone.radius)) {
+                    const rawDmg = attacker.stats.atk * slashCfg.bossMultiplier * atkMult * dmgMult;
+                    applyDamageToBossInternal(roomId, attacker, rawDmg, 'melee', 'melee', clone.id);
+                }
+            }
         }
     } else if (room.mode === 'pvp') {
         for (const id in room.players) {
@@ -2638,7 +3180,7 @@ function fireRicochetWave(roomId, matchId, shooterId, waveIndex) {
     const pc = playerCenter(shooter);
     const dirs = skill.directions || 8;
     const spd = skill.bulletSpeed || 9.0;
-    const fixedDmg = skill.fixedDamage || 40;
+    const fixedDmg = (skill.fixedDamage || 40) * getPlayerUltraDamageMultiplier(shooter, skill.id, room.mode);
     const maxBounces = skill.maxBounces ?? 1;
     const radius = skill.bulletRadius || 6;
     const emittedBullets = [];
@@ -2698,6 +3240,100 @@ io.on('connection', (socket) => {
         const clientKey = sanitizeClientKey(payload && payload.clientKey, socket.id);
         socket.data.clientKey = clientKey;
         const prof = getOrCreateProfile(clientKey, payload);
+        emitProfileToClient(socket, prof);
+    });
+
+    function canEditProgression() {
+        const room = currentRoom ? rooms[currentRoom] : null;
+        return !room || (room.state !== 'playing' && room.state !== 'countdown');
+    }
+
+    function syncWaitingPlayerProgression(profile) {
+        const room = currentRoom ? rooms[currentRoom] : null;
+        const player = room && room.players[socket.id];
+        if (!room || room.state !== 'waiting' || !player) return;
+        syncPlayerProgression(room, player, profile);
+        player.hp = player.maxHp;
+        player.points = profile.points;
+        emitRoomStateSync(currentRoom);
+    }
+
+    socket.on('buyTalent', (payload) => {
+        const clientKey = sanitizeClientKey((payload && payload.clientKey) || socket.data.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+        const tree = payload && payload.tree;
+        if (!TALENT_TREES.includes(tree)) {
+            socket.emit('progressionError', { message: '指定されたタレント項目が正しくありません' });
+            return;
+        }
+        if (!canEditProgression()) {
+            socket.emit('progressionError', { message: 'タレント強化は試合終了後に行ってください' });
+            return;
+        }
+        const currentLevel = prof.talents[tree];
+        if (currentLevel >= PROGRESSION_RULES.TALENT_MAX_LEVEL) {
+            socket.emit('progressionError', { message: 'このタレントは最大レベルです' });
+            return;
+        }
+        const cost = PROGRESSION_RULES.TALENT_COST_PER_LEVEL * (currentLevel + 1);
+        if (prof.points < cost) {
+            socket.emit('progressionError', { message: `ポイントが不足しています（必要: ${cost}Pt）` });
+            return;
+        }
+        prof.points -= cost;
+        prof.talents[tree] = currentLevel + 1;
+        syncWaitingPlayerProgression(prof);
+        emitProfileToClient(socket, prof);
+        socket.emit('progressionActionResult', {
+            message: `${({ durability: '耐久', attack: '攻撃', mobility: '機動', reward: '報酬' })[tree]}タレントがLv.${prof.talents[tree]}になりました`,
+            profile: serializeProfile(prof)
+        });
+    });
+
+    socket.on('drawPassiveGear', (payload) => {
+        const clientKey = sanitizeClientKey((payload && payload.clientKey) || socket.data.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+        if (!canEditProgression()) {
+            socket.emit('progressionError', { message: 'パッシブガチャは試合終了後に行ってください' });
+            return;
+        }
+        if (prof.points < PASSIVE_GACHA_COST) {
+            socket.emit('progressionError', { message: `ポイントが不足しています（必要: ${PASSIVE_GACHA_COST}Pt）` });
+            return;
+        }
+        prof.points -= PASSIVE_GACHA_COST;
+        const type = PASSIVE_GEAR_TYPES[Math.floor(Math.random() * PASSIVE_GEAR_TYPES.length)];
+        const result = addPassiveGear(prof, type);
+        syncWaitingPlayerProgression(prof);
+        emitProfileToClient(socket, prof);
+        socket.emit('passiveGachaResult', {
+            type,
+            rank: result.rank,
+            merges: result.merges,
+            cost: PASSIVE_GACHA_COST,
+            profile: serializeProfile(prof)
+        });
+    });
+
+    socket.on('equipPassiveGear', (payload) => {
+        const clientKey = sanitizeClientKey((payload && payload.clientKey) || socket.data.clientKey, socket.id);
+        socket.data.clientKey = clientKey;
+        const prof = getOrCreateProfile(clientKey, payload);
+        const type = payload && payload.type;
+        const rank = Math.floor(Number(payload && payload.rank) || 0);
+        if (!PASSIVE_GEAR_TYPES.includes(type) || rank < 1 || rank > PASSIVE_MAX_RANK ||
+            prof.passiveInventory[type][rank] <= 0) {
+            socket.emit('progressionError', { message: '装備できるパッシブが見つかりません' });
+            return;
+        }
+        if (!canEditProgression()) {
+            socket.emit('progressionError', { message: '装備変更は試合終了後に行ってください' });
+            return;
+        }
+        prof.passiveGearSlots[type] = rank;
+        syncWaitingPlayerProgression(prof);
         emitProfileToClient(socket, prof);
     });
 
@@ -2778,10 +3414,19 @@ io.on('connection', (socket) => {
 
         const skillDef = getUltraSkillDef(drawnSkillId);
         const prevStock = prof.ultraStocks[drawnSkillId] || 0;
+        const prevAwakeningPoints = prof.ultraAwakeningPoints[drawnSkillId] || 0;
         let newStock = prevStock;
         let isMaxDuplicate = false;
         let refundPt = 0;
+        let awakeningPointsGained = 0;
 
+        if (prevStock > 0 && prevAwakeningPoints < PROGRESSION_RULES.ULTRA_RANK_3_POINTS) {
+            prof.ultraAwakeningPoints[drawnSkillId] = Math.min(
+                PROGRESSION_RULES.ULTRA_RANK_3_POINTS,
+                prevAwakeningPoints + PROGRESSION_RULES.ULTRA_AWAKENING_POINTS_PER_DUPLICATE
+            );
+            awakeningPointsGained = 1;
+        }
         if (prevStock >= maxStock) {
             isMaxDuplicate = true;
             refundPt = maxDupRefund;
@@ -2799,6 +3444,7 @@ io.on('connection', (socket) => {
             p.points = prof.points;
             if (rooms[currentRoom].state === 'waiting') {
                 syncPlayerEquippedUltraFromProfile(p);
+                syncPlayerProgression(rooms[currentRoom], p, prof);
                 emitRoomStateSync(currentRoom);
             }
         }
@@ -2812,6 +3458,9 @@ io.on('connection', (socket) => {
             newStock,
             isDuplicate: prevStock > 0,
             isMaxDuplicate,
+            awakeningPointsGained,
+            awakeningPoints: prof.ultraAwakeningPoints[drawnSkillId],
+            awakeningRank: getProfileUltraAwakeningRank(prof, drawnSkillId),
             cost,
             refundPt,
             profile: serializeProfile(prof)
@@ -2850,7 +3499,8 @@ io.on('connection', (socket) => {
         const occupied = rooms[roomId]
             ? Object.keys(rooms[roomId].players).filter((id) => id !== socket.id).length
             : 0;
-        if (occupied >= MAX_PLAYERS_PER_ROOM) {
+        const trainingLimit = rooms[roomId] && rooms[roomId].mode === 'training' ? 1 : MAX_PLAYERS_PER_ROOM;
+        if (occupied >= trainingLimit) {
             socket.emit('roomFull', { roomId });
             return;
         }
@@ -2880,7 +3530,7 @@ io.on('connection', (socket) => {
 
             rooms[roomId] = {
                 state: 'waiting',
-                mode: payload && payload.mode === 'boss' ? 'boss' : 'pvp',
+                mode: payload && ['boss', 'training'].includes(payload.mode) ? payload.mode : 'pvp',
                 stageNumber: stage.stageNumber,
                 stageId: stage.stageId,
                 bossId: stage.bossId,
@@ -2909,7 +3559,8 @@ io.on('connection', (socket) => {
                 bossMoveTimer: null,
                 bossProjectileTimer: null,
                 bossAttackTimer: null,
-                bossPendingTimeouts: []
+                bossPendingTimeouts: [],
+                trainingStats: { startAt: 0, totalDamage: 0, maxHit: 0, elapsedMs: 0 }
             };
         }
 
@@ -2923,6 +3574,11 @@ io.on('connection', (socket) => {
 
         const equippedSkill = sanitizeUltraSkillId(prof.equippedUltra);
         const ultraStockCount = equippedSkill ? (prof.ultraStocks[equippedSkill] || 0) : 0;
+        const progression = getProgressionSnapshot(prof);
+        const hpBonus = room.mode === 'boss'
+            ? progression.talents.durability * PROGRESSION_RULES.TALENT_PER_LEVEL.durability
+            : 0;
+        const effectiveMaxHp = Math.max(1, Math.round(cleanStats.maxHp * (1 + hpBonus)));
 
         const isMidGameJoin = (room.state === 'playing' || room.state === 'countdown');
         const isResultJoin = (room.state === 'result');
@@ -2942,8 +3598,9 @@ io.on('connection', (socket) => {
             facing: 'right',
             characterData: gridData,
             stats: cleanStats,
-            hp: cleanStats.maxHp,
-            maxHp: cleanStats.maxHp,
+            progression,
+            hp: effectiveMaxHp,
+            maxHp: effectiveMaxHp,
             stocks: INITIAL_STOCKS,
             isDead: isResultJoin,
             isEliminated: isResultJoin,
@@ -2964,15 +3621,18 @@ io.on('connection', (socket) => {
             dotDamage: 0,
             dotIntervalMs: 600,
             nextDotAt: 0,
-            ultraSkillId: ultraStockCount > 0 ? equippedSkill : null,
-            ultraRemainingUses: ultraStockCount,
-            ultraMaxUses: ultraStockCount,
+            ultraSkillId: room.mode === 'training' ? ULTRA_SKILL_ORDER[0] : (ultraStockCount > 0 ? equippedSkill : null),
+            ultraRemainingUses: room.mode === 'training' ? GAME_RULES.GACHA.ULTRA_MAX_STOCK : ultraStockCount,
+            ultraMaxUses: room.mode === 'training' ? GAME_RULES.GACHA.ULTRA_MAX_STOCK : ultraStockCount,
             ultraCooldownUntil: 0,
+            ultraCooldownDurationMs: 0,
             ultraState: null,
             ultraStateUntil: 0,
             ultraTimers: [],
             ultraIntervals: [],
             bossDamageDealt: 0,
+            bossCoreDamageDealt: 0,
+            emergencyEscapeUsed: false,
             lastEarnedPoints: 0,
             lastPointBreakdown: null,
             isReady: false,
@@ -3016,7 +3676,13 @@ io.on('connection', (socket) => {
         }
 
         const nextMode = typeof payload === 'object' && payload !== null ? payload.mode : payload;
-        room.mode = nextMode === 'boss' ? 'boss' : 'pvp';
+        room.mode = nextMode === 'boss' ? 'boss' : (nextMode === 'training' ? 'training' : 'pvp');
+        if (room.mode !== 'training') {
+            for (const id in room.players) {
+                syncPlayerEquippedUltraFromProfile(room.players[id]);
+                room.players[id].ultraCooldownUntil = 0;
+            }
+        }
 
         if (typeof payload === 'object' && payload !== null && (payload.stageNumber || payload.bossId)) {
             const hostMax = getHostMaxUnlockedStage(room);
@@ -3128,7 +3794,7 @@ io.on('connection', (socket) => {
         if (room.state !== 'result') return;
 
         const playerIds = Object.keys(room.players);
-        const minReq = room.mode === 'boss' ? 1 : 2;
+        const minReq = room.mode === 'boss' || room.mode === 'training' ? 1 : 2;
         if (playerIds.length < minReq) return;
 
         beginMatchCountdown(currentRoom);
@@ -3180,8 +3846,13 @@ io.on('connection', (socket) => {
             p.isEliminated = false;
             p.stocks = INITIAL_STOCKS;
             p.ultraCooldownUntil = 0;
+            p.ultraCooldownDurationMs = 0;
             syncPlayerEquippedUltraFromProfile(p);
+            syncPlayerProgression(room, p, getOrCreateProfile(p.clientKey));
+            p.hp = p.maxHp;
             p.bossDamageDealt = 0;
+            p.bossCoreDamageDealt = 0;
+            p.emergencyEscapeUsed = false;
             p.lastEarnedPoints = 0;
             p.lastPointBreakdown = null;
             p.hp = p.maxHp;
@@ -3226,13 +3897,21 @@ io.on('connection', (socket) => {
             const slowed = now < (p.slowUntil || 0) && now >= ((p.slowStartedAt || 0) + 300);
             const slowMult = slowed ? (p.slowMultiplier || 0.75) : 1.0;
             const bootsMult = hasBoots ? 1.5 : 1.0;
-            const effSpd = p.stats.spd * (boosted ? GAME_RULES.ITEMS.speed.speedMultiplier : 1) * slowMult * bootsMult;
+            const effSpd = p.stats.spd * getPlayerMobilityMultiplier(p, room.mode) *
+                (boosted ? GAME_RULES.ITEMS.speed.speedMultiplier : 1) * slowMult * bootsMult;
             const perSec = effSpd * 60;
 
             // BOSS吸引中（vortex / roar_warn）のみ正当な追加引き寄せ速度分を加算
             let pullPerSec = 0;
             if (room.mode === 'boss' && room.boss && !isTimeStoppedWorld(room, now)) {
-                if (room.boss.vortexActive || now <= (room.bossVortexPullUntil || 0) + 250) {
+                const pcx = p.x + 24;
+                const pcy = p.y + 24;
+                const distToBoss = Math.hypot(pcx - room.boss.x, pcy - room.boss.y);
+                if (room.bossGiantTornadoUntil && now <= room.bossGiantTornadoUntil && distToBoss <= (room.bossGiantTornadoRadius || 150)) {
+                    pullPerSec = (room.bossGiantTornadoPullStrength || 2.65) * 60;
+                } else if (room.boss.id === 'true_void_typhoon' && room.boss.vortexActive && distToBoss <= 260) {
+                    pullPerSec = (room.boss.vortexPullStrength || 2.2) * 60;
+                } else if (room.boss.id !== 'true_void_typhoon' && (room.boss.vortexActive || now <= (room.bossVortexPullUntil || 0) + 250)) {
                     const vPull = room.bossVortexPullStrength || (room.boss.phase === 2 ? 1.95 : 1.55);
                     pullPerSec = vPull * 60;
                 } else if (now <= (room.bossRoarPullUntil || 0) + 250) {
@@ -3294,7 +3973,11 @@ io.on('connection', (socket) => {
             p.lastMoveAt = now;
             p.x = nx;
             p.y = ny;
-            p.facing = VALID_FACING.includes(data.facing) ? data.facing : p.facing;
+            if (VALID_FACING.includes(data.facing)) {
+                p.facing = data.facing;
+            } else if (actualDist > 0.2) {
+                p.facing = resolveFacingFromMovement(moveDx, moveDy) || p.facing;
+            }
 
             if (clampedBySpeed) {
                 socket.emit('playerKnockback', {
@@ -3360,7 +4043,7 @@ io.on('connection', (socket) => {
         room.items.splice(itemIndex, 1);
 
         if (item.type === 'speed') {
-            const duration = GAME_RULES.ITEMS.speed.durationMs;
+            const duration = Math.round(GAME_RULES.ITEMS.speed.durationMs * getPassiveItemDurationMultiplier(p, room.mode));
             p.speedBoostUntil = Date.now() + duration;
             io.to(currentRoom).emit('itemEffectApplied', { id: socket.id, type: 'speed', duration });
         } else if (item.type === 'heal') {
@@ -3368,7 +4051,7 @@ io.on('connection', (socket) => {
             p.hp = Math.min(p.maxHp, p.hp + healAmount);
             io.to(currentRoom).emit('itemEffectApplied', { id: socket.id, type: 'heal', hp: p.hp, maxHp: p.maxHp, healAmount });
         } else if (item.type === 'power') {
-            const duration = GAME_RULES.ITEMS.power.durationMs;
+            const duration = Math.round(GAME_RULES.ITEMS.power.durationMs * getPassiveItemDurationMultiplier(p, room.mode));
             p.powerBoostUntil = Date.now() + duration;
             io.to(currentRoom).emit('itemEffectApplied', { id: socket.id, type: 'power', duration });
         }
@@ -3401,8 +4084,8 @@ io.on('connection', (socket) => {
             if (!Array.isArray(payload) && payload.stats) {
                 const cleanStats = sanitizeStats(payload.stats);
                 p.stats = cleanStats;
-                p.maxHp = cleanStats.maxHp;
-                p.hp = cleanStats.maxHp;
+                syncPlayerProgression(room, p, getOrCreateProfile(p.clientKey));
+                p.hp = p.maxHp;
             }
 
             io.to(currentRoom).emit('characterUpdated', {
@@ -3444,6 +4127,44 @@ io.on('connection', (socket) => {
         }
     });
 
+    // トレーニングモード：必殺技切替（ストックは常時満タン・CD0）
+    socket.on('setTrainingUltra', (payload) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.mode !== 'training' || (room.state !== 'waiting' && room.state !== 'playing')) return;
+        const p = room.players[socket.id];
+        if (!p) return;
+        const skillId = typeof payload === 'object' && payload ? sanitizeUltraSkillId(payload.skillId) : null;
+        if (!skillId) return;
+        p.ultraSkillId = skillId;
+        p.ultraRemainingUses = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+        p.ultraMaxUses = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+        p.ultraCooldownUntil = 0;
+        p.ultraState = null;
+        p.ultraStateUntil = 0;
+        io.to(currentRoom).emit('roomStateSync', buildRoomStatePayload(room));
+    });
+
+    socket.on('resetTrainingTarget', () => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        if (room.mode !== 'training' || (room.state !== 'waiting' && room.state !== 'playing')) return;
+        if (!room.boss) {
+            room.boss = createBossInstance(room.bossId || 'void_typhoon', 1);
+            room.boss.maxHp = 100000;
+            room.boss.hp = 100000;
+            room.boss.phase = 1;
+            room.boss.isStealthed = false;
+            room.boss.x = ARENA_CENTER_X;
+            room.boss.y = 220;
+        }
+        room.boss.hp = room.boss.maxHp;
+        room.boss.phase = 1;
+        room.trainingStats = { startAt: Date.now(), totalDamage: 0, maxHit: 0, elapsedMs: 0 };
+        io.to(currentRoom).emit('bossStateUpdated', room.boss);
+        io.to(currentRoom).emit('trainingStatsUpdated', room.trainingStats);
+    });
+
     // 通常攻撃（斬撃 X: CD 600ms / 玉 C: CD 450ms）
     socket.on('playerAttack', (attackData) => {
         if (!currentRoom || !rooms[currentRoom]) return;
@@ -3458,7 +4179,7 @@ io.on('connection', (socket) => {
         const now = Date.now();
         const baseRefillMs = hitType === 'melee'
             ? GAME_RULES.ACTIONS.slash.cooldownMs
-            : GAME_RULES.ACTIONS.shot.cooldownMs;
+            : getPlayerShotCooldownMs(p, room.mode);
         const atkSpeedMult = now < (p.bootsBuffUntil || 0) ? 1.5 : 1.0;
         const refillMs = Math.floor(baseRefillMs / atkSpeedMult);
         const allowed = takeToken(p, hitType, refillMs, 1);
@@ -3521,11 +4242,18 @@ io.on('connection', (socket) => {
         }
 
         const activatedAt = now;
-        const cooldownMs = Number(skill.cooldownMs) || 6000;
+        const awakeningRank = getPlayerUltraAwakeningRank(p.progression, skill.id);
+        const cooldownMs = room.mode === 'training'
+            ? 0
+            : Math.round((Number(skill.cooldownMs) || 6000) *
+                (awakeningRank >= 2 ? PROGRESSION_RULES.ULTRA_RANK_2_COOLDOWN_MULTIPLIER : 1));
         const matchId = room.matchId;
         const roomId = currentRoom;
-        p.ultraRemainingUses = Math.max(0, p.ultraRemainingUses - 1);
+        p.ultraRemainingUses = room.mode === 'training'
+            ? GAME_RULES.GACHA.ULTRA_MAX_STOCK
+            : Math.max(0, p.ultraRemainingUses - 1);
         p.ultraCooldownUntil = activatedAt + cooldownMs;
+        p.ultraCooldownDurationMs = cooldownMs;
 
         const pc = playerCenter(p);
         const facing = p.facing;
@@ -3574,8 +4302,8 @@ io.on('connection', (socket) => {
                 const y1 = curCenter.y;
                 const x2 = x1 + vec.dx * range;
                 const y2 = y1 + vec.dy * range;
-                const atkMult = getPlayerEffectiveAttackMultiplier(shooter, Date.now());
-                const rawDamage = shooter.stats.atk * dmgMult * atkMult;
+                const atkMult = getPlayerEffectiveAttackMultiplier(shooter, Date.now(), cur.mode);
+                const rawDamage = shooter.stats.atk * dmgMult * atkMult * getPlayerUltraDamageMultiplier(shooter, skill.id, cur.mode);
 
                 io.to(roomId).emit('ultraSkillEvent', {
                     playerId: shooter.id,
@@ -3604,9 +4332,15 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('gimmicksUpdated', { walls: cur.walls, items: cur.items });
                 }
 
-                if (cur.mode === 'boss' && cur.boss && cur.boss.hp > 0) {
-                    if (pointToSegmentDistance(cur.boss.x, cur.boss.y, x1, y1, x2, y2) <= halfWidth + cur.boss.radius) {
+                if ((cur.mode === 'boss' || cur.mode === 'training') && cur.boss && cur.boss.hp > 0) {
+                    if (!cur.boss.isStealthed && pointToSegmentDistance(cur.boss.x, cur.boss.y, x1, y1, x2, y2) <= halfWidth + cur.boss.radius) {
                         applyDamageToBossInternal(roomId, shooter, rawDamage, 'ultra_line', 'ultra');
+                    }
+                    for (const clone of cur.boss.clones || []) {
+                        if (!clone || clone.hp <= 0) continue;
+                        if (pointToSegmentDistance(clone.x, clone.y, x1, y1, x2, y2) <= halfWidth + (clone.radius || 0)) {
+                            applyDamageToBossInternal(roomId, shooter, rawDamage, 'ultra_line', 'ultra', clone.id);
+                        }
                     }
                 } else if (cur.mode === 'pvp') {
                     for (const tid in cur.players) {
@@ -3631,7 +4365,8 @@ io.on('connection', (socket) => {
                 }
             }, chargeMs);
         } else if (skill.id === 'absolute_wall') {
-            const durationMs = Number(skill.durationMs) || 2600;
+            const durationMs = (Number(skill.durationMs) || 2600) *
+                getPlayerUltraDamageMultiplier(p, skill.id, room.mode);
             p.ultraState = 'active_wall';
             p.ultraStateUntil = activatedAt + durationMs;
             p.absoluteWallUntil = activatedAt + durationMs;
@@ -3759,8 +4494,8 @@ io.on('connection', (socket) => {
                 caster.ultraState = null;
                 caster.ultraStateUntil = 0;
 
-                const atkMult = getPlayerEffectiveAttackMultiplier(caster, Date.now());
-                const rawDamage = caster.stats.atk * dmgMult * atkMult;
+                const atkMult = getPlayerEffectiveAttackMultiplier(caster, Date.now(), cur.mode);
+                const rawDamage = caster.stats.atk * dmgMult * atkMult * getPlayerUltraDamageMultiplier(caster, skill.id, cur.mode);
 
                 // 各隕石（130px以内）の壊せる壁を破壊
                 let wallsChanged = false;
@@ -3783,11 +4518,19 @@ io.on('connection', (socket) => {
 
                 for (const m of meteors) {
                     let hitCount = 0;
-                    if (cur.mode === 'boss') {
+                    if (cur.mode === 'boss' || cur.mode === 'training') {
                         if (cur.boss && cur.boss.hp > 0 && cur.state === 'playing') {
-                            if (Math.hypot(cur.boss.x - m.x, cur.boss.y - m.y) <= radius + cur.boss.radius) {
+                            if (!cur.boss.isStealthed && Math.hypot(cur.boss.x - m.x, cur.boss.y - m.y) <= radius + cur.boss.radius) {
                                 if (applyDamageToBossInternal(roomId, caster, rawDamage, 'ultra_meteor', 'ultra')) {
                                     hitCount++;
+                                }
+                            }
+                            for (const clone of cur.boss.clones || []) {
+                                if (!clone || clone.hp <= 0) continue;
+                                if (Math.hypot(clone.x - m.x, clone.y - m.y) <= radius + (clone.radius || 0)) {
+                                    if (applyDamageToBossInternal(roomId, caster, rawDamage, 'ultra_meteor', 'ultra', clone.id)) {
+                                        hitCount++;
+                                    }
                                 }
                             }
                         }
@@ -3911,7 +4654,8 @@ io.on('connection', (socket) => {
             } else if (skill.id === 'phantom_boots') {
             const durationMs = Number(skill.durationMs) || 5000;
             const healIntervalMs = Number(skill.healTickIntervalMs) || 1000;
-            const healAmount = Number(skill.healTickAmount) || 10;
+            const healAmount = (Number(skill.healTickAmount) || 10) *
+                getPlayerUltraDamageMultiplier(p, skill.id, room.mode);
             const healTicks = Math.max(1, Math.floor(durationMs / healIntervalMs));
 
             p.ultraState = 'boots_active';
@@ -4025,7 +4769,8 @@ io.on('connection', (socket) => {
                 });
             }, durationMs);
         } else if (skill.id === 'time_stop') {
-            const durationMs = Number(skill.durationMs) || 2500;
+            const durationMs = (Number(skill.durationMs) || 2500) *
+                getPlayerUltraDamageMultiplier(p, skill.id, room.mode);
             p.ultraState = 'time_stop_active';
             p.ultraStateUntil = activatedAt + durationMs;
 
@@ -4074,7 +4819,7 @@ io.on('connection', (socket) => {
     socket.on('damageBoss', (hitData) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
-        if (room.state !== 'playing' || room.mode !== 'boss' || !room.boss) return;
+        if (room.state !== 'playing' || !['boss', 'training'].includes(room.mode) || !room.boss) return;
 
         const attacker = room.players[socket.id];
         if (!attacker || attacker.isDead || attacker.isEliminated) return;
@@ -4083,9 +4828,10 @@ io.on('connection', (socket) => {
         if (!hitType || hitType !== 'shot' || room.boss.hp <= 0) return;
         if (!useCredit(attacker, 'shot')) return;
 
-        const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now());
+        const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now(), room.mode);
         const rawDamage = attacker.stats.atk * atkMult;
-        applyDamageToBossInternal(currentRoom, attacker, rawDamage, 'shot', 'shot');
+        const targetCloneId = typeof hitData.cloneId === 'string' ? hitData.cloneId : null;
+        applyDamageToBossInternal(currentRoom, attacker, rawDamage, 'shot', 'shot', targetCloneId);
     });
 
     // BOSSの弾・追尾ミサイルに当たったときの処理
@@ -4123,7 +4869,7 @@ io.on('connection', (socket) => {
     socket.on('applyDamage', (hitData) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
-        if (room.state !== 'playing' || room.mode === 'boss') return;
+        if (room.state !== 'playing' || room.mode === 'boss' || room.mode === 'training') return;
 
         const attacker = room.players[socket.id];
         const hitType = sanitizeHitType(hitData && hitData.type);
@@ -4134,7 +4880,7 @@ io.on('connection', (socket) => {
         if (!useCredit(attacker, 'shot')) return;
 
         const knockDir = VALID_FACING.includes(hitData.facing) ? hitData.facing : attacker.facing;
-        const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now());
+        const atkMult = getPlayerEffectiveAttackMultiplier(attacker, Date.now(), room.mode);
         const rawDamage = attacker.stats.atk * atkMult;
 
         applyDamageToPlayerInternal(currentRoom, target, attacker, rawDamage, knockDir, 'shot', room.matchId, attacker.element);
