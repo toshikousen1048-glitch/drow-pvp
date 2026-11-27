@@ -358,11 +358,11 @@ function addPassiveGear(profile, type) {
 // サニタイズ & ガードヘルパー
 // =========================================================================
 function sanitizeStats(stats) {
-    if (!stats) return { atk: 12, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' };
+    if (!stats) return { atk: 13, spd: 4.0, maxHp: 100, mainColor: '#00a2e8' };
     return {
-        atk: Math.min(35, Math.max(5, Number(stats.atk) || 12)),
-        spd: Math.min(7.5, Math.max(2.0, Number(stats.spd) || 4.0)),
-        maxHp: Math.min(220, Math.max(40, Number(stats.maxHp) || 100)),
+        atk: Math.min(35, Math.max(13, Number(stats.atk) || 13)),
+        spd: Math.min(7.5, Math.max(2.7, Number(stats.spd) || 4.0)),
+        maxHp: Math.min(220, Math.max(75, Number(stats.maxHp) || 100)),
         mainColor: (typeof stats.mainColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(stats.mainColor.trim()))
             ? stats.mainColor.trim().toLowerCase()
             : '#00a2e8'
@@ -1714,9 +1714,6 @@ function startBossAILoop(roomId, matchId) {
             let moveSpd = boss.phase === 2
                 ? (isSolo ? (moveCfg.soloP2 ?? moveCfg.p2 ?? curDef.speed) : (moveCfg.multiP2 ?? moveCfg.p2 ?? curDef.speed))
                 : (isSolo ? (moveCfg.soloP1 ?? moveCfg.p1 ?? curDef.speed) : (moveCfg.multiP1 ?? moveCfg.p1 ?? curDef.speed));
-            if (boss.id === 'true_void_typhoon' && boss.phase === 2) {
-                moveSpd = 5.0;
-            }
 
             if (boss.vortexActive) {
                 moveSpd *= 0.65;
@@ -1743,6 +1740,7 @@ function startBossAILoop(roomId, matchId) {
 
         if (boss.id === 'true_void_typhoon' && boss.phase === 2 && Array.isArray(boss.clones)) {
             for (const clone of boss.clones) {
+                if (!clone || clone.hp <= 0) continue;
                 if (!nearest) break;
                 const angleToPlayer = Math.atan2((nearest.y + 24) - clone.y, (nearest.x + 24) - clone.x);
                 clone.x += Math.cos(angleToPlayer) * 2.2;
@@ -1948,16 +1946,6 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
         }
     }
 
-    io.to(roomId).emit('bossAttackEvent', {
-        bossId: boss.id,
-        element: boss.element,
-        type: 'p2_awaken',
-        x: boss.x,
-        y: boss.y,
-        knockbackRadius: shockRadius,
-        scaleAuraDurationMs: auraDuration
-    });
-
     if (isTrueVoid) {
         boss.clones = [];
         const cloneAngles = [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
@@ -2035,6 +2023,16 @@ function triggerBossPhase2Awaken(roomId, room, def, matchId) {
             cur.bossGiantTornadoRadius = 0;
             cur.bossGiantTornadoPullStrength = 0;
         }, tornadoDuration);
+    } else {
+        io.to(roomId).emit('bossAttackEvent', {
+            bossId: boss.id,
+            element: boss.element,
+            type: 'p2_awaken',
+            x: boss.x,
+            y: boss.y,
+            knockbackRadius: shockRadius,
+            scaleAuraDurationMs: auraDuration
+        });
     }
     io.to(roomId).emit('bossStateUpdated', boss);
 
@@ -2340,6 +2338,13 @@ function applyDamageToBossInternal(roomId, attacker, rawDamage, attackKind, hitT
     if (room.boss.hp <= 0 && room.mode === 'training') {
         room.boss.hp = room.boss.maxHp;
         room.boss.phase = 1;
+        room.boss.clones = [];
+        room.boss.scaleAuraActive = false;
+        room.boss.scaleAuraUntil = 0;
+        room.boss.vortexActive = false;
+        room.boss.vortexPullStrength = 0;
+        room.boss.isStealthed = false;
+        room.bossGiantTornadoUntil = 0;
         io.to(roomId).emit('bossStateUpdated', room.boss);
     } else if (room.boss.hp <= 0) {
         checkMatchWinner(roomId);
@@ -3351,10 +3356,22 @@ io.on('connection', (socket) => {
         }
 
         prof.points -= cost;
-        const pool = SPECIAL_INK_IDS;
-        const drawnInkId = pool[Math.floor(Math.random() * pool.length)];
+        const inkPool = SPECIAL_INK_IDS.map((id) => ({
+            id,
+            weight: (SPECIAL_INKS[id] && SPECIAL_INKS[id].gachaWeight) || 10
+        }));
+        const totalInkWeight = inkPool.reduce((acc, item) => acc + item.weight, 0);
+        let inkRoll = Math.random() * totalInkWeight;
+        let drawnInkId = SPECIAL_INK_IDS[0];
+        for (const entry of inkPool) {
+            inkRoll -= entry.weight;
+            if (inkRoll <= 0) {
+                drawnInkId = entry.id;
+                break;
+            }
+        }
         const inkDef = SPECIAL_INKS[drawnInkId];
-        const rarity = drawnInkId === 'SPECIAL_VENOM' ? 'A' : 'S';
+        const rarity = (inkDef && inkDef.rarity) || 'A';
         const isDuplicate = prof.unlockedInks.includes(drawnInkId);
         let refundPt = 0;
 
@@ -3676,11 +3693,24 @@ io.on('connection', (socket) => {
         }
 
         const nextMode = typeof payload === 'object' && payload !== null ? payload.mode : payload;
-        room.mode = nextMode === 'boss' ? 'boss' : (nextMode === 'training' ? 'training' : 'pvp');
-        if (room.mode !== 'training') {
-            for (const id in room.players) {
-                syncPlayerEquippedUltraFromProfile(room.players[id]);
-                room.players[id].ultraCooldownUntil = 0;
+        const resolvedMode = nextMode === 'boss' ? 'boss' : (nextMode === 'training' ? 'training' : 'pvp');
+        if (resolvedMode === 'training' && Object.keys(room.players).length > 1) {
+            socket.emit('roomActionRejected', { message: 'トレーニングモードは1人専用のため、他のプレイヤーがいる状態では切り替えられません' });
+            return;
+        }
+        room.mode = resolvedMode;
+        for (const id in room.players) {
+            const p = room.players[id];
+            syncPlayerProgression(room, p, getOrCreateProfile(p.clientKey));
+            p.hp = p.maxHp;
+            if (room.mode === 'training') {
+                p.ultraSkillId = p.ultraSkillId && ULTRA_SKILL_ORDER.includes(p.ultraSkillId) ? p.ultraSkillId : ULTRA_SKILL_ORDER[0];
+                p.ultraRemainingUses = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+                p.ultraMaxUses = GAME_RULES.GACHA.ULTRA_MAX_STOCK;
+                p.ultraCooldownUntil = 0;
+            } else {
+                syncPlayerEquippedUltraFromProfile(p);
+                p.ultraCooldownUntil = 0;
             }
         }
 
@@ -4160,6 +4190,13 @@ io.on('connection', (socket) => {
         }
         room.boss.hp = room.boss.maxHp;
         room.boss.phase = 1;
+        room.boss.clones = [];
+        room.boss.scaleAuraActive = false;
+        room.boss.scaleAuraUntil = 0;
+        room.boss.vortexActive = false;
+        room.boss.vortexPullStrength = 0;
+        room.boss.isStealthed = false;
+        room.bossGiantTornadoUntil = 0;
         room.trainingStats = { startAt: Date.now(), totalDamage: 0, maxHit: 0, elapsedMs: 0 };
         io.to(currentRoom).emit('bossStateUpdated', room.boss);
         io.to(currentRoom).emit('trainingStatsUpdated', room.trainingStats);
@@ -4242,7 +4279,7 @@ io.on('connection', (socket) => {
         }
 
         const activatedAt = now;
-        const awakeningRank = getPlayerUltraAwakeningRank(p.progression, skill.id);
+        const awakeningRank = getPlayerUltraAwakeningRank(p, skill.id);
         const cooldownMs = room.mode === 'training'
             ? 0
             : Math.round((Number(skill.cooldownMs) || 6000) *

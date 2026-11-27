@@ -191,8 +191,9 @@
         .color-btn.locked { background: #22263d; color: #777; }
         .stat-row { margin: 3px 0; }
         .stat-label { display: flex; justify-content: space-between; font-size: 0.76rem; margin-bottom: 2px; }
-        .stat-bar-bg { width: 100%; height: 6px; background: #090b16; border-radius: 4px; overflow: hidden; }
+        .stat-bar-bg { width: 100%; height: 6px; background: #090b16; border-radius: 4px; overflow: hidden; display: flex; align-items: stretch; }
         .stat-bar-fill { height: 100%; transition: width 0.2s; }
+        .stat-bar-bonus { height: 100%; background: linear-gradient(90deg, #ffd166, #ff9f1c); box-shadow: inset 1px 0 0 rgba(255,255,255,0.45); transition: width 0.2s; }
         .element-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.76rem; font-weight: bold; border: 1px solid rgba(255,255,255,0.25); }
 
         /* 🔮 判定の間 */
@@ -787,15 +788,15 @@
                     </div>
                     <div class="stat-row">
                         <div class="stat-label"><span>⚔️ 攻撃力</span><span id="statAtkVal">--</span></div>
-                        <div class="stat-bar-bg"><div id="statAtkBar" class="stat-bar-fill" style="width:0%; background:#ff4d4d;"></div></div>
+                        <div class="stat-bar-bg"><div id="statAtkBar" class="stat-bar-fill" style="width:0%; background:#ff4d4d;"></div><div id="statAtkBonusBar" class="stat-bar-bonus" style="width:0%;"></div></div>
                     </div>
                     <div class="stat-row">
                         <div class="stat-label"><span>⚡ スピード</span><span id="statSpdVal">--</span></div>
-                        <div class="stat-bar-bg"><div id="statSpdBar" class="stat-bar-fill" style="width:0%; background:#00a2e8;"></div></div>
+                        <div class="stat-bar-bg"><div id="statSpdBar" class="stat-bar-fill" style="width:0%; background:#00a2e8;"></div><div id="statSpdBonusBar" class="stat-bar-bonus" style="width:0%;"></div></div>
                     </div>
                     <div class="stat-row">
                         <div class="stat-label"><span>❤️ 最大HP</span><span id="statHpVal">--</span></div>
-                        <div class="stat-bar-bg"><div id="statHpBar" class="stat-bar-fill" style="width:0%; background:#2ecc71;"></div></div>
+                        <div class="stat-bar-bg"><div id="statHpBar" class="stat-bar-fill" style="width:0%; background:#2ecc71;"></div><div id="statHpBonusBar" class="stat-bar-bonus" style="width:0%;"></div></div>
                     </div>
                 </div>
                 <div>
@@ -1481,7 +1482,12 @@
         const SPECIAL_INK_UI = [
             { id: 'SPECIAL_RAINBOW', name: '🌈 レインボーインク', rarity: 'S', preview: 'linear-gradient(45deg, red, orange, yellow, green, cyan, blue, violet)', label: '虹', shimmer: false },
             { id: 'SPECIAL_GOLD', name: '🌟 ゴールドインク', rarity: 'S', preview: 'linear-gradient(135deg, #7a5c10 0%, #fff0b0 50%, #7a5c10 100%)', label: '金', shimmer: true },
-            { id: 'SPECIAL_VENOM', name: '🧪 ヴェノムインク', rarity: 'A', preview: 'linear-gradient(135deg, #460876 0%, #d68cff 50%, #460876 100%)', label: '毒', shimmer: true }
+            { id: 'SPECIAL_CRIMSON', name: '🔥 クリムゾンインク', rarity: 'S', preview: 'linear-gradient(135deg, #5c0000 0%, #ff4500 50%, #ffd166 100%)', label: '紅', shimmer: true },
+            { id: 'SPECIAL_PLASMA', name: '⚡ プラズマインク', rarity: 'S', preview: 'linear-gradient(135deg, #003566 0%, #00e5ff 50%, #e0fbfc 100%)', label: '電', shimmer: true },
+            { id: 'SPECIAL_VENOM', name: '🧪 ヴェノムインク', rarity: 'A', preview: 'linear-gradient(135deg, #460876 0%, #d68cff 50%, #460876 100%)', label: '毒', shimmer: true },
+            { id: 'SPECIAL_EMERALD', name: '🌿 エメラルドインク', rarity: 'A', preview: 'linear-gradient(135deg, #064e3b 0%, #34d399 50%, #d1fae5 100%)', label: '翠', shimmer: true },
+            { id: 'SPECIAL_ABYSS', name: '🩸 アビスインク', rarity: 'A', preview: 'linear-gradient(135deg, #1a0526 0%, #9d174d 50%, #3b0764 100%)', label: '淵', shimmer: true },
+            { id: 'SPECIAL_STARDUST', name: '🌌 スターダストインク', rarity: 'A', preview: 'linear-gradient(135deg, #0f172a 0%, #6366f1 50%, #e0e7ff 100%)', label: '星', shimmer: true }
         ];
         function createDefaultUltraStocksClient() {
             const base = {
@@ -1561,7 +1567,7 @@
             };
             localStorage.setItem(USER_PROGRESS_KEY, JSON.stringify(userProgress));
             updatePointsDisplay(); renderSpecialPalette(); renderGachaInventoryPanel(); renderLobbyPreview();
-            renderProgressionUI();
+            renderProgressionUI(); refreshEditorJudgmentUI();
             if (!activeRoom) { hostMaxUnlockedStage = userProgress.maxUnlockedStage; updateModeButtonsUI(); }
         }
         function updatePointsDisplay() {
@@ -1586,7 +1592,7 @@
                 const capsule = document.getElementById('gachaCapsule'); capsule.className = 'gacha-capsule'; capsule.textContent = tab === 'ink' ? '🧪' : '⚡';
                 const btn = document.getElementById('pullGachaBtn');
                 const msg = tab === 'ink'
-                    ? '特別インク3種（虹・金・毒）が排出！重複時は 100Pt 還元！'
+                    ? '特別インク8種（Sレア4種40%・Aレア4種60%）が排出！重複時は 100Pt 還元！'
                     : '全8種（Sレア4種40%・Aレア4種60%）。重複で覚醒Pt、★2はCD -10%、★3は効果威力 +15%！';
                 btn.textContent = tab === 'ink' ? '特別インクガチャ (300Pt)' : 'ウルトラガチャ (1000Pt)';
                 document.getElementById('gachaResultArea').innerHTML = `<p id="gachaRuleDesc" style="font-size:0.8rem; color:#b8c6e8; margin:0;">${msg}</p>`;
@@ -1749,7 +1755,12 @@
             const cv = document.getElementById('gachaParticleCanvas'); if (!cv) return;
             const colors = paletteType === 'SPECIAL_RAINBOW' ? ['#ff0080', '#ff8c00', '#ffd166', '#2ecc71', '#00e5ff', '#9b59b6']
                 : paletteType === 'SPECIAL_GOLD' ? ['#ffd166', '#fff3b0', '#f39c12', '#ffffff']
+                : paletteType === 'SPECIAL_CRIMSON' ? ['#991b1b', '#ff4500', '#ff7f27', '#ffd166']
+                : paletteType === 'SPECIAL_PLASMA' ? ['#0284c7', '#00e5ff', '#7df9ff', '#ffffff']
                 : paletteType === 'SPECIAL_VENOM' ? ['#a349a4', '#d68cff', '#6c5ce7', '#ff6bff']
+                : paletteType === 'SPECIAL_EMERALD' ? ['#059669', '#34d399', '#a7f3d0', '#ffffff']
+                : paletteType === 'SPECIAL_ABYSS' ? ['#4c1d95', '#be185d', '#9333ea', '#f472b6']
+                : paletteType === 'SPECIAL_STARDUST' ? ['#1e1b4b', '#6366f1', '#a5b4fc', '#ffffff']
                 : ['#00e5ff', '#ffd166', '#ff4d6d', '#ffffff'];
             const count = rarity === 'S' ? 90 : (rarity === 'A' ? 56 : 34);
             for (let i = 0; i < count; i++) {
@@ -1884,9 +1895,9 @@
         let undoHistory = [], activeRoom = null, roomState = 'waiting', myReady = false, countdownBanner = '', isDraftEditing = true;
         const gameCanvas = document.getElementById('gameCanvas'), gameCtx = gameCanvas.getContext('2d');
         const COLOR_GROUPS = {
-            power: ['#880015', '#ed1c24', '#ff7f27', '#ffaec9', '#ff2a00'],
-            speed: ['#00a2e8', '#3f48cc', '#a349a4', '#00ffff', '#7df9ff', '#bf00ff', 'SPECIAL_VENOM'],
-            tough: ['#ffc90e', '#fff200', '#22b14c', '#b97a57', '#ffd700', '#98ff98', 'SPECIAL_GOLD']
+            power: ['#880015', '#ed1c24', '#ff7f27', '#ffaec9', '#ff2a00', 'SPECIAL_CRIMSON', 'SPECIAL_ABYSS'],
+            speed: ['#00a2e8', '#3f48cc', '#a349a4', '#00ffff', '#7df9ff', '#bf00ff', 'SPECIAL_PLASMA', 'SPECIAL_VENOM'],
+            tough: ['#ffc90e', '#fff200', '#22b14c', '#b97a57', '#ffd700', '#98ff98', 'SPECIAL_GOLD', 'SPECIAL_EMERALD']
         };
         const SHIELD_COOLDOWN = RULES.ACTIONS.shield.cooldownMs, SLASH_COOLDOWN = RULES.ACTIONS.slash.cooldownMs, SHOT_COOLDOWN = RULES.ACTIONS.shot.cooldownMs;
 
@@ -2018,14 +2029,24 @@
         const ANIMATED_INKS = {
             SPECIAL_RAINBOW: { mainColor: '#ff0080', color: (t) => `hsl(${Math.floor((t / 8) % 360)}, 95%, 55%)` },
             SPECIAL_GOLD: { mainColor: '#d4a72c', color: (t) => lerpRgb([122, 92, 16], [255, 240, 176], (Math.sin(t / 240) + 1) / 2) },
-            SPECIAL_VENOM: { mainColor: '#8a2be2', color: (t) => lerpRgb([70, 8, 118], [214, 140, 255], (Math.sin(t / 300 + 1.5) + 1) / 2) }
+            SPECIAL_CRIMSON: { mainColor: '#ff4500', color: (t) => lerpRgb([115, 8, 8], [255, 168, 56], (Math.sin(t / 180) + 1) / 2) },
+            SPECIAL_PLASMA: { mainColor: '#00e5ff', color: (t) => lerpRgb([0, 96, 200], [180, 252, 255], (Math.sin(t / 140) + 1) / 2) },
+            SPECIAL_VENOM: { mainColor: '#8a2be2', color: (t) => lerpRgb([70, 8, 118], [214, 140, 255], (Math.sin(t / 300 + 1.5) + 1) / 2) },
+            SPECIAL_EMERALD: { mainColor: '#10b981', color: (t) => lerpRgb([8, 90, 62], [167, 243, 208], (Math.sin(t / 260 + 0.8) + 1) / 2) },
+            SPECIAL_ABYSS: { mainColor: '#9d174d', color: (t) => lerpRgb([34, 8, 58], [219, 39, 119], (Math.sin(t / 220 + 2.2) + 1) / 2) },
+            SPECIAL_STARDUST: { mainColor: '#6366f1', color: (t) => lerpRgb([24, 30, 88], [216, 224, 255], (Math.sin(t / 210 + 1.1) + 1) / 2) }
         };
         function isAnimatedInk(c) { return typeof c === 'string' && Object.prototype.hasOwnProperty.call(ANIMATED_INKS, c); }
         function resolvePixelColor(c, timeMs) { return isAnimatedInk(c) ? ANIMATED_INKS[c].color(timeMs) : c; }
         function getElementVisualColors(elementId, specialInkType, now) {
             if (specialInkType === 'SPECIAL_RAINBOW') return { primary: `hsl(${Math.floor((now / 4) % 360)}, 95%, 60%)`, glow: '#ffffff', spark: '#ffd166' };
             if (specialInkType === 'SPECIAL_GOLD') return { primary: '#ffd166', glow: '#fff8d6', spark: '#f39c12' };
+            if (specialInkType === 'SPECIAL_CRIMSON') return { primary: '#ff4500', glow: '#ffd166', spark: '#ff9f1c' };
+            if (specialInkType === 'SPECIAL_PLASMA') return { primary: '#00e5ff', glow: '#e0fbfc', spark: '#7df9ff' };
             if (specialInkType === 'SPECIAL_VENOM') return { primary: '#b5179e', glow: '#f7aef8', spark: '#7209b7' };
+            if (specialInkType === 'SPECIAL_EMERALD') return { primary: '#10b981', glow: '#d1fae5', spark: '#34d399' };
+            if (specialInkType === 'SPECIAL_ABYSS') return { primary: '#db2777', glow: '#fbcfe8', spark: '#7e22ce' };
+            if (specialInkType === 'SPECIAL_STARDUST') return { primary: '#6366f1', glow: '#e0e7ff', spark: '#a5b4fc' };
             const map = {
                 fire: { primary: '#ff4d00', glow: '#ffd166', spark: '#ff9f1c' }, water: { primary: '#00b4d8', glow: '#caf0f8', spark: '#48cae4' },
                 grass: { primary: '#2ecc71', glow: '#d8f3dc', spark: '#80ed99' }, thunder: { primary: '#ffd60a', glow: '#ffffff', spark: '#ffea00' },
@@ -2256,14 +2277,18 @@
         const nowPerf = performance.now();
         const nowEpoch = Date.now();
         const cdSpeedMult = (nowPerf < (player.bootsBuffUntil || 0)) ? (1 / 1.5) : 1.0;
+        const talentCdMult = currentRoomMode === 'boss' &&
+            (userProgress.talents.attack || 0) >= PROGRESSION_RULES.TALENT_UNLOCKS.bulletConservation
+            ? PROGRESSION_RULES.BULLET_COOLDOWN_MULTIPLIER
+            : 1.0;
 
         const zRem = Math.max(0, SHIELD_COOLDOWN - (nowPerf - player.lastShieldTime));
         const xRem = Math.max(0, (SLASH_COOLDOWN * cdSpeedMult) - (nowPerf - player.lastMeleeTime));
-        const cRem = Math.max(0, (SHOT_COOLDOWN * cdSpeedMult) - (nowPerf - player.lastShotTime));
+        const cRem = Math.max(0, (SHOT_COOLDOWN * cdSpeedMult * talentCdMult) - (nowPerf - player.lastShotTime));
 
         setLvcCooldownState('lvcBtnZ', 'lvcCdMaskZ', 'lvcCdTextZ', zRem, SHIELD_COOLDOWN);
         setLvcCooldownState('lvcBtnX', 'lvcCdMaskX', 'lvcCdTextX', xRem, SLASH_COOLDOWN * cdSpeedMult);
-        setLvcCooldownState('lvcBtnC', 'lvcCdMaskC', 'lvcCdTextC', cRem, SHOT_COOLDOWN * cdSpeedMult);
+        setLvcCooldownState('lvcBtnC', 'lvcCdMaskC', 'lvcCdTextC', cRem, SHOT_COOLDOWN * cdSpeedMult * talentCdMult);
 
         const ultraBtn = document.getElementById('lvcBtnUltra');
         const ultraIcon = document.getElementById('lvcUltraIcon');
@@ -2347,9 +2372,10 @@
                 colorFreq[norm] = (colorFreq[norm] || 0) + 1;
                 if (isAnimatedInk(c)) {
                     hasSpecialInk = true;
-                    if (c === 'SPECIAL_RAINBOW') { powerCount++; speedCount++; toughCount++; }
-                    else if (c === 'SPECIAL_GOLD') toughCount++;
-                    else if (c === 'SPECIAL_VENOM') speedCount++;
+                    if (c === 'SPECIAL_RAINBOW' || c === 'SPECIAL_STARDUST') { powerCount++; speedCount++; toughCount++; }
+                    else if (COLOR_GROUPS.power.includes(c)) powerCount++;
+                    else if (COLOR_GROUPS.speed.includes(c)) speedCount++;
+                    else if (COLOR_GROUPS.tough.includes(c)) toughCount++;
                 } else if (COLOR_GROUPS.power.includes(norm)) powerCount++;
                 else if (COLOR_GROUPS.speed.includes(norm)) speedCount++;
                 else if (COLOR_GROUPS.tough.includes(norm)) toughCount++;
@@ -2362,28 +2388,70 @@
             for (const [c, freq] of Object.entries(colorFreq)) {
                 if (freq > maxFreq && c !== '#ffffff' && c !== '#000000') { maxFreq = freq; mainColor = isAnimatedInk(c) ? ANIMATED_INKS[c].mainColor : c; }
             }
-            const pScore = powerCount + neutralCount * 0.33, sScore = speedCount + neutralCount * 0.33, tScore = toughCount + neutralCount * 0.34, totalScore = pScore + sScore + tScore;
-            let atk = 12, spd = 4.0, maxHp = 100, pRatio = 0.33, sRatio = 0.33, tRatio = 0.34;
-            if (totalScore > 0) {
-                pRatio = pScore / totalScore; sRatio = sScore / totalScore; tRatio = tScore / totalScore;
-                atk = Math.round(10 + pRatio * 14); spd = Number((3.0 + sRatio * 3.2).toFixed(1)); maxHp = Math.round(80 + tRatio * 75);
+            const chromaticTotal = powerCount + speedCount + toughCount;
+            let atk = 18, spd = 4.0, maxHp = 118, pRatio = 0.33, sRatio = 0.33, tRatio = 0.34;
+            if (chromaticTotal > 0) {
+                pRatio = powerCount / chromaticTotal;
+                sRatio = speedCount / chromaticTotal;
+                tRatio = toughCount / chromaticTotal;
+                const pEff = Math.min(1, pRatio / 0.8);
+                const sEff = Math.min(1, sRatio / 0.8);
+                const tEff = Math.min(1, tRatio / 0.8);
+                atk = Math.round(12 + 17.5 * pEff - 1.5 * sEff);
+                spd = Number((2.9 + 3.4 * sEff - 0.7 * tEff).toFixed(1));
+                maxHp = Math.round(82 + 102 * tEff - 16 * pEff);
             }
-            // 64x64 基準（旧32x32閾値の4倍）
-            if (uniqueColors >= 5 && totalPixels >= 400) { atk = Math.min(28, Math.round(atk * 1.1)); spd = Math.min(6.8, Number((spd * 1.1).toFixed(1))); maxHp = Math.min(180, Math.round(maxHp * 1.1)); }
-            if (totalPixels < 140) { atk = Math.max(6, Math.round(atk * 0.7)); spd = Number(Math.max(2.5, spd * 0.8).toFixed(1)); maxHp = Math.max(50, Math.round(maxHp * 0.7)); }
+            if (uniqueColors >= 3 && totalPixels >= 400) {
+                atk = Math.min(32, Math.round(atk * 1.1));
+                spd = Math.min(6.9, Number((spd * 1.1).toFixed(1)));
+                maxHp = Math.min(202, Math.round(maxHp * 1.1));
+            }
+            if (totalPixels < 140) {
+                atk = Math.max(13, Math.round(atk * 0.7));
+                spd = Number(Math.max(2.7, spd * 0.8).toFixed(1));
+                maxHp = Math.max(75, Math.round(maxHp * 0.7));
+            }
 
             let rank = 'B', title = '実戦ファイター', hasTitleBoost = false;
             if (totalPixels < 140) { rank = 'C'; title = 'ラフスケッチの卵'; }
-            else if ((totalPixels >= 960 && uniqueColors >= 7) || (totalPixels >= 800 && uniqueColors >= 6 && hasSpecialInk)) {
+            else if ((totalPixels >= 960 && uniqueColors >= 6) || (totalPixels >= 800 && uniqueColors >= 5 && hasSpecialInk)) {
                 rank = 'S'; hasTitleBoost = true;
                 title = hasSpecialInk ? '極彩神話の超越者' : (pRatio >= 0.52 ? '紅蓮の覇王' : sRatio >= 0.52 ? '音速の幻影' : tRatio >= 0.52 ? '不落の守護神' : '極彩色のマスター');
-            } else if (totalPixels >= 520 && uniqueColors >= 5) {
+            } else if (totalPixels >= 520 && uniqueColors >= 3) {
                 rank = 'A'; hasTitleBoost = true;
                 title = pRatio >= 0.5 ? '猛攻のアタッカー' : sRatio >= 0.5 ? '疾風の剣士' : tRatio >= 0.5 ? '鉄壁の重戦士' : '歴戦のファイター';
             }
-            if (hasTitleBoost) { atk = Math.min(35, Math.round(atk * 1.1)); spd = Math.min(7.5, Number((spd * 1.1).toFixed(1))); maxHp = Math.min(220, Math.round(maxHp * 1.1)); }
+            if (hasTitleBoost) {
+                atk = Math.min(35, Math.round(atk * 1.1));
+                spd = Math.min(7.5, Number((spd * 1.1).toFixed(1)));
+                maxHp = Math.min(220, Math.round(maxHp * 1.1));
+            }
+            atk = Math.min(35, Math.max(13, atk));
+            spd = Math.min(7.5, Math.max(2.7, Number(spd.toFixed(1))));
+            maxHp = Math.min(220, Math.max(75, maxHp));
             const cleanName = (rawName || '').trim().slice(0, 12) || 'ファイター';
             return { name: cleanName, rank, title, element, hasTitleBoost, stats: { atk, spd, maxHp, mainColor }, detail: { totalPixels, uniqueColors, pRatio, sRatio, tRatio, hasSpecialInk } };
+        }
+
+        function getPreviewStatScaleAndBoosts() {
+            const talents = (userProgress && userProgress.talents) || {};
+            const slots = (userProgress && userProgress.passiveGearSlots) || {};
+            const weaponRank = Number(slots.weapon) || 0;
+            const attackLv = Number(talents.attack) || 0;
+            const mobilityLv = Number(talents.mobility) || 0;
+            const durabilityLv = Number(talents.durability) || 0;
+
+            const atkMult = (1 + weaponRank * PROGRESSION_RULES.PASSIVE_PER_RANK.weaponAttack) *
+                (1 + attackLv * PROGRESSION_RULES.TALENT_PER_LEVEL.attack);
+            const spdMult = 1 + mobilityLv * PROGRESSION_RULES.TALENT_PER_LEVEL.mobility;
+            const hpMult = 1 + durabilityLv * PROGRESSION_RULES.TALENT_PER_LEVEL.durability;
+
+            const maxAtkScale = 35 * (1 + PROGRESSION_RULES.PASSIVE_MAX_RANK * PROGRESSION_RULES.PASSIVE_PER_RANK.weaponAttack) *
+                (1 + PROGRESSION_RULES.TALENT_MAX_LEVEL * PROGRESSION_RULES.TALENT_PER_LEVEL.attack);
+            const maxSpdScale = 7.5 * (1 + PROGRESSION_RULES.TALENT_MAX_LEVEL * PROGRESSION_RULES.TALENT_PER_LEVEL.mobility);
+            const maxHpScale = 220 * (1 + PROGRESSION_RULES.TALENT_MAX_LEVEL * PROGRESSION_RULES.TALENT_PER_LEVEL.durability);
+
+            return { atkMult, spdMult, hpMult, maxAtkScale, maxSpdScale, maxHpScale };
         }
 
         function updateElementBadgeUI(elementId) {
@@ -2398,17 +2466,30 @@
                 charRankBadge.textContent = '未判定'; charRankBadge.className = 'rank-badge rank-UNJUDGED';
                 charTitleText.textContent = '編集中（ロビー移動時に判定）'; charTitleText.style.color = '#bdc3c7'; titleBoostBadge.style.display = 'none';
                 updateElementBadgeUI(previewElem);
-                document.getElementById('statAtkVal').textContent = '--'; document.getElementById('statAtkBar').style.width = '0%';
-                document.getElementById('statSpdVal').textContent = '--'; document.getElementById('statSpdBar').style.width = '0%';
-                document.getElementById('statHpVal').textContent = '--'; document.getElementById('statHpBar').style.width = '0%';
+                document.getElementById('statAtkVal').textContent = '--'; document.getElementById('statAtkBar').style.width = '0%'; document.getElementById('statAtkBonusBar').style.width = '0%';
+                document.getElementById('statSpdVal').textContent = '--'; document.getElementById('statSpdBar').style.width = '0%'; document.getElementById('statSpdBonusBar').style.width = '0%';
+                document.getElementById('statHpVal').textContent = '--'; document.getElementById('statHpBar').style.width = '0%'; document.getElementById('statHpBonusBar').style.width = '0%';
             } else {
                 charRankBadge.textContent = `${player.rank}ランク`; charRankBadge.className = `rank-badge rank-${player.rank}`;
                 charTitleText.textContent = player.title || '称号なし'; charTitleText.style.color = '#ffffff';
                 titleBoostBadge.style.display = player.hasTitleBoost ? 'inline-block' : 'none';
                 updateElementBadgeUI(player.element);
-                document.getElementById('statAtkVal').textContent = player.stats.atk; document.getElementById('statAtkBar').style.width = `${Math.min(100, (player.stats.atk / 35) * 100)}%`;
-                document.getElementById('statSpdVal').textContent = player.stats.spd.toFixed(1); document.getElementById('statSpdBar').style.width = `${Math.min(100, (player.stats.spd / 7.5) * 100)}%`;
-                document.getElementById('statHpVal').textContent = player.stats.maxHp; document.getElementById('statHpBar').style.width = `${Math.min(100, (player.stats.maxHp / 220) * 100)}%`;
+                const boost = getPreviewStatScaleAndBoosts();
+                const baseAtk = player.stats.atk, totalAtk = Math.round(baseAtk * boost.atkMult), bonusAtk = Math.max(0, totalAtk - baseAtk);
+                const baseSpd = player.stats.spd, totalSpd = Number((baseSpd * boost.spdMult).toFixed(1)), bonusSpd = Math.max(0, Number((totalSpd - baseSpd).toFixed(1)));
+                const baseHp = player.stats.maxHp, totalHp = Math.round(baseHp * boost.hpMult), bonusHp = Math.max(0, totalHp - baseHp);
+
+                document.getElementById('statAtkVal').textContent = bonusAtk > 0 ? `${baseAtk} (+${bonusAtk} → ${totalAtk})` : `${baseAtk}`;
+                document.getElementById('statAtkBar').style.width = `${Math.min(100, (baseAtk / boost.maxAtkScale) * 100)}%`;
+                document.getElementById('statAtkBonusBar').style.width = `${Math.min(100, (bonusAtk / boost.maxAtkScale) * 100)}%`;
+
+                document.getElementById('statSpdVal').textContent = bonusSpd > 0 ? `${baseSpd.toFixed(1)} (+${bonusSpd.toFixed(1)} → ${totalSpd.toFixed(1)})` : baseSpd.toFixed(1);
+                document.getElementById('statSpdBar').style.width = `${Math.min(100, (baseSpd / boost.maxSpdScale) * 100)}%`;
+                document.getElementById('statSpdBonusBar').style.width = `${Math.min(100, (bonusSpd / boost.maxSpdScale) * 100)}%`;
+
+                document.getElementById('statHpVal').textContent = bonusHp > 0 ? `${baseHp} (+${bonusHp} → ${totalHp})` : `${baseHp}`;
+                document.getElementById('statHpBar').style.width = `${Math.min(100, (baseHp / boost.maxHpScale) * 100)}%`;
+                document.getElementById('statHpBonusBar').style.width = `${Math.min(100, (bonusHp / boost.maxHpScale) * 100)}%`;
             }
         }
         function applyJudgmentToPlayer(result, resetHpToMax = true) {

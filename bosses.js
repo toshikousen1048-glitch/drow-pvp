@@ -146,9 +146,14 @@
     });
 
     const SPECIAL_INKS = Object.freeze({
-        SPECIAL_GOLD: Object.freeze({ id: 'SPECIAL_GOLD', name: 'ゴールドインク', group: 'light', isAnimatedInk: true }),
-        SPECIAL_RAINBOW: Object.freeze({ id: 'SPECIAL_RAINBOW', name: 'レインボーインク', group: 'light', isAnimatedInk: true }),
-        SPECIAL_VENOM: Object.freeze({ id: 'SPECIAL_VENOM', name: 'ヴェノムインク', group: 'dark', isAnimatedInk: true })
+        SPECIAL_GOLD: Object.freeze({ id: 'SPECIAL_GOLD', name: 'ゴールドインク', group: 'light', rarity: 'S', gachaWeight: 10, statGroup: 'tough', isAnimatedInk: true }),
+        SPECIAL_RAINBOW: Object.freeze({ id: 'SPECIAL_RAINBOW', name: 'レインボーインク', group: 'light', rarity: 'S', gachaWeight: 10, statGroup: 'all', isAnimatedInk: true }),
+        SPECIAL_CRIMSON: Object.freeze({ id: 'SPECIAL_CRIMSON', name: 'クリムゾンインク', group: 'dark', rarity: 'S', gachaWeight: 10, statGroup: 'power', isAnimatedInk: true }),
+        SPECIAL_PLASMA: Object.freeze({ id: 'SPECIAL_PLASMA', name: 'プラズマインク', group: 'light', rarity: 'S', gachaWeight: 10, statGroup: 'speed', isAnimatedInk: true }),
+        SPECIAL_VENOM: Object.freeze({ id: 'SPECIAL_VENOM', name: 'ヴェノムインク', group: 'dark', rarity: 'A', gachaWeight: 15, statGroup: 'speed', isAnimatedInk: true }),
+        SPECIAL_EMERALD: Object.freeze({ id: 'SPECIAL_EMERALD', name: 'エメラルドインク', group: 'light', rarity: 'A', gachaWeight: 15, statGroup: 'tough', isAnimatedInk: true }),
+        SPECIAL_ABYSS: Object.freeze({ id: 'SPECIAL_ABYSS', name: 'アビスインク', group: 'dark', rarity: 'A', gachaWeight: 15, statGroup: 'power', isAnimatedInk: true }),
+        SPECIAL_STARDUST: Object.freeze({ id: 'SPECIAL_STARDUST', name: 'スターダストインク', group: 'dark', rarity: 'A', gachaWeight: 15, statGroup: 'all', isAnimatedInk: true })
     });
     const SPECIAL_INK_IDS = Object.freeze(Object.keys(SPECIAL_INKS));
     const SPECIAL_INK_ELEMENT_THRESHOLD = 80;
@@ -286,12 +291,12 @@
             const token = normalizeInkToken(flat[i]);
             if (!token || token === 'transparent' || token === 'none') continue;
 
-            if (token === 'SPECIAL_GOLD' || token === 'SPECIAL_RAINBOW') {
-                specialLightCount++;
-                continue;
-            }
-            if (token === 'SPECIAL_VENOM') {
-                specialDarkCount++;
+            if (Object.prototype.hasOwnProperty.call(SPECIAL_INKS, token)) {
+                if (SPECIAL_INKS[token].group === 'dark') {
+                    specialDarkCount++;
+                } else {
+                    specialLightCount++;
+                }
                 continue;
             }
             if (token === '#ffffff') {
@@ -3618,6 +3623,23 @@
         }
         if (totalGachaWeight !== 100) {
             errors.push(`Ultra skill gachaWeight sum must be 100 (got ${totalGachaWeight})`);
+        }
+
+        if (SPECIAL_INK_IDS.length !== 8) {
+            errors.push(`SPECIAL_INK_IDS must contain 8 inks (got ${SPECIAL_INK_IDS.length})`);
+        }
+        let totalInkWeight = 0;
+        for (const inkId of SPECIAL_INK_IDS) {
+            const ink = SPECIAL_INKS[inkId];
+            if (!ink || !['light', 'dark'].includes(ink.group) || !['S', 'A'].includes(ink.rarity) ||
+                typeof ink.gachaWeight !== 'number' || ink.gachaWeight <= 0) {
+                errors.push(`Special ink ${inkId} has invalid metadata`);
+            } else {
+                totalInkWeight += ink.gachaWeight;
+            }
+        }
+        if (totalInkWeight !== 100) {
+            errors.push(`Special ink gachaWeight sum must be 100 (got ${totalInkWeight})`);
         }
 
         if (!Array.isArray(STAGES) || STAGES.length === 0) {
