@@ -773,6 +773,11 @@
                     <button class="tool-btn" onclick="clearCanvas()">🗑️ 全消去</button>
                 </div>
             </div>
+            <!-- ★お気に入り保護バナー -->
+            <div id="favoriteLockBanner" style="display:none; align-items:center; gap:8px; background:#2a1a0a; border:1px solid #f39c12; border-radius:6px; padding:4px 10px; margin-bottom:4px; font-size:0.82rem; color:#f39c12;">
+                <span id="favoriteLockLabel">🔒 保護中</span>
+                <button onclick="releaseFavoriteLock()" style="background:#f39c12; color:#111; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:0.78rem;">★ 保護解除</button>
+            </div>
 
             <div class="panel-box editor-right-panel">
                 <div>
@@ -2506,6 +2511,44 @@
         const MAX_SAVE_SLOTS = 16;
         const SLOTS_PER_PAGE = 4;
         let currentSlotPage = 0;
+        /** -1=保護なし / 0以上=★保護中スロットのindex */
+        let favoritedSlotIndex = -1;
+        /** ★保護中かどうか */
+        function isFavoriteLocked() { return favoritedSlotIndex >= 0; }
+        /** 保護UIの表示を更新する */
+        function updateFavoriteLockUI() {
+            const banner = document.getElementById('favoriteLockBanner');
+            if (!banner) return;
+            if (favoritedSlotIndex >= 0) {
+                banner.style.display = 'flex';
+                const lbl = banner.querySelector('#favoriteLockLabel');
+                if (lbl) lbl.textContent = `🔒 スロット #${favoritedSlotIndex + 1} を保護中`;
+            } else {
+                banner.style.display = 'none';
+            }
+            renderSaveSlots();
+        }
+        /** ★保護を解除する */
+        window.releaseFavoriteLock = function() {
+            favoritedSlotIndex = -1;
+            updateFavoriteLockUI();
+        };
+        /** スロットのお気に入りをトグルする */
+        window.toggleFavoriteSlot = function(index) {
+            const slots = loadSaveSlotsArray();
+            if (!slots[index]) return;
+            const wasOn = Boolean(slots[index].isFavorite);
+            slots[index].isFavorite = !wasOn;
+            localStorage.setItem(SAVE_SLOTS_KEY_V3, JSON.stringify(slots));
+            if (!wasOn) {
+                // ★ON: このスロットが既に読み込まれているなら保護状態を設定
+                favoritedSlotIndex = index;
+            } else {
+                // ★OFF: 解除
+                if (favoritedSlotIndex === index) favoritedSlotIndex = -1;
+            }
+            updateFavoriteLockUI();
+        };
 
         function loadSaveSlotsArray() {
             let slots = null;
@@ -2572,7 +2615,20 @@
                     topDiv.appendChild(miniCv);
                     topDiv.appendChild(hdr);
                     const btns = document.createElement('div'); btns.className = 'slot-btns';
-                    btns.innerHTML = `<button class="primary" onclick="loadCharacterSlot(${i})">読込</button><button onclick="saveCharacterSlot(${i})">上書</button>`;
+                    const isFav = Boolean(slot.isFavorite);
+                    const starBtn = document.createElement('button');
+                    starBtn.textContent = isFav ? '★' : '☆';
+                    starBtn.title = isFav ? 'お気に入り解除' : 'お気に入り登録（編集ロック）';
+                    starBtn.style.cssText = `background:transparent;border:none;font-size:1.1rem;cursor:pointer;color:${isFav ? '#f1c40f' : '#888'};padding:0 2px;`;
+                    starBtn.onclick = function() { toggleFavoriteSlot(i); };
+                    const loadBtn = document.createElement('button');
+                    loadBtn.className = 'primary'; loadBtn.textContent = '読込';
+                    loadBtn.onclick = function() { loadCharacterSlot(i); };
+                    const saveBtn = document.createElement('button');
+                    saveBtn.textContent = '上書';
+                    if (isFav) { saveBtn.disabled = true; saveBtn.title = 'お気に入り保護中は上書きできません'; }
+                    saveBtn.onclick = function() { saveCharacterSlot(i); };
+                    btns.appendChild(starBtn); btns.appendChild(loadBtn); btns.appendChild(saveBtn);
                     card.appendChild(topDiv);
                     card.appendChild(btns);
                 } else {
@@ -2585,7 +2641,8 @@
             initAudio(); SE.click();
             const slots = loadSaveSlotsArray();
             const judged = finalizeCharacterJudgment(gridData, charNameInput.value);
-            slots[index] = { name: judged.name, rank: judged.rank, title: judged.title, element: judged.element, hasTitleBoost: judged.hasTitleBoost, stats: judged.stats, gridData: JSON.parse(JSON.stringify(gridData)) };
+            const prev = slots[index];
+            slots[index] = { name: judged.name, rank: judged.rank, title: judged.title, element: judged.element, hasTitleBoost: judged.hasTitleBoost, stats: judged.stats, gridData: JSON.parse(JSON.stringify(gridData)), isFavorite: prev ? Boolean(prev.isFavorite) : false };
             localStorage.setItem(SAVE_SLOTS_KEY_V3, JSON.stringify(slots));
             applyJudgmentToPlayer(judged, true); syncCharacterUpdate(); renderSaveSlots();
         };
@@ -2594,6 +2651,9 @@
             initAudio(); SE.click();
             const slots = loadSaveSlotsArray();
             const slot = slots[index]; if (!slot) return;
+            // ★保護状態を更新: このスロットが★ならロック、そうでなければロック解除
+            favoritedSlotIndex = slot.isFavorite ? index : -1;
+            updateFavoriteLockUI();
             pushUndoHistory(); gridData = upgradeGridTo64(slot.gridData); localGridVersion++;
             charNameInput.value = slot.name; localStorage.setItem('pixel_character_name_v1', slot.name);
             const loadedResult = slot.stats
@@ -3608,7 +3668,7 @@
         function pushUndoHistory() { undoHistory.push(JSON.stringify(gridData)); if (undoHistory.length > 20) undoHistory.shift(); }
         function markDraftUnjudged() { localGridVersion++; isDraftEditing = true; refreshEditorJudgmentUI(); }
         function undoCanvas() {
-            if ((activeRoom && roomState !== 'waiting') || undoHistory.length === 0) return;
+            if ((activeRoom && roomState !== 'waiting') || isFavoriteLocked() || undoHistory.length === 0) return;
             initAudio(); SE.undo(); gridData = JSON.parse(undoHistory.pop()); markDraftUnjudged(); drawEditorGrid(); autoSave();
         }
         function floodFill(startX, startY, fillColor) {
@@ -3632,7 +3692,7 @@
             }
         }
         function clearCanvas() {
-            if (activeRoom && roomState !== 'waiting') return;
+            if ((activeRoom && roomState !== 'waiting') || isFavoriteLocked()) return;
             initAudio();
             if (confirm('キャンバスをクリアしますか？')) {
                 SE.undo(); pushUndoHistory(); gridData = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
@@ -3668,7 +3728,7 @@
             return updated;
         }
         function paint(e) {
-            if (activeRoom && roomState !== 'waiting') return;
+            if ((activeRoom && roomState !== 'waiting') || isFavoriteLocked()) return;
             initAudio(); const pos = getGridPos(e);
             if (toolMode === 'bucket') {
                 SE.bucket(); floodFill(pos.x, pos.y, currentColor); if (isMirrorMode) floodFill((GRID_SIZE - 1) - pos.x, pos.y, currentColor);
@@ -3677,10 +3737,10 @@
             const newColor = toolMode === 'eraser' ? '' : currentColor;
             if (applyBrushAt(pos.x, pos.y, newColor)) { if (toolMode === 'eraser') SE.erase(); else SE.draw(); markDraftUnjudged(); drawEditorGrid(); }
         }
-        canvas.addEventListener('mousedown', (e) => { if (activeRoom && roomState !== 'waiting') return; pushUndoHistory(); isDrawing = true; paint(e); });
+        canvas.addEventListener('mousedown', (e) => { if ((activeRoom && roomState !== 'waiting') || isFavoriteLocked()) return; pushUndoHistory(); isDrawing = true; paint(e); });
         window.addEventListener('mousemove', (e) => { if (isDrawing && toolMode !== 'bucket') paint(e); });
         window.addEventListener('mouseup', () => { if (isDrawing) { isDrawing = false; autoSave(); } });
-        canvas.addEventListener('touchstart', (e) => { if (activeRoom && roomState !== 'waiting') return; e.preventDefault(); pushUndoHistory(); isDrawing = true; paint(e); });
+        canvas.addEventListener('touchstart', (e) => { if ((activeRoom && roomState !== 'waiting') || isFavoriteLocked()) return; e.preventDefault(); pushUndoHistory(); isDrawing = true; paint(e); });
         canvas.addEventListener('touchmove', (e) => { if (isDrawing && toolMode !== 'bucket') { e.preventDefault(); paint(e); } });
         canvas.addEventListener('touchend', () => { if (isDrawing) { isDrawing = false; autoSave(); } });
 
@@ -3716,7 +3776,7 @@
         });
         window.addEventListener('keydown', (e) => {
             const isTyping = (document.activeElement === roomInput || document.activeElement === charNameInput);
-            if (!isTyping && roomState !== 'playing' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undoCanvas(); return; }
+            if (!isTyping && roomState !== 'playing' && (e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); if (!isFavoriteLocked()) undoCanvas(); return; }
             if (!isTyping && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) e.preventDefault();
             keys[e.code] = true;
             if (isTyping || player.isDead || player.isEliminated || roomState !== 'playing') return;

@@ -435,7 +435,7 @@
             tag: '装備覚醒・弾幕',
             icon: '🔫',
             color: '#ff9f43',
-            description: '5000msの間、625ms間隔（最大8ウェーブ）で8方向へ固定威力40の弾を発射し、壁に1回だけ反射する',
+            description: '5000msの間、625ms間隔（最大8ウェーブ）で8方向へ固定威力5の弾を発射し、壁に1回だけ反射する',
             chargeMs: 0,
             stanceMs: 0,
             warnMs: 0,
@@ -443,7 +443,7 @@
             cooldownMs: ACTIONS.ultra.cooldownMs,
             maxStock: GACHA.ULTRA_MAX_STOCK,
             damageMultiplier: 0,
-            fixedDamage: 40,
+            fixedDamage: 5,
             intervalMs: 625,
             maxWaves: 8,
             directions: 8,
@@ -651,8 +651,8 @@
             radius: 44,
             spawnX: ARENA_CENTER_X,
             spawnY: 175,
-            maxHp: 800,
-            hpByPlayers: { 1: 800, 2: 1600, 3: 2400, 4: 3200 },
+            maxHp: 960,
+            hpByPlayers: { 1: 960, 2: 1920, 3: 2880, 4: 3840 },
             speed: 2.8,
             moveSpeed: {
                 soloP1: 2.8,
@@ -852,8 +852,8 @@
             radius: 42,
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
-            maxHp: 800,
-            hpByPlayers: { 1: 800, 2: 1600, 3: 2400, 4: 3200 },
+            maxHp: 960,
+            hpByPlayers: { 1: 960, 2: 1920, 3: 2880, 4: 3840 },
             speed: 3.2,
             barrierDamageMultiplier: 0.45,
             moveSpeed: {
@@ -1070,8 +1070,8 @@
             radius: 46,
             spawnX: ARENA_CENTER_X,
             spawnY: 160,
-            maxHp: 1100,
-            hpByPlayers: { 1: 1100, 2: 2100, 3: 3000, 4: 3800 },
+            maxHp: 1320,
+            hpByPlayers: { 1: 1320, 2: 2520, 3: 3600, 4: 4560 },
             speed: 3.2,
             moveSpeed: {
                 p1: 3.2,
@@ -1492,8 +1492,8 @@
             radius: 44,
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
-            maxHp: 950,
-            hpByPlayers: { 1: 950, 2: 1900, 3: 2850, 4: 3800 },
+            maxHp: 1140,
+            hpByPlayers: { 1: 1140, 2: 2280, 3: 3420, 4: 4560 },
             speed: 3.0,
             moveSpeed: {
                 p1: 3.0,
@@ -1840,8 +1840,8 @@
             radius: 50,
             spawnX: ARENA_CENTER_X,
             spawnY: 175,
-            maxHp: 1300,
-            hpByPlayers: { 1: 1300, 2: 2200, 3: 3100, 4: 4000 },
+            maxHp: 1560,
+            hpByPlayers: { 1: 1560, 2: 2640, 3: 3720, 4: 4800 },
             speed: 3.4,
             moveSpeed: {
                 soloP1: 3.4,
@@ -2098,8 +2098,8 @@
             radius: 42,
             spawnX: ARENA_CENTER_X,
             spawnY: 165,
-            maxHp: 900,
-            hpByPlayers: { 1: 900, 2: 1400, 3: 2000, 4: 2600 },
+            maxHp: 1080,
+            hpByPlayers: { 1: 1080, 2: 1680, 3: 2400, 4: 3120 },
             speed: 3.2,
             moveSpeed: {
                 p1: 3.2,
@@ -3595,7 +3595,7 @@
                 }
             }
             if (skill.id === 'ricochet_guns') {
-                if (skill.durationMs !== 5000 || skill.intervalMs !== 625 || skill.maxWaves !== 8 || skill.fixedDamage !== 40 || skill.maxBounces !== 1) {
+                if (skill.durationMs !== 5000 || skill.intervalMs !== 625 || skill.maxWaves !== 8 || skill.fixedDamage !== 5 || skill.maxBounces !== 1) {
                     errors.push('ricochet_guns parameter mismatch');
                 }
             }

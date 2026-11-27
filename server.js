@@ -3185,7 +3185,7 @@ function fireRicochetWave(roomId, matchId, shooterId, waveIndex) {
     const pc = playerCenter(shooter);
     const dirs = skill.directions || 8;
     const spd = skill.bulletSpeed || 9.0;
-    const fixedDmg = (skill.fixedDamage || 40) * getPlayerUltraDamageMultiplier(shooter, skill.id, room.mode);
+    const fixedDmg = (skill.fixedDamage ?? 5) * getPlayerUltraDamageMultiplier(shooter, skill.id, room.mode);
     const maxBounces = skill.maxBounces ?? 1;
     const radius = skill.bulletRadius || 6;
     const emittedBullets = [];
